@@ -402,6 +402,29 @@ class Database:
             (min_price, limit),
         ).fetchall()
 
+    def market_breadth(self, obs_date: str | None = None) -> dict[str, Any]:
+        """How much of the whole market is moving, before any filters."""
+        obs_date = obs_date or self.latest_obs_date()
+        if not obs_date:
+            return {}
+        row = self.conn.execute(
+            """SELECT COUNT(*) AS priced,
+                      SUM(CASE WHEN change_7d > 0 THEN 1 ELSE 0 END)  AS up_7d,
+                      SUM(CASE WHEN change_7d < 0 THEN 1 ELSE 0 END)  AS down_7d,
+                      SUM(CASE WHEN change_24h > 0 THEN 1 ELSE 0 END) AS up_24h
+               FROM price_points
+               WHERE obs_date = ? AND market_price IS NOT NULL""",
+            (obs_date,),
+        ).fetchone()
+        return {k: row[k] for k in row.keys()} if row else {}
+
+    def flagged_card_ids(self, obs_date: str, limit: int = 500) -> list[str]:
+        rows = self.conn.execute(
+            "SELECT card_id FROM alerts WHERE obs_date=? ORDER BY score DESC LIMIT ?",
+            (obs_date, limit),
+        ).fetchall()
+        return [r["card_id"] for r in rows]
+
     def card_by_tcgplayer_id(self, tcgplayer_id: int) -> sqlite3.Row | None:
         return self.conn.execute(
             "SELECT * FROM cards WHERE tcgplayer_id=?", (tcgplayer_id,)

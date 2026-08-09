@@ -265,6 +265,49 @@ def backfill_history(
     return written
 
 
+def enrich_flagged(
+    cfg: Config,
+    db: Database,
+    client: TCGClient,
+    obs_date: str,
+    *,
+    limit: int = 200,
+) -> int:
+    """Pull real sales data for the cards that got flagged.
+
+    `/sets/:id/prices` is cheap but carries no sales figures. `/cards/:id/prices`
+    does -- `sales_volume` and `avg_sales_price` are actual transactions rather
+    than listings, which is a much better liquidity check before you act on a
+    signal. Only flagged cards are worth a request each.
+    """
+    card_ids = db.flagged_card_ids(obs_date, limit)
+    if not card_ids:
+        log.info("Enrich: nothing flagged for %s", obs_date)
+        return 0
+
+    log.info("Enrich: %d flagged cards", len(card_ids))
+    points: list[dict] = []
+    for i, cid in enumerate(card_ids, 1):
+        if client.budget_left <= 0:
+            log.warning("Enrich stopped at %d/%d -- budget", i, len(card_ids))
+            break
+        try:
+            rows = client.get(f"/cards/{cid}/prices")
+        except RateLimitExhausted:
+            log.warning("Enrich stopped at %d/%d -- rate limit", i, len(card_ids))
+            break
+        if not rows:
+            continue
+        for row in rows if isinstance(rows, list) else [rows]:
+            pt = _norm_price_row(row, obs_date=obs_date, source="snapshot")
+            if pt:
+                pt["card_id"] = str(cid)
+                points.append(pt)
+    if points:
+        return db.upsert_price_points(points)
+    return 0
+
+
 def resolve_watchlist(cfg: Config, db: Database, client: TCGClient) -> list[dict]:
     """Map watchlist TCGplayer product IDs to internal card ids, caching in the DB."""
     resolved = []

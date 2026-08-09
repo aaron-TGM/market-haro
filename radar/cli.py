@@ -164,15 +164,21 @@ def cmd_report(cfg, args) -> int:
             ranked,
             obs_date=obs,
             stats=stats,
-            top_n=int(cfg.report.get("top_n", 60)),
+            top_n=int(cfg.report.get("top_n", 400)),
             fallers=fallers,
             watchlist=watchlist,
+            market=db.market_breadth(obs),
         )
         out = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
         dashboard.write(html, out)
         print(f"Dashboard -> {out}")
 
         flagged = [r for r in ranked if r.get("signals")]
+
+        # Persist the calls so you can ask later "what did the radar say on the 9th,
+        # and was it right?" -- and so `enrich` knows which cards to spend requests on.
+        db.record_alerts(0, obs, flagged)
+
         if cfg.report.get("write_json", True):
             jp = out.with_suffix(".json")
             jp.write_text(
@@ -228,11 +234,32 @@ def cmd_report(cfg, args) -> int:
     return 0
 
 
+def cmd_enrich(cfg, args) -> int:
+    """Pull real sales figures for flagged cards (one request each)."""
+    db = Database(cfg.db_path)
+    client = _client(cfg)
+    try:
+        obs = args.date or db.latest_obs_date()
+        if not obs:
+            print("Nothing to enrich -- run `python -m radar run` first.")
+            return 1
+        n = ingest.enrich_flagged(cfg, db, client, obs, limit=args.limit)
+    finally:
+        db.close()
+    print(f"\nEnriched {n} price rows with sales data using {client.requests_made} requests.")
+    return 0
+
+
 def cmd_run(cfg, args) -> int:
     rc = cmd_sync(cfg, args)
     if rc != 0:
         print("Sync did not complete cleanly; reporting on what we have.")
-    return cmd_report(cfg, args)
+    rc = cmd_report(cfg, args)
+    if getattr(args, "enrich", False):
+        cmd_enrich(cfg, args)
+        # Sales volume feeds the score, so re-report once it's in.
+        rc = cmd_report(cfg, args)
+    return rc
 
 
 def cmd_stats(cfg, args) -> int:
@@ -273,6 +300,10 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--min-price", type=float, default=None)
     b.add_argument("--limit", type=int, default=None, help="max cards this run")
 
+    e = sub.add_parser("enrich", help="pull real sales figures for flagged cards")
+    e.add_argument("--date", help="observation date (YYYY-MM-DD), default = latest")
+    e.add_argument("--limit", type=int, default=200, help="max flagged cards to enrich")
+
     r = sub.add_parser("report", help="score the latest snapshot and build the dashboard")
     r.add_argument("--date", help="observation date (YYYY-MM-DD), default = latest")
     r.add_argument("--out", help="output html path")
@@ -280,6 +311,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     a = sub.add_parser("run", help="sync then report (use this in cron)")
     a.add_argument("--no-history", action="store_true")
+    a.add_argument("--enrich", action="store_true",
+                   help="also pull sales volume for flagged cards, then re-score")
+    a.add_argument("--limit", type=int, default=200)
     a.add_argument("--date")
     a.add_argument("--out")
     a.add_argument("--top", type=int, default=25)
@@ -291,6 +325,7 @@ COMMANDS = {
     "games": cmd_games,
     "sync": cmd_sync,
     "backfill": cmd_backfill,
+    "enrich": cmd_enrich,
     "report": cmd_report,
     "run": cmd_run,
     "stats": cmd_stats,

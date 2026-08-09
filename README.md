@@ -61,8 +61,10 @@ not conviction. Cards with no detector firing are halved so they sink below real
 | `python -m radar doctor` | Verify API key, game slug, and every endpoint. Run this first. |
 | `python -m radar sync` | Pull catalogue + today's prices into SQLite |
 | `python -m radar backfill --range all` | One-time deep history pull (weekly, back to Apr 2025) |
+| `python -m radar enrich` | Pull real sales figures for flagged cards only (1 request each) |
 | `python -m radar report` | Score the latest snapshot, write dashboard + JSON + CSV |
 | `python -m radar run` | `sync` then `report` — this is the cron command |
+| `python -m radar run --enrich` | ...and pull sales volume for the calls, then re-score |
 | `python -m radar stats` | What's in the local database |
 | `python -m radar games` | List every game slug the API knows |
 
@@ -128,8 +130,29 @@ history precedence, and HTML escaping — no network needed.
 
 ## Reading the dashboard
 
-Search, filter by set, and toggle the three signal chips. Click any column header to
-sort. Card names link to TCGplayer. The trend sparkline mixes backfilled API history
-with your own snapshots, so it gets denser the longer you run it. A watchlist table and
-a biggest-fallers table sit below the main list — fallers are context, and where dips
-show up.
+**Filters** — search, set, rarity, printing, and Cards vs. Sealed, plus value filtering
+two ways: preset bands (Under $5 / $5–20 / $20–100 / $100+, multi-select) or exact
+min/max boxes for an arbitrary range. Signal chips narrow to sustained / spike /
+breakout. Everything composes, and Reset clears it all.
+
+**Charts** — "Where the movement is" ranks the sets in view; "Breakdown" toggles between
+price band, rarity, and printing. Both redraw with the filters, so filtering to `R+`
+immediately shows which sets those cards are in.
+
+**The table** — click any header to sort. Starts at 50 rows with *Show 50 more* and
+*Show all*; `report.top_n` in `config.yaml` sets how many rows get embedded (default
+400, flagged cards first). **Export CSV** writes exactly what the current filters show.
+Card names link to TCGplayer.
+
+A watchlist table and a biggest-fallers table sit below the main list — fallers are
+context, and where dips show up.
+
+## Liquidity: listings vs. sales
+
+`total_listings` (from `/sets/:id/cards`) tells you how many copies are *for sale* —
+it's free with the sync and good enough to filter out noise. `sales_volume` and
+`avg_sales_price` are actual transactions, but they only come from `/cards/:id/prices`,
+one request per card. `radar enrich` spends those requests on flagged cards only
+(~50–200 requests), then re-scores — recorded sales add up to 6 points to the Radar
+Score. A big % move on a card with listings but zero sales is a listing artifact, not
+a market; this is how you tell them apart before acting.

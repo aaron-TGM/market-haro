@@ -241,10 +241,6 @@ def explain(rec: dict) -> str:
         mp = rec.get("market_price")
         if mp and px and mp / px >= 1.15:
             return f"Up from ${px:.2f} on {when}"
-    if "sustained" in sig and "spike" in sig:
-        return "Established trend, fresh 24h leg"
-    if "sustained" in sig:
-        return "Steady climb, not a one-day pop"
     if "spike" in sig:
         c7 = rec.get("change_7d")
         return f"One-day move; 7d still {c7:+.0f}%" if c7 is not None else "One-day move"

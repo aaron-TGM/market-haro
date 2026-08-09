@@ -60,7 +60,7 @@ signals:
     volume_bonus_max: 6.0
 
 report:
-  top_n: 60
+  top_n: 400   # rows embedded in the dashboard; the page pages through them
   output_path: out/dashboard.html
   write_json: true
   write_csv: true

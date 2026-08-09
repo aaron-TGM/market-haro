@@ -3,12 +3,15 @@
 Everything (CSS, JS, data) is inlined so the file can be emailed, dropped in
 Dropbox, or opened from disk with no server. Card images are the only remote
 asset, loaded lazily from TCGplayer's CDN.
+
+Layout: stat tiles -> filters -> two breadth charts -> the ranked table.
+The charts and the table read from the same filtered set, so narrowing to a
+rarity or a price band re-draws everything together.
 """
 
 from __future__ import annotations
 
 import json
-from datetime import date
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -16,7 +19,8 @@ from .signals import explain
 
 # Palette: validated default categorical slots 1-3 (all-pairs, both modes).
 # sustained = blue, spike = orange, breakout = aqua. Every badge also carries a
-# text label, so identity never rests on color alone.
+# text label, so identity never rests on color alone. Charts are single-series
+# and use the sequential blue, so they need no legend.
 CSS = """
 *,*::before,*::after{box-sizing:border-box}
 .viz-root{
@@ -25,7 +29,8 @@ CSS = """
   --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#898781;
   --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
   --series-1:#2a78d6; --series-2:#eb6834; --series-3:#1baf7a;
-  --up:#006300; --down:#d03b3b; --good:#0ca30c; --warning:#fab219;
+  --bar:#2a78d6; --bar-soft:#9ec5f4;
+  --up:#006300; --down:#d03b3b;
   --tint-1:rgba(42,120,214,0.12); --tint-2:rgba(235,104,52,0.12); --tint-3:rgba(27,175,122,0.14);
 }
 @media (prefers-color-scheme:dark){
@@ -35,6 +40,7 @@ CSS = """
     --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#898781;
     --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
     --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70;
+    --bar:#3987e5; --bar-soft:#256abf;
     --up:#0ca30c; --down:#d03b3b;
     --tint-1:rgba(57,135,229,0.18); --tint-2:rgba(217,89,38,0.18); --tint-3:rgba(25,158,112,0.20);
   }
@@ -45,55 +51,89 @@ CSS = """
   --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#898781;
   --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
   --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70;
+  --bar:#3987e5; --bar-soft:#256abf;
   --up:#0ca30c; --down:#d03b3b;
   --tint-1:rgba(57,135,229,0.18); --tint-2:rgba(217,89,38,0.18); --tint-3:rgba(25,158,112,0.20);
 }
 html,body{margin:0;padding:0}
 body{background:var(--plane);color:var(--text-primary);
-  font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;}
-.wrap{max-width:1280px;margin:0 auto;padding:28px 20px 64px}
-header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:4px}
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1420px;margin:0 auto;padding:28px 20px 72px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap}
 h1{font-size:22px;font-weight:650;letter-spacing:-.01em;margin:0}
-.sub{color:var(--text-secondary);font-size:13px;margin:2px 0 22px}
-button.theme{background:none;border:1px solid var(--border);border-radius:8px;
+.sub{color:var(--text-secondary);font-size:13px;margin:3px 0 22px}
+.hbtns{display:flex;gap:8px}
+button.ghost{background:none;border:1px solid var(--border);border-radius:8px;
   color:var(--text-secondary);padding:5px 11px;cursor:pointer;font:inherit;font-size:12px}
-button.theme:hover{background:var(--surface-1)}
+button.ghost:hover{background:var(--surface-1);color:var(--text-primary)}
 
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:22px}
-.tile{background:var(--surface-1);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.tile{background:var(--surface-1);border:1px solid var(--border);border-radius:12px;padding:13px 15px}
 .tile .label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)}
-.tile .value{font-size:27px;font-weight:600;margin-top:5px;line-height:1.1}
+.tile .value{font-size:26px;font-weight:600;margin-top:4px;line-height:1.1}
 .tile .foot{font-size:12px;color:var(--text-secondary);margin-top:3px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meter{height:4px;border-radius:2px;background:var(--grid);margin-top:8px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--bar);border-radius:2px}
 
-.controls{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
-.controls input[type=search],.controls select{background:var(--surface-1);color:var(--text-primary);
-  border:1px solid var(--border);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px}
-.controls input[type=search]{min-width:230px}
-.chip{border:1px solid var(--border);background:var(--surface-1);border-radius:999px;
-  padding:6px 13px;font-size:12.5px;cursor:pointer;color:var(--text-secondary);user-select:none}
+.panel{background:var(--surface-1);border:1px solid var(--border);border-radius:12px}
+.filters{padding:13px 15px;margin-bottom:16px}
+.frow{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.frow + .frow{margin-top:10px;padding-top:10px;border-top:1px solid var(--grid)}
+.flabel{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);
+  margin-right:2px;white-space:nowrap}
+input[type=search],select,input[type=number]{background:var(--plane);color:var(--text-primary);
+  border:1px solid var(--border);border-radius:8px;padding:6px 9px;font:inherit;font-size:13px}
+input[type=search]{min-width:220px}
+input[type=number]{width:82px}
+select{max-width:260px}
+.chip{border:1px solid var(--border);background:var(--plane);border-radius:999px;
+  padding:5px 12px;font-size:12.5px;cursor:pointer;color:var(--text-secondary);user-select:none}
+.chip:hover{color:var(--text-primary)}
 .chip[aria-pressed="true"]{color:var(--text-primary);font-weight:600;border-color:currentColor}
 .chip[data-sig="sustained"][aria-pressed="true"]{background:var(--tint-1)}
 .chip[data-sig="spike"][aria-pressed="true"]{background:var(--tint-2)}
 .chip[data-sig="breakout"][aria-pressed="true"]{background:var(--tint-3)}
-.count{color:var(--text-muted);font-size:12.5px;margin-left:auto}
+.chip[data-band][aria-pressed="true"]{background:var(--tint-1)}
+.count{color:var(--text-muted);font-size:12.5px;margin-left:auto;white-space:nowrap}
 
-.card{background:var(--surface-1);border:1px solid var(--border);border-radius:12px;overflow:hidden}
-h2{font-size:15px;font-weight:620;margin:30px 0 10px}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+@media (max-width:900px){.charts{grid-template-columns:1fr}}
+.chart{padding:14px 16px 16px}
+.chart h3{font-size:13px;font-weight:620;margin:0 0 2px}
+.chart .cap{font-size:11.5px;color:var(--text-muted);margin:0 0 12px}
+.bars{display:flex;flex-direction:column;gap:2px}
+.brow{display:grid;grid-template-columns:150px 1fr 42px;gap:8px;align-items:center}
+.brow .bl{font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;text-align:right}
+.brow .bt{height:16px;background:var(--bar);border-radius:0 4px 4px 0;min-width:2px}
+.brow .bv{font-size:12px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.brow.empty .bt{background:var(--grid)}
+.chart .none{color:var(--text-muted);font-size:12.5px;padding:12px 0}
+.chead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.seg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex:none}
+.segb{background:var(--plane);border:0;border-right:1px solid var(--border);padding:5px 10px;
+  font:inherit;font-size:12px;color:var(--text-secondary);cursor:pointer}
+.segb:last-child{border-right:0}
+.segb:hover{color:var(--text-primary)}
+.segb[aria-pressed="true"]{background:var(--tint-1);color:var(--text-primary);font-weight:600}
+
+h2{font-size:15px;font-weight:620;margin:28px 0 10px}
 h2 .hint{font-weight:400;color:var(--text-muted);font-size:12.5px;margin-left:8px}
+.tablewrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:8px 11px;border-bottom:1px solid var(--grid);vertical-align:middle}
 thead th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);
-  font-weight:600;white-space:nowrap;cursor:pointer;position:sticky;top:0;background:var(--surface-1);z-index:2}
-thead th:hover{color:var(--text-secondary)}
-thead th[aria-sort]:not([aria-sort=none])::after{content:"";margin-left:5px;opacity:.75}
-thead th[aria-sort=descending]::after{content:"\\2193"}
-thead th[aria-sort=ascending]::after{content:"\\2191"}
+  font-weight:600;white-space:nowrap;position:sticky;top:0;background:var(--surface-1);z-index:2}
+thead th[data-sort]{cursor:pointer}
+thead th[data-sort]:hover{color:var(--text-secondary)}
+thead th[aria-sort=descending]::after{content:"\\2193";margin-left:5px;opacity:.75}
+thead th[aria-sort=ascending]::after{content:"\\2191";margin-left:5px;opacity:.75}
 tbody tr:hover{background:var(--plane)}
 tbody tr:last-child td{border-bottom:none}
 .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.rank{color:var(--text-muted);font-variant-numeric:tabular-nums;width:34px}
-.who{display:flex;gap:10px;align-items:center;min-width:250px}
+.rank{color:var(--text-muted);font-variant-numeric:tabular-nums;width:36px}
+.who{display:flex;gap:10px;align-items:center;min-width:240px}
 .who img{width:32px;height:44px;object-fit:cover;border-radius:4px;background:var(--grid);flex:none}
 .who .nm{font-weight:560;line-height:1.3}
 .who a{color:inherit;text-decoration:none}
@@ -109,30 +149,35 @@ tbody tr:last-child td{border-bottom:none}
 .badge.breakout{color:var(--series-3);border-color:var(--series-3);background:var(--tint-3)}
 .spark{display:block}
 .score{font-variant-numeric:tabular-nums;font-weight:600}
-.scorebar{height:3px;border-radius:2px;background:var(--series-1);margin-top:3px}
-.why{color:var(--text-secondary);font-size:12px;min-width:170px;max-width:230px}
+.scorebar{height:3px;border-radius:2px;background:var(--bar);margin-top:3px}
+.why{color:var(--text-secondary);font-size:12px;min-width:150px;max-width:220px}
 .empty{padding:36px;text-align:center;color:var(--text-muted)}
+.more{display:flex;gap:10px;align-items:center;justify-content:center;padding:14px}
 footer{margin-top:34px;color:var(--text-muted);font-size:12px;line-height:1.7}
 footer code{background:var(--surface-1);border:1px solid var(--border);padding:1px 5px;border-radius:4px}
-@media (max-width:820px){
-  .why,.col-listings{display:none}
-  .wrap{padding:20px 12px 48px}
-}
+@media (max-width:1000px){.why,.col-listings{display:none}}
+@media (max-width:820px){.wrap{padding:20px 12px 48px}.brow{grid-template-columns:110px 1fr 36px}}
 """
 
-JS = """
+JS = r"""
 const DATA = JSON.parse(document.getElementById('radar-data').textContent);
-const state = {q:'', sigs:new Set(), set:'', sort:'score', dir:-1};
+const BANDS = [
+  {key:'u5',   label:'Under $5',   min:0,    max:5},
+  {key:'5-20', label:'$5-20',      min:5,    max:20},
+  {key:'20-100',label:'$20-100',   min:20,   max:100},
+  {key:'o100', label:'$100+',      min:100,  max:Infinity},
+];
+const state = {q:'', sigs:new Set(), bands:new Set(), set:'', rarity:'', type:'', printing:'',
+               min:null, max:null, sort:'score', dir:-1, limit:50, dim:'band'};
 
-const fmtMoney = v => v==null ? '—' : '$' + v.toFixed(2);
-const fmtPct = v => {
-  if (v==null) return '<span class="flat">—</span>';
-  const cls = v > 0.05 ? 'up' : (v < -0.05 ? 'down' : 'flat');
-  const sign = v > 0 ? '+' : '';
-  return `<span class="${cls}">${sign}${v.toFixed(1)}%</span>`;
-};
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = v => v==null ? '—' : '$' + (v>=1000 ? v.toLocaleString(undefined,{maximumFractionDigits:0}) : v.toFixed(2));
+const pct = v => {
+  if (v==null) return '<span class="flat">—</span>';
+  const cls = v > 0.05 ? 'up' : (v < -0.05 ? 'down' : 'flat');
+  return `<span class="${cls}">${v>0?'+':''}${v.toFixed(1)}%</span>`;
+};
 
 function sparkline(series){
   if (!series || series.length < 2) return '<span class="flat">—</span>';
@@ -145,37 +190,31 @@ function sparkline(series){
     const y = h-p - ((d[1]-lo)/span)*(h-2*p);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
-  const last = series[series.length-1];
-  const lx = w-p, ly = h-p - ((last[1]-lo)/span)*(h-2*p);
-  const rising = ys[ys.length-1] >= ys[0];
+  const lx = w-p, ly = h-p - ((ys[ys.length-1]-lo)/span)*(h-2*p);
+  const dir = ys[ys.length-1] >= ys[0] ? 'rising' : 'falling';
   return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img"
-    aria-label="${series.length} points, ${rising?'rising':'falling'}, latest $${last[1].toFixed(2)}">
+    aria-label="${series.length} points, ${dir}, latest $${ys[ys.length-1].toFixed(2)}">
     <polyline points="${pts}" fill="none" stroke="var(--series-1)" stroke-width="2"
       stroke-linejoin="round" stroke-linecap="round"/>
     <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.5" fill="var(--series-1)"
-      stroke="var(--surface-1)" stroke-width="2"/>
-  </svg>`;
+      stroke="var(--surface-1)" stroke-width="2"/></svg>`;
 }
 
 function rowHTML(r, i){
   const badges = (r.signals||[]).map(s=>`<span class="badge ${s}">${s}</span>`).join('');
   const url = r.tcgplayer_url || (r.tcgplayer_id ? 'https://www.tcgplayer.com/product/'+r.tcgplayer_id : null);
-  const nameCell = url
-    ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(r.name)}</a>`
-    : esc(r.name);
-  const img = r.image_url
-    ? `<img src="${esc(r.image_url)}" alt="" loading="lazy" decoding="async">` : '<img alt="">';
-  const printing = r.printing && r.printing!=='Normal' ? ' · '+esc(r.printing) : '';
+  const nm = url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(r.name)}</a>` : esc(r.name);
+  const img = r.image_url ? `<img src="${esc(r.image_url)}" alt="" loading="lazy" decoding="async">` : '<img alt="">';
+  const meta = [r.set_name, r.number, r.rarity, r.printing!=='Normal'?r.printing:null]
+    .filter(Boolean).map(esc).join(' · ');
   return `<tr>
     <td class="rank">${i+1}</td>
-    <td><div class="who">${img}<div>
-      <div class="nm">${nameCell}</div>
-      <div class="meta">${esc(r.set_name||'')}${r.number?' · '+esc(r.number):''}${r.rarity?' · '+esc(r.rarity):''}${printing}</div>
-    </div></div></td>
-    <td class="num">${fmtMoney(r.market_price)}</td>
-    <td class="num">${fmtPct(r.change_24h)}</td>
-    <td class="num">${fmtPct(r.change_7d)}</td>
-    <td class="num">${fmtPct(r.change_30d)}</td>
+    <td><div class="who">${img}<div><div class="nm">${nm}</div>
+      <div class="meta">${meta}</div></div></div></td>
+    <td class="num">${money(r.market_price)}</td>
+    <td class="num">${pct(r.change_24h)}</td>
+    <td class="num">${pct(r.change_7d)}</td>
+    <td class="num">${pct(r.change_30d)}</td>
     <td>${sparkline(r.series)}</td>
     <td class="num col-listings">${r.total_listings==null?'—':r.total_listings}</td>
     <td><div class="badges">${badges}</div></td>
@@ -186,65 +225,163 @@ function rowHTML(r, i){
 }
 
 const SORTERS = {
-  score: r=>r.score, price: r=>r.market_price ?? -1,
-  c24: r=>r.change_24h ?? -1e9, c7: r=>r.change_7d ?? -1e9, c30: r=>r.change_30d ?? -1e9,
-  listings: r=>r.total_listings ?? -1, name: r=>(r.name||'').toLowerCase()
+  score:r=>r.score, price:r=>r.market_price ?? -1, c24:r=>r.change_24h ?? -1e9,
+  c7:r=>r.change_7d ?? -1e9, c30:r=>r.change_30d ?? -1e9,
+  listings:r=>r.total_listings ?? -1, name:r=>(r.name||'').toLowerCase(),
 };
 
-function apply(){
+function inBands(r){
+  if (!state.bands.size) return true;
+  const p = r.market_price;
+  if (p == null) return false;
+  return [...state.bands].some(k=>{ const b = BANDS.find(x=>x.key===k); return p>=b.min && p<b.max; });
+}
+
+function filtered(){
   const q = state.q.trim().toLowerCase();
-  let rows = DATA.rows.filter(r=>{
-    if (q && !((r.name||'').toLowerCase().includes(q) ||
-               (r.set_name||'').toLowerCase().includes(q) ||
-               (r.number||'').toLowerCase().includes(q))) return false;
+  return DATA.rows.filter(r=>{
+    if (q && !((r.name||'').toLowerCase().includes(q) || (r.set_name||'').toLowerCase().includes(q)
+               || (r.number||'').toLowerCase().includes(q))) return false;
     if (state.set && r.set_name !== state.set) return false;
+    if (state.rarity && (r.rarity||'—') !== state.rarity) return false;
+    if (state.type && r.product_type !== state.type) return false;
+    if (state.printing && r.printing !== state.printing) return false;
+    if (state.min != null && !(r.market_price >= state.min)) return false;
+    if (state.max != null && !(r.market_price <= state.max)) return false;
+    if (!inBands(r)) return false;
     if (state.sigs.size && !(r.signals||[]).some(s=>state.sigs.has(s))) return false;
     return true;
   });
+}
+
+function barChart(el, entries, caption){
+  if (!entries.length){ el.innerHTML = '<p class="none">Nothing in view.</p>'; return; }
+  const max = Math.max(...entries.map(e=>e[1])) || 1;
+  el.innerHTML = entries.map(([label, v])=>`
+    <div class="brow${v?'':' empty'}">
+      <span class="bl" title="${esc(label)}">${esc(label)}</span>
+      <span class="bt" style="width:${Math.max(2,(v/max)*100)}%"></span>
+      <span class="bv">${v}</span>
+    </div>`).join('');
+}
+
+function drawCharts(rows){
+  const bySet = {};
+  rows.forEach(r=>{ const k=r.set_name||'—'; bySet[k]=(bySet[k]||0)+1; });
+  const setEntries = Object.entries(bySet).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  barChart(document.getElementById('chart-sets'), setEntries);
+
+  let entries;
+  if (state.dim === 'band'){
+    entries = BANDS.map(b=>[b.label, rows.filter(r=>r.market_price>=b.min && r.market_price<b.max).length]);
+  } else {
+    const key = state.dim === 'rarity' ? 'rarity' : 'printing';
+    const g = {};
+    rows.forEach(r=>{ const k=r[key]||'—'; g[k]=(g[k]||0)+1; });
+    entries = Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  }
+  barChart(document.getElementById('chart-bands'), entries);
+}
+
+function apply(){
+  let rows = filtered();
   const key = SORTERS[state.sort] || SORTERS.score;
-  rows.sort((a,b)=>{
-    const av=key(a), bv=key(b);
-    if (av===bv) return 0;
-    return (av>bv?1:-1) * state.dir;
-  });
-  document.getElementById('tbody').innerHTML = rows.length
-    ? rows.map(rowHTML).join('')
+  rows.sort((a,b)=>{ const av=key(a), bv=key(b); return av===bv ? 0 : (av>bv?1:-1)*state.dir; });
+
+  drawCharts(rows);
+
+  const shown = rows.slice(0, state.limit);
+  document.getElementById('tbody').innerHTML = shown.length
+    ? shown.map(rowHTML).join('')
     : '<tr><td colspan="11" class="empty">Nothing matches those filters.</td></tr>';
+
   document.getElementById('count').textContent =
-    `${rows.length} of ${DATA.rows.length} shown`;
+    `${shown.length ? '1–'+shown.length : '0'} of ${rows.length} matching · ${DATA.rows.length} tracked`;
+
+  const more = document.getElementById('more');
+  if (rows.length > shown.length){
+    more.style.display = 'flex';
+    document.getElementById('more-n').textContent = Math.min(50, rows.length - shown.length);
+    document.getElementById('more-all').textContent = `Show all ${rows.length}`;
+  } else { more.style.display = 'none'; }
+
   document.querySelectorAll('thead th[data-sort]').forEach(th=>{
     th.setAttribute('aria-sort', th.dataset.sort===state.sort
       ? (state.dir===-1?'descending':'ascending') : 'none');
   });
+  window.__view = rows;
 }
 
-document.getElementById('q').addEventListener('input', e=>{state.q=e.target.value; apply();});
-document.getElementById('setfilter').addEventListener('change', e=>{state.set=e.target.value; apply();});
-document.querySelectorAll('.chip[data-sig]').forEach(c=>{
-  c.addEventListener('click', ()=>{
-    const s=c.dataset.sig;
-    if (state.sigs.has(s)) state.sigs.delete(s); else state.sigs.add(s);
-    c.setAttribute('aria-pressed', state.sigs.has(s));
-    apply();
-  });
-});
-document.querySelectorAll('thead th[data-sort]').forEach(th=>{
-  th.addEventListener('click', ()=>{
-    const k=th.dataset.sort;
-    if (state.sort===k) state.dir*=-1; else {state.sort=k; state.dir = k==='name' ? 1 : -1;}
-    apply();
-  });
-});
+function reset(){
+  Object.assign(state, {q:'', sigs:new Set(), bands:new Set(), set:'', rarity:'', type:'',
+                        printing:'', min:null, max:null, limit:50});
+  document.getElementById('q').value = '';
+  ['setfilter','rarityfilter','typefilter','printfilter'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('minp').value = '';
+  document.getElementById('maxp').value = '';
+  document.querySelectorAll('.chip').forEach(c=>c.setAttribute('aria-pressed','false'));
+  apply();
+}
+
+function exportCSV(){
+  const cols = ['score','name','set_name','number','rarity','printing','product_type','market_price',
+                'change_24h','change_7d','change_30d','total_listings','signals','tcgplayer_url'];
+  const esc2 = v => {
+    const s = Array.isArray(v) ? v.join('|') : (v==null?'':String(v));
+    return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  };
+  const body = [cols.join(',')].concat((window.__view||[]).map(r=>cols.map(c=>esc2(r[c])).join(','))).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([body], {type:'text/csv'}));
+  a.download = `gundam-radar-${DATA.obs_date}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+document.getElementById('q').addEventListener('input', e=>{state.q=e.target.value; state.limit=50; apply();});
+[['setfilter','set'],['rarityfilter','rarity'],['typefilter','type'],['printfilter','printing']]
+  .forEach(([id,k])=>document.getElementById(id)
+    .addEventListener('change', e=>{state[k]=e.target.value; state.limit=50; apply();}));
+['minp','maxp'].forEach((id,i)=>document.getElementById(id).addEventListener('input', e=>{
+  const v = e.target.value === '' ? null : Number(e.target.value);
+  state[i===0?'min':'max'] = (v==null || Number.isNaN(v)) ? null : v;
+  state.limit=50; apply();
+}));
+document.querySelectorAll('.chip[data-sig]').forEach(c=>c.addEventListener('click', ()=>{
+  const s=c.dataset.sig;
+  state.sigs.has(s) ? state.sigs.delete(s) : state.sigs.add(s);
+  c.setAttribute('aria-pressed', state.sigs.has(s)); state.limit=50; apply();
+}));
+document.querySelectorAll('.chip[data-band]').forEach(c=>c.addEventListener('click', ()=>{
+  const b=c.dataset.band;
+  state.bands.has(b) ? state.bands.delete(b) : state.bands.add(b);
+  c.setAttribute('aria-pressed', state.bands.has(b)); state.limit=50; apply();
+}));
+document.querySelectorAll('thead th[data-sort]').forEach(th=>th.addEventListener('click', ()=>{
+  const k=th.dataset.sort;
+  if (state.sort===k) state.dir*=-1; else {state.sort=k; state.dir = k==='name' ? 1 : -1;}
+  apply();
+}));
+document.querySelectorAll('.segb').forEach(b=>b.addEventListener('click', ()=>{
+  state.dim = b.dataset.dim;
+  document.querySelectorAll('.segb').forEach(x=>x.setAttribute('aria-pressed', x===b));
+  apply();
+}));
+document.getElementById('more-btn').addEventListener('click', ()=>{state.limit+=50; apply();});
+document.getElementById('more-all').addEventListener('click', ()=>{state.limit=1e9; apply();});
+document.getElementById('reset').addEventListener('click', reset);
+document.getElementById('csv').addEventListener('click', exportCSV);
+
 const themeBtn = document.getElementById('theme');
 const osDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
 if (!document.documentElement.getAttribute('data-theme'))
   themeBtn.textContent = osDark ? 'Light mode' : 'Dark mode';
 themeBtn.addEventListener('click', ()=>{
-  const cur = document.documentElement.getAttribute('data-theme');
-  const next = cur==='dark' ? 'light' : 'dark';
+  const next = document.documentElement.getAttribute('data-theme')==='dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
   themeBtn.textContent = next==='dark' ? 'Light mode' : 'Dark mode';
 });
+
 apply();
 """
 
@@ -255,8 +392,9 @@ def _row_payload(r: dict) -> dict:
         "name": r.get("name"),
         "set_name": r.get("set_name"),
         "number": r.get("number"),
-        "rarity": r.get("rarity"),
-        "printing": r.get("printing"),
+        "rarity": r.get("rarity") or "—",
+        "printing": r.get("printing") or "Normal",
+        "product_type": r.get("product_type") or "Cards",
         "image_url": r.get("image_url"),
         "tcgplayer_id": r.get("tcgplayer_id"),
         "tcgplayer_url": r.get("tcgplayer_url"),
@@ -273,55 +411,85 @@ def _row_payload(r: dict) -> dict:
     }
 
 
+def _esc(s: Any) -> str:
+    return (
+        str("" if s is None else s)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _options(values: Sequence[str], label: str) -> str:
+    opts = "".join(f'<option value="{_esc(v)}">{_esc(v)}</option>' for v in values)
+    return f'<option value="">{_esc(label)}</option>{opts}'
+
+
 def render(
     ranked: Sequence[dict],
     *,
     obs_date: str,
     stats: dict[str, Any],
-    top_n: int = 60,
+    top_n: int = 400,
     fallers: Sequence[dict] = (),
     watchlist: Sequence[dict] = (),
+    market: dict[str, Any] | None = None,
+    scope_note: str = "",
 ) -> str:
-    flagged = [r for r in ranked if r.get("signals")]
-    shown = flagged[:top_n]
-    if not shown:
-        shown = [r for r in ranked if not r.get("filtered")][:top_n]
+    """`top_n` caps how many rows are embedded; the page itself pages through them."""
+    market = market or {}
+    scored = [r for r in ranked if not r.get("filtered")]
+    flagged = [r for r in scored if r.get("signals")]
 
-    rows = [_row_payload(r) for r in shown]
-    watch_rows = [_row_payload(r) for r in watchlist]
-    fall_rows = [_row_payload(r) for r in fallers]
+    # Embed flagged first, then the rest of the scored rows up to the cap, so the
+    # table can be browsed past the calls without a second file.
+    ordered = flagged + [r for r in scored if not r.get("signals")]
+    rows = [_row_payload(r) for r in ordered[:top_n]]
 
     n_sus = sum(1 for r in flagged if "sustained" in r["signals"])
     n_spk = sum(1 for r in flagged if "spike" in r["signals"])
     n_brk = sum(1 for r in flagged if "breakout" in r["signals"])
     top = flagged[0] if flagged else None
 
-    set_names = sorted({r["set_name"] for r in rows if r.get("set_name")})
-    set_options = "".join(f'<option value="{_esc(s)}">{_esc(s)}</option>' for s in set_names)
+    sets = sorted({r["set_name"] for r in rows if r.get("set_name")})
+    rarities = sorted({r["rarity"] for r in rows if r.get("rarity")})
+    printings = sorted({r["printing"] for r in rows if r.get("printing")})
+    types = sorted({r["product_type"] for r in rows if r.get("product_type")})
 
-    # Escape the angle brackets/ampersands so card text can never break out of
-    # the <script> block (a card named "</script>" would otherwise be an XSS).
+    breadth_up = market.get("up_7d")
+    breadth_total = market.get("priced")
+    breadth_pct = (
+        round(100 * breadth_up / breadth_total) if breadth_up and breadth_total else None
+    )
+
     payload = (
-        json.dumps({"rows": rows}, separators=(",", ":"))
+        json.dumps({"rows": rows, "obs_date": obs_date}, separators=(",", ":"))
         .replace("&", "\\u0026")
         .replace("<", "\\u003c")
         .replace(">", "\\u003e")
     )
 
-    def table(title: str, hint: str, data: Sequence[dict], tid: str) -> str:
+    def static_table(title: str, hint: str, data: Sequence[dict]) -> str:
         if not data:
             return ""
-        body = "".join(
-            _static_row(r, i) for i, r in enumerate(data)
-        )
+        body = "".join(_static_row(r, i) for i, r in enumerate(data))
         return f"""
   <h2>{_esc(title)}<span class="hint">{_esc(hint)}</span></h2>
-  <div class="card"><table id="{tid}"><thead><tr>
+  <div class="panel tablewrap"><table><thead><tr>
     <th class="rank">#</th><th>Card</th><th class="num">Market</th>
     <th class="num">24h</th><th class="num">7d</th><th class="num">30d</th>
     <th>Trend</th><th class="num col-listings">Listings</th><th>Signals</th>
     <th class="num">Score</th><th class="why">Note</th>
   </tr></thead><tbody>{body}</tbody></table></div>"""
+
+    breadth_tile = ""
+    if breadth_pct is not None:
+        breadth_tile = f"""
+  <div class="tile"><div class="label">Market breadth</div>
+    <div class="value">{breadth_pct}%</div>
+    <div class="foot">{breadth_up:,} of {breadth_total:,} up over 7d</div>
+    <div class="meter"><i style="width:{breadth_pct}%"></i></div></div>"""
 
     return f"""<!doctype html>
 <html lang="en" class="viz-root">
@@ -336,37 +504,77 @@ def render(
 <header>
   <div>
     <h1>Gundam Price Radar</h1>
-    <p class="sub">Market snapshot {_esc(obs_date)} · {stats.get('cards', 0):,} products tracked ·
-      {stats.get('snapshot_dates', 0)} day{'' if stats.get('snapshot_dates', 0) == 1 else 's'} of own snapshots · source: tcgapi.dev</p>
+    <p class="sub">Market snapshot {_esc(obs_date)} · {len(rows):,} products in view ·
+      {stats.get('snapshot_dates', 0)} day{'' if stats.get('snapshot_dates', 0) == 1 else 's'}
+      of own snapshots · source: tcgapi.dev{(' · ' + _esc(scope_note)) if scope_note else ''}</p>
   </div>
-  <button class="theme" id="theme">Dark mode</button>
+  <div class="hbtns">
+    <button class="ghost" id="csv">Export CSV</button>
+    <button class="ghost" id="theme">Dark mode</button>
+  </div>
 </header>
 
 <div class="tiles">
   <div class="tile"><div class="label">Cards flagged</div>
     <div class="value">{len(flagged)}</div>
-    <div class="foot">out of {sum(1 for r in ranked if not r.get('filtered')):,} that cleared the filters</div></div>
+    <div class="foot">of {len(scored):,} that cleared the filters</div></div>
   <div class="tile"><div class="label">Sustained climb</div>
     <div class="value">{n_sus}</div><div class="foot">up over 7d and 30d</div></div>
   <div class="tile"><div class="label">24h spike</div>
     <div class="value">{n_spk}</div><div class="foot">sudden jump today</div></div>
   <div class="tile"><div class="label">Breakout</div>
-    <div class="value">{n_brk}</div><div class="foot">above its own 90-day high</div></div>
+    <div class="value">{n_brk}</div><div class="foot">above its own prior range</div></div>
   <div class="tile"><div class="label">Top mover</div>
     <div class="value">{(f"{top['change_7d']:+.0f}%" if top and top.get('change_7d') is not None else '—')}</div>
-    <div class="foot">{_esc(top['name']) if top else 'nothing flagged today'}</div></div>
+    <div class="foot">{_esc(top['name']) if top else 'nothing flagged today'}</div></div>{breadth_tile}
 </div>
 
-<div class="controls">
-  <input type="search" id="q" placeholder="Search card, set or number…" aria-label="Search">
-  <select id="setfilter" aria-label="Filter by set"><option value="">All sets</option>{set_options}</select>
-  <button class="chip" data-sig="sustained" aria-pressed="false">Sustained</button>
-  <button class="chip" data-sig="spike" aria-pressed="false">Spike</button>
-  <button class="chip" data-sig="breakout" aria-pressed="false">Breakout</button>
-  <span class="count" id="count"></span>
+<div class="panel filters">
+  <div class="frow">
+    <input type="search" id="q" placeholder="Search card, set or number…" aria-label="Search">
+    <select id="setfilter" aria-label="Set">{_options(sets, 'All sets')}</select>
+    <select id="rarityfilter" aria-label="Rarity">{_options(rarities, 'All rarities')}</select>
+    <select id="printfilter" aria-label="Printing">{_options(printings, 'All printings')}</select>
+    <select id="typefilter" aria-label="Product type">{_options(types, 'Cards + sealed')}</select>
+    <button class="ghost" id="reset">Reset</button>
+  </div>
+  <div class="frow">
+    <span class="flabel">Value</span>
+    <button class="chip" data-band="u5" aria-pressed="false">Under $5</button>
+    <button class="chip" data-band="5-20" aria-pressed="false">$5–20</button>
+    <button class="chip" data-band="20-100" aria-pressed="false">$20–100</button>
+    <button class="chip" data-band="o100" aria-pressed="false">$100+</button>
+    <input type="number" id="minp" placeholder="min $" min="0" step="0.5" aria-label="Minimum price">
+    <input type="number" id="maxp" placeholder="max $" min="0" step="0.5" aria-label="Maximum price">
+    <span class="flabel" style="margin-left:12px">Signal</span>
+    <button class="chip" data-sig="sustained" aria-pressed="false">Sustained</button>
+    <button class="chip" data-sig="spike" aria-pressed="false">Spike</button>
+    <button class="chip" data-sig="breakout" aria-pressed="false">Breakout</button>
+    <span class="count" id="count"></span>
+  </div>
 </div>
 
-<div class="card"><table><thead><tr>
+<div class="charts">
+  <div class="panel chart">
+    <h3>Where the movement is</h3>
+    <p class="cap">Products in view, by set — top 10. Updates with the filters.</p>
+    <div class="bars" id="chart-sets"></div>
+  </div>
+  <div class="panel chart">
+    <div class="chead">
+      <div><h3>Breakdown</h3>
+      <p class="cap">Where in the market the action sits.</p></div>
+      <div class="seg" role="group" aria-label="Breakdown dimension">
+        <button class="segb" data-dim="band" aria-pressed="true">Price band</button>
+        <button class="segb" data-dim="rarity" aria-pressed="false">Rarity</button>
+        <button class="segb" data-dim="printing" aria-pressed="false">Printing</button>
+      </div>
+    </div>
+    <div class="bars" id="chart-bands"></div>
+  </div>
+</div>
+
+<div class="panel tablewrap"><table><thead><tr>
   <th class="rank">#</th>
   <th data-sort="name">Card</th>
   <th class="num" data-sort="price">Market</th>
@@ -378,32 +586,27 @@ def render(
   <th>Signals</th>
   <th class="num" data-sort="score" aria-sort="descending">Score</th>
   <th class="why">Note</th>
-</tr></thead><tbody id="tbody"></tbody></table></div>
+</tr></thead><tbody id="tbody"></tbody></table>
+<div class="more" id="more" style="display:none">
+  <button class="ghost" id="more-btn">Show <span id="more-n">50</span> more</button>
+  <button class="ghost" id="more-all">Show all</button>
+</div></div>
 
-{table("Watchlist", "tracked regardless of score", watch_rows, "watch")}
-{table("Biggest fallers", "context — and where dips show up", fall_rows, "fallers")}
+{static_table("Watchlist", "tracked regardless of score", [_row_payload(r) for r in watchlist])}
+{static_table("Biggest fallers", "context — and where dips show up", [_row_payload(r) for r in fallers])}
 
 <footer>
   <p><strong>Reading this:</strong> Score is a 0–100 blend of the three detectors, nudged up for
   higher-priced cards and cards with recorded sales. It ranks attention, not conviction.
-  Trend sparklines mix weekly API history with your own daily snapshots, so they get denser
-  the longer you run it.</p>
-  <p>Tune thresholds in <code>config.yaml</code> · regenerate with <code>python -m radar sync &amp;&amp; python -m radar report</code></p>
+  Trend sparklines mix API history with your own daily snapshots, so they get denser the longer
+  you run it. Export CSV writes exactly what the current filters show.</p>
+  <p>Tune thresholds in <code>config.yaml</code> · regenerate with
+  <code>python -m radar run</code></p>
 </footer>
 </div>
 <script type="application/json" id="radar-data">{payload}</script>
 <script>{JS}</script>
 </body></html>"""
-
-
-def _esc(s: Any) -> str:
-    return (
-        str("" if s is None else s)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
 
 
 def _spark_svg(series: Sequence[Sequence[Any]]) -> str:
@@ -434,8 +637,6 @@ def _spark_svg(series: Sequence[Sequence[Any]]) -> str:
 
 
 def _static_row(r: dict, i: int) -> str:
-    """Server-rendered row for the secondary tables (no JS filtering there)."""
-
     def pct(v: Any) -> str:
         if v is None:
             return '<span class="flat">—</span>'
@@ -457,15 +658,18 @@ def _static_row(r: dict, i: int) -> str:
     )
     badges = "".join(f'<span class="badge {s}">{s}</span>' for s in r.get("signals", []))
     mp = r.get("market_price")
-    printing = f' · {_esc(r.get("printing"))}' if r.get("printing") not in (None, "Normal") else ""
+    printing = r.get("printing")
     meta = " · ".join(
-        x for x in [_esc(r.get("set_name")), _esc(r.get("number")), _esc(r.get("rarity"))] if x
+        _esc(x)
+        for x in [r.get("set_name"), r.get("number"), r.get("rarity"),
+                  printing if printing not in (None, "Normal") else None]
+        if x
     )
     return f"""<tr>
   <td class="rank">{i + 1}</td>
   <td><div class="who">{img}<div><div class="nm">{name}</div>
-    <div class="meta">{meta}{printing}</div></div></div></td>
-  <td class="num">{'—' if mp is None else f'${mp:.2f}'}</td>
+    <div class="meta">{meta}</div></div></div></td>
+  <td class="num">{'—' if mp is None else f'${mp:,.2f}'}</td>
   <td class="num">{pct(r.get('change_24h'))}</td>
   <td class="num">{pct(r.get('change_7d'))}</td>
   <td class="num">{pct(r.get('change_30d'))}</td>
