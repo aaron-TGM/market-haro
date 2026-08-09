@@ -1,0 +1,75 @@
+# gundam-price-radar configuration
+# All tuning lives here so you can change what the radar flags without touching code.
+# Values below were sanity-checked against live tcgapi.dev data (Aug 2026).
+
+api:
+  base_url: https://api.tcgapi.dev/v1
+  game_slug: gundam-card-game     # verified live; `radar games` re-checks it
+  daily_request_budget: 10000     # Pro plan
+  reserve_requests: 500           # headroom left for ad-hoc lookups
+  timeout_seconds: 30
+  max_retries: 4
+
+ingest:
+  # Track sealed too -- booster box / case movement often leads singles.
+  include_sealed: true
+  # Printings seen in this game: Normal, Foil, Holofoil. Empty list = all.
+  printings: []
+  # Backfill history so breakout detection works from day one, before you've
+  # accumulated your own daily snapshots. Measured granularity (Aug 2026):
+  #   month   ~30 pts, daily        quarter ~81 pts, daily
+  #   year   ~126 pts, weekly       all    ~143 pts, weekly, back to 2025-04
+  # `quarter` is the sweet spot: daily resolution across the 90-day breakout
+  # window. Run `radar backfill --range all` once for the long baseline.
+  history_backfill_min_price: 3.00
+  history_backfill_range: quarter
+  history_requests_per_run: 400   # cap so a first sync can't eat the day's budget
+
+signals:
+  # Percentage moves on sub-dollar cards are mostly rounding noise.
+  min_market_price: 1.00
+  # Thin listings make a "price" meaningless. 0 disables the check.
+  min_listings: 2
+
+  sustained:
+    # Up over BOTH windows = a trend, not a blip.
+    min_change_7d: 8.0
+    min_change_30d: 15.0
+
+  spike:
+    min_change_24h: 12.0
+    # ...but ignore a spike that's already giving it back over the week.
+    min_change_7d: 0.0
+
+  breakout:
+    lookback_days: 90
+    # Ignore the last N days when working out the "old range". Without this,
+    # every day of a climb beats yesterday and the signal fires constantly.
+    exclude_recent_days: 7
+    margin_pct: 3.0
+    min_history_points: 5
+
+  scoring:
+    weight_sustained: 0.45
+    weight_spike: 0.25
+    weight_breakout: 0.30
+    # A $40 card moving 20% deserves more attention than a $1.50 card moving 20%.
+    price_bonus_ceiling: 50.0
+    price_bonus_max: 8.0
+    # Cards with recorded sales are more trustworthy than quiet listings.
+    volume_bonus_max: 6.0
+
+report:
+  top_n: 60
+  output_path: out/dashboard.html
+  write_json: true
+  write_csv: true
+  # Also show the biggest fallers -- useful for spotting buy dips.
+  include_fallers: 15
+
+# Always shown on the dashboard regardless of score.
+# Use the number from a tcgplayer.com/product/<id>/ URL.
+watchlist:
+  tcgplayer_ids:
+    - 684008   # Giant Killing -- Starter Deck 09: Destiny Ignition
+    - 707579   # Amuro Ray R+ -- Freedom Ascension

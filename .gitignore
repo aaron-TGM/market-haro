@@ -1,0 +1,28 @@
+# secrets
+.env
+*.key
+
+# data + generated output
+data/
+out/
+*.db
+*.sqlite3
+*.sqlite3-journal
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+.mypy_cache/
+
+# os
+.DS_Store
+Thumbs.db
+
+# node (screenshot tooling only, not part of the project)
+node_modules/
+package.json
+package-lock.json
