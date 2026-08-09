@@ -313,76 +313,102 @@ def test_sealed_can_be_excluded():
         db.close()
 
 
-def test_snipe_discount_and_squeeze():
-    """Live floor vs. batch market splits into the two setups, with real numbers."""
+def test_snipe_undercut_uses_live_shelf_not_stale_market():
+    """The signal is cheapest-vs-median from one live call, not vs the batch price.
+
+    Field choice is pinned deliberately: `lowest_with_shipping` matched TCGplayer's
+    displayed "As low as" on products 673480 ($8.00) and 641452 ($49.99), while
+    `low_price` did not ($2.81 and $49.99). Using low_price produced fake 70%
+    discounts on cards you could not buy at that price.
+    """
     from radar import snipe
 
-    cfg = {"min_gap_pct": 8.0, "max_copies": 40, "weight_gap": 0.55,
-           "weight_scarcity": 0.25, "weight_momentum": 0.20}
+    cfg = {"min_undercut_pct": 40.0, "min_squeeze_pct": 8.0, "max_copies": 40,
+           "weight_gap": 0.55, "weight_scarcity": 0.25, "weight_momentum": 0.20}
     rows = [
-        # Silver Bullet, captured live 2026-08-09: $4.58 market, $1.20 floor, 29 copies.
-        dict(card_id="689710", printing="Holofoil", name="Silver Bullet",
-             market_price=4.58, change_7d=115.0, change_24h=0.0),
-        # Wing Gundam: floor $19.99 on ONE copy against a $3.56 batch price.
+        # Gundam (LR+), live: one copy at $49.99, next at $161.94, median $180.75.
+        dict(card_id="641452", printing="Holofoil", name="Gundam (LR+)",
+             market_price=159.88, change_7d=15.0, change_24h=0.0),
+        # Barbatos Adapt: $8.00 cheapest vs $10.87 median -- normal spread, no snipe,
+        # even though the stale market price of $9.46 makes it look like a discount.
+        dict(card_id="673480", printing="Holofoil", name="Gundam Barbatos Adapt",
+             market_price=9.46, change_7d=114.0, change_24h=-2.0),
+        # Wing Gundam: whole shelf far above the recorded price, one copy left.
         dict(card_id="616646", printing="Normal", name="Wing Gundam",
              market_price=3.56, change_7d=20.0, change_24h=0.0),
-        # Improved Technique: floor $5.00 vs $5.23 market -- inside the noise band.
-        dict(card_id="673508", printing="Holofoil", name="Improved Technique",
-             market_price=5.23, change_7d=26.0, change_24h=0.0),
-        # No floor pulled for this one at all.
-        dict(card_id="999999", printing="Normal", name="Unknown",
+        dict(card_id="999999", printing="Normal", name="No shelf pulled",
              market_price=10.0, change_7d=50.0, change_24h=0.0),
     ]
     floors = {
-        ("689710", "Holofoil"): {"floor_low": 1.20, "floor_ship": 5.00, "copies": 29},
-        ("616646", "Normal"): {"floor_low": 19.99, "floor_ship": 22.98, "copies": 1},
-        ("673508", "Holofoil"): {"floor_low": 5.00, "floor_ship": 5.99, "copies": 34},
+        ("641452", "Holofoil"): {"floor_low": 49.99, "shelf_med": 180.75, "copies": 16},
+        ("673480", "Holofoil"): {"floor_low": 8.00, "shelf_med": 10.87, "copies": 27},
+        ("616646", "Normal"):   {"floor_low": 22.98, "shelf_med": 23.50, "copies": 1},
     }
     out = {r["card_id"]: r for r in snipe.score(rows, floors, cfg)}
 
-    assert out["689710"]["snipe_mode"] == "discount"
-    assert round(out["689710"]["gap_pct"]) == 74
-    assert "74% under market at $1.20" in snipe.explain(out["689710"])
+    assert out["641452"]["snipe_mode"] == "undercut"
+    assert round(out["641452"]["undercut_pct"]) == 72
+    assert "below the shelf" in snipe.explain(out["641452"])
+
+    # The one that used to be a fake 70% "discount" is correctly nothing now.
+    assert out["673480"]["snipe_mode"] is None, "26% below median is an ordinary spread"
+    assert round(out["673480"]["undercut_pct"]) == 26
+    assert out["673480"]["floor_low"] == 8.00, "floor must be the shipping-inclusive figure"
 
     assert out["616646"]["snipe_mode"] == "squeeze"
-    assert out["616646"]["floor_multiple"] == 5.62      # 19.99 / 3.56
-    assert "5.6x the recorded price" in snipe.explain(out["616646"])
-    assert "1 left" in snipe.explain(out["616646"])
+    assert out["616646"]["floor_multiple"] == 6.46
+    assert "1 listed" in snipe.explain(out["616646"])
 
-    # Inside the noise band -> not a setup, but the floor is still attached.
-    assert out["673508"]["snipe_mode"] is None
-    assert out["673508"]["floor_low"] == 5.00
-    assert out["673508"]["snipe_score"] < out["689710"]["snipe_score"]
-
-    # No floor data -> untouched, and sorted below anything with a setup.
     assert out["999999"]["snipe_mode"] is None
     assert out["999999"].get("floor_low") is None
 
-    # Thin supply must outrank deep supply at a comparable gap.
+    # Thin supply outranks deep supply at the same undercut.
     thin = dict(card_id="a", printing="Normal", name="Thin", market_price=10.0, change_7d=20.0)
     deep = dict(card_id="b", printing="Normal", name="Deep", market_price=10.0, change_7d=20.0)
-    f2 = {("a", "Normal"): {"floor_low": 5.0, "copies": 3},
-          ("b", "Normal"): {"floor_low": 5.0, "copies": 40}}
+    f2 = {("a", "Normal"): {"floor_low": 5.0, "shelf_med": 10.0, "copies": 3},
+          ("b", "Normal"): {"floor_low": 5.0, "shelf_med": 10.0, "copies": 40}}
     ranked = snipe.score([thin, deep], f2, cfg)
     assert ranked[0]["card_id"] == "a", ranked
+
+    assert "priced that way for a reason" in snipe.risk({"snipe_mode": "undercut"})
+    assert "own the top" in snipe.risk({"snipe_mode": "squeeze"})
+
+
+def test_snipe_never_uses_low_price_as_the_floor():
+    """Regression guard for the field that produced fake discounts."""
+    from radar import snipe
+
+    class FakeClient:
+        requests_made = 0
+        budget_left = 10
+        def get(self, path, **kw):
+            return [{"printing": "Holofoil", "condition": "Near Mint",
+                     "low_price": 2.81,               # not the buyable price
+                     "lowest_with_shipping": 8.00,    # matches the TCGplayer page
+                     "median_with_shipping": 10.87, "sample_count": 27}]
+
+    floor = snipe.fetch_floor(FakeClient(), 673480, "Holofoil")
+    assert floor["floor_low"] == 8.00
+    assert floor["shelf_med"] == 10.87
+    assert floor["low_ex_ship"] == 2.81, "kept for reference"
+    assert floor["copies"] == 27
 
 
 def test_snipe_board_renders_gaps_readably():
     """A squeeze shows as a multiple; -462% is technically true and useless."""
     from radar import dashboard, snipe
 
-    cfg = {"min_gap_pct": 8.0, "max_copies": 40}
+    cfg = {"min_undercut_pct": 40.0, "min_squeeze_pct": 8.0, "max_copies": 40}
     rows = [dict(card_id="616646", printing="Normal", name="Wing Gundam",
                  set_name="Edition Beta", number="GD01-040", market_price=3.56,
                  change_7d=20.0, tcgplayer_id=616646, signals=[], score=0.0)]
-    floors = {("616646", "Normal"): {"floor_low": 19.99, "floor_ship": 22.98, "copies": 1}}
+    floors = {("616646", "Normal"): {"floor_low": 22.98, "shelf_med": 23.50, "copies": 1}}
     scored = snipe.score(rows, floors, cfg)
     html = dashboard.render(scored, obs_date="2026-08-09", stats={"snapshot_dates": 1},
                             snipe_board=scored, thin_supply=12)
     assert "Snipe board" in html
-    assert "5.6&times;" in html
-    assert "-462%" not in html
     assert "squeeze" in html
+    assert "-546%" not in html and "-462%" not in html
 
 
 def test_plan_allocates_greedily_within_caps():
@@ -390,19 +416,20 @@ def test_plan_allocates_greedily_within_caps():
     from radar import plan
 
     rows = [
+        # floor_low is the shipping-inclusive live floor -- see radar/snipe.py.
         # squeeze: cap is halved -> 500 * 0.25 * 0.5 = $62.50 -> 2 copies at $20.86
         dict(card_id="659096", printing="Holofoil", snipe_mode="squeeze",
-             floor_low=20.00, floor_ship=20.86, copies=4),
+             floor_low=20.86, copies=4),
         # squeeze, only one copy exists -> supply is the binding constraint
         dict(card_id="616646", printing="Normal", snipe_mode="squeeze",
-             floor_low=19.99, floor_ship=22.98, copies=1),
+             floor_low=22.98, copies=1),
         # squeeze on a $3,800 card -> one copy blows the halved cap
         dict(card_id="645375", printing="Holofoil", snipe_mode="squeeze",
-             floor_low=3800.0, floor_ship=3800.0, copies=6),
-        # discount: full cap $125 at $8.00 -> 15 copies, under the 27 listed
-        dict(card_id="673480", printing="Holofoil", snipe_mode="discount",
-             floor_low=2.81, floor_ship=8.00, copies=27),
-        # no floor pulled at all
+             floor_low=3800.0, copies=6),
+        # undercut: full cap $125 at $8.00 -> 15 copies, under the 27 listed
+        dict(card_id="673480", printing="Holofoil", snipe_mode="undercut",
+             floor_low=8.00, copies=27),
+        # no shelf pulled at all
         dict(card_id="000000", printing="Normal", snipe_mode=None),
     ]
     out = plan.allocate(rows, 500.0, max_position_pct=0.25, squeeze_haircut=0.5)
@@ -428,17 +455,17 @@ def test_plan_allocates_greedily_within_caps():
     assert spent <= 500.0
     assert round(spent, 2) == 184.70
 
-    # Shipping is what you pay: the bare floor is only a fallback.
-    assert plan.unit_cost({"floor_low": 2.81, "floor_ship": 8.00}) == 8.00
-    assert plan.unit_cost({"floor_low": 2.81}) == 2.81
+    # The live floor is already shipping-inclusive, so it is the unit cost.
+    assert plan.unit_cost({"floor_low": 8.00}) == 8.00
+    assert plan.unit_cost({"floor_ship": 5.00}) == 5.00, "legacy field still honoured"
     assert plan.unit_cost({}) is None
 
 
 def test_plan_runs_out_of_budget_gracefully():
     from radar import plan
 
-    rows = [dict(card_id=str(i), printing="Normal", snipe_mode="discount",
-                 floor_low=10.0, floor_ship=10.0, copies=5) for i in range(6)]
+    rows = [dict(card_id=str(i), printing="Normal", snipe_mode="undercut",
+                 floor_low=10.0, copies=5) for i in range(6)]
     out = plan.allocate(rows, 100.0, max_position_pct=0.25)
     # 25% cap = $25 -> 2 copies each ($20) until the money is gone.
     assert [o["qty"] for o in out] == [2, 2, 2, 2, 2, 0]
@@ -446,18 +473,15 @@ def test_plan_runs_out_of_budget_gracefully():
     assert sum(o["cost"] for o in out) == 100.0
 
 
-def test_plan_read_and_risk_are_specific():
-    from radar import plan
+def test_plan_reexports_the_snipe_narrative():
+    """read/risk/CHECKLIST live in snipe.py; plan re-exports them so callers have one import."""
+    from radar import plan, snipe
 
-    discount = dict(snipe_mode="discount", market_price=9.46, floor_low=2.81,
-                    floor_ship=8.00, copies=27, gap_pct=70.3, floor_multiple=0.3)
-    squeeze = dict(snipe_mode="squeeze", market_price=3.56, floor_low=19.99,
-                   floor_ship=22.98, copies=1, gap_pct=-461.5, floor_multiple=5.62)
-    assert "70% under" in plan.read(discount) and "27 listed" in plan.read(discount)
-    assert "5.6x" in plan.read(squeeze) and "Only 1 listed" in plan.read(squeeze)
-    assert "stale-high" in plan.risk(discount)
-    assert "own the top" in plan.risk(squeeze)
+    assert plan.read is snipe.explain
+    assert plan.risk is snipe.risk
+    assert plan.CHECKLIST is snipe.CHECKLIST
     assert len(plan.CHECKLIST) == 5
+    assert "second-cheapest" in " ".join(plan.CHECKLIST)
 
 
 if __name__ == "__main__":

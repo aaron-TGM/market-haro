@@ -211,30 +211,47 @@ EXTRA = [
     ("Gundam Barbatos Lupus (LR+)", "Steel Requiem", "GD03-050", "Holofoil", 48.63, 0, 15, 29, 675695, "LR+"),
     ("Zechs Merquise (C+)", "Starter Deck 02: Wings of Advance", "ST02-011", "Holofoil", 19.19, 0, 19, 22, 641494, "C+"),
     ("Unforeseen Incident (C+)", "Starter Deck 01: Heroic Beginnings", "ST01-014", "Holofoil", 30.84, 0, 20, 36, 641465, "C+"),
+    ("McGillis Fareed (C+)", "Starter Deck 05: Iron Bloom", "ST05-012", "Holofoil", 7.50, 0, 12, 16, 653648, "C+"),
+    ("Shamblo (Championship Participation Pack 01)", "Gundam Promotional Cards", "GD01-047", "Holofoil", 11.80, 0, 14, 18, 654581, "Promo"),
+    ("Heero Yuy (C+)", "Starter Deck 02: Wings of Advance", "ST02-010", "Holofoil", 20.35, 0, 8, -3, 641493, "C+"),
+    ("Force Impulse Gundam (LR+)", "Starter Deck 09: Destiny Ignition", "ST09-002", "Holofoil", 52.17, 0, 5, 3, 684027, "LR+"),
+    ("GQuuuuuuX (Omega Psycommu)", "Dual Impact", "GD02-038", "Holofoil", 2.18, 0, 5, 6, 659277, "Rare"),
 ]
 
-# Live Near Mint listing floors pulled from /cards/:id/prices/conditions on
-# 2026-08-09 04:0x UTC -- i.e. the shelf as it stood at capture time, against
-# market prices stamped 2026-08-07. {tcgplayer_id: (low, lowest_with_shipping, copies)}
+# Live Near Mint shelf from /cards/:id/prices/conditions, 2026-08-09.
+#   floor  = lowest_with_shipping  (verified against TCGplayer's "As low as" on
+#            products 673480 -> $8.00 and 641452 -> $49.99)
+#   shelf  = median_with_shipping, or None where it wasn't pulled for that card.
+#            None means no undercut is computed -- an absent number is left absent
+#            rather than guessed.
+#   copies = sample_count
+# `low_price` from the same endpoint does NOT match the site and is never used.
+# {tcgplayer_id: (floor, shelf_median_or_None, copies)}
 FLOORS = {
-    689710: (1.20, 5.00, 29),   673480: (2.81, 8.00, 27),   641452: (49.99, 49.99, 16),
-    643172: (3.21, 8.20, 37),   670488: (1.65, 5.15, 44),   641457: (16.66, 16.66, 15),
-    645360: (49.99, 49.99, 10), 689795: (1.00, 3.07, 48),   643152: (4.74, 7.98, 40),
-    645345: (6.29, 6.29, 8),    684548: (3.00, 5.43, 45),   659373: (17.77, 17.77, 22),
-    616640: (3.00, 5.00, 22),   641549: (8.94, 8.94, 17),   645351: (6.00, 6.00, 7),
-    670506: (4.75, 7.26, 45),   655173: (6.00, 8.39, 24),   616662: (7.00, 7.45, 11),
-    641553: (44.01, 49.00, 11), 653638: (8.00, 10.50, 12),  689647: (7.00, 7.12, 50),
-    684008: (4.00, 5.37, 21),   684029: (74.99, 74.99, 11), 673508: (5.00, 5.99, 34),
-    641507: (6.75, 7.33, 26),   671987: (5.95, 8.00, 14),   659358: (74.49, 75.98, 19),
-    670514: (8.79, 10.77, 18),  616619: (10.00, 11.99, 7),  671976: (33.56, 35.00, 11),
-    675695: (67.00, 71.49, 19), 645369: (40.50, 44.49, 22), 659408: (21.00, 21.99, 22),
-    641494: (29.99, 29.99, 13), 670574: (14.00, 18.89, 18), 653646: (24.99, 25.00, 8),
-    645375: (3800.0, 3800.0, 6), 641465: (72.00, 74.99, 7), 659096: (20.00, 20.86, 4),
-    616646: (19.99, 22.98, 1),
+    # --- floor, shelf and copies all pulled ---
+    645345: (6.29, 31.47, 8),    641452: (49.99, 180.75, 16),  653648: (6.72, 19.99, 3),
+    641457: (16.66, 47.47, 15),  645360: (49.99, 134.36, 10),  659373: (17.77, 40.99, 22),
+    659408: (21.99, 50.00, 22),  645351: (6.00, 12.99, 7),     654581: (16.39, 35.00, 9),
+    641522: (8.89, 14.99, 15),   681976: (17.46, 29.44, 19),   659392: (19.56, 32.99, 3),
+    616662: (7.45, 12.41, 11),   643172: (8.20, 13.45, 37),    659277: (2.74, 4.49, 48),
+    641543: (3.99, 6.38, 35),    641493: (35.80, 56.80, 4),    684027: (44.38, 69.50, 14),
+    673480: (8.00, 10.87, 27),   689710: (5.00, 6.00, 29),     684008: (5.37, 6.51, 21),
+    655173: (8.39, 9.90, 24),
+
+    # --- floor and copies pulled, median not fetched for these ---
+    670488: (5.15, None, 44),    689795: (3.07, None, 48),     643152: (7.98, None, 40),
+    684548: (5.43, None, 45),    616640: (5.00, None, 22),     641549: (8.94, None, 17),
+    670506: (7.26, None, 45),    641553: (49.00, None, 11),    653638: (10.50, None, 12),
+    689647: (7.12, None, 50),    684029: (74.99, None, 11),    673508: (5.99, None, 34),
+    641507: (7.33, None, 26),    671987: (8.00, None, 14),     659358: (75.98, None, 19),
+    670514: (10.77, None, 18),   616619: (11.99, None, 7),     671976: (35.00, None, 11),
+    675695: (71.49, None, 19),   645369: (44.49, None, 22),    641494: (29.99, None, 13),
+    670574: (18.89, None, 18),   653646: (25.00, None, 8),     645375: (3800.00, None, 6),
+    641465: (74.99, None, 7),    659096: (20.86, None, 4),     616646: (22.98, None, 1),
 }
 
 SNIPE_CFG = {
-    "min_gap_pct": 8.0, "max_copies": 40, "thin_supply": 12,
+    "min_undercut_pct": 40.0, "min_squeeze_pct": 8.0, "max_copies": 40, "thin_supply": 12,
     "weight_gap": 0.55, "weight_scarcity": 0.25, "weight_momentum": 0.20,
 }
 
@@ -322,7 +339,7 @@ def main(out_path: str = "out/preview.html") -> Path:
         if f:
             floors[(r["card_id"], r["printing"])] = {
                 "card_id": r["card_id"], "printing": r["printing"], "condition": "Near Mint",
-                "floor_low": f[0], "floor_ship": f[1], "copies": f[2],
+                "floor_low": f[0], "shelf_med": f[1], "copies": f[2],
             }
     ranked = snipe.score(ranked, floors, SNIPE_CFG)
     ranked.sort(key=lambda r: (bool(r.get("signals")), r.get("score", 0)), reverse=True)
@@ -355,9 +372,12 @@ def main(out_path: str = "out/preview.html") -> Path:
     flagged = [r for r in ranked if r["signals"]]
     print(f"{len(rows)} rows · {len(flagged)} flagged · {len(board)} on the snipe board -> {p}")
     for r in board[:6]:
-        print(f"  snipe {r['snipe_score']:5.1f}  {r['name'][:38]:<38} "
-              f"${r.get('market_price') or 0:8.2f} -> floor ${r.get('floor_low') or 0:8.2f} "
-              f"x{r.get('copies')}  {r.get('snipe_mode')}")
+        print(f"  snipe {r['snipe_score']:5.1f}  {r['name'][:36]:<36} "
+              f"floor ${r.get('floor_low') or 0:8.2f} vs shelf "
+              f"{('$%8.2f' % r['shelf_med']) if r.get('shelf_med') else '       —'} "
+              f"x{r.get('copies'):<3} "
+              f"{(('%+5.0f%%' % r['undercut_pct']) if r.get('undercut_pct') is not None else '    —')}"
+              f"  {r.get('snipe_mode')}")
     for r in flagged[:8]:
         print(f"  {r['score']:5.1f}  {r['name'][:44]:<44} {','.join(r['signals'])}")
     return p

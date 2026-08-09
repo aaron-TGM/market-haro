@@ -8,9 +8,9 @@ price is moving.
 
 The rules, in full:
 
-  unit cost      = lowest Near Mint listing WITH shipping (falls back to the
-                   bare floor when shipped isn't known). Shipping is the number
-                   you actually pay, and on a $2 card it can double the cost.
+  unit cost      = the live Near Mint floor, which is already shipping-inclusive
+                   (`lowest_with_shipping`; see radar/snipe.py for why that is
+                   the field that matches TCGplayer and `low_price` is not).
   position cap   = budget x max_position_pct. Halved for a `squeeze`, because
                    there you are paying above the last recorded trade rather
                    than below it.
@@ -37,7 +37,7 @@ from typing import Any, Iterable, Sequence
 
 def unit_cost(row: dict) -> float | None:
     """What one copy actually costs, shipping included where we know it."""
-    for key in ("floor_ship", "floor_low"):
+    for key in ("floor_low", "floor_ship"):
         v = row.get(key)
         try:
             f = float(v)
@@ -141,63 +141,6 @@ def allocate(
     return plans
 
 
-def read(row: dict) -> str:
-    """One paragraph: what this row is actually saying."""
-    mode = row.get("snipe_mode")
-    market, low = row.get("market_price"), row.get("floor_low")
-    ship, copies = row.get("floor_ship"), row.get("copies")
-    gap, mult = row.get("gap_pct"), row.get("floor_multiple")
-
-    if mode == "discount" and market and low:
-        s = (
-            f"The cheapest Near Mint copy is ${low:,.2f}"
-            + (f" (${ship:,.2f} shipped)" if ship else "")
-            + f", {gap:.0f}% under the ${market:,.2f} the daily batch last recorded."
-        )
-        if copies is not None:
-            s += f" There are {copies} listed at Near Mint."
-        return s
-    if mode == "squeeze" and market and low:
-        s = (
-            f"The cheapest Near Mint copy is already ${low:,.2f}"
-            + (f" (${ship:,.2f} shipped)" if ship else "")
-            + f" — {mult:.1f}x the ${market:,.2f} the batch still records."
-        )
-        if copies is not None:
-            s += f" Only {copies} listed at Near Mint."
-        return s
-    if low:
-        return f"Floor ${low:,.2f}, in line with the recorded market price."
-    return "No live floor pulled for this row yet."
-
-
-def risk(row: dict) -> str:
-    """The specific way this particular setup goes wrong."""
-    mode = row.get("snipe_mode")
-    if mode == "discount":
-        return (
-            "The market price is up to two days old. A big discount can mean the "
-            "recorded price is stale-high from a spike that has already reversed — "
-            "in which case the floor is the real price and there is no gap."
-        )
-    if mode == "squeeze":
-        return (
-            "You would be paying above the last recorded trade on the assumption the "
-            "batch price catches up. If the remaining listings are one optimistic "
-            "seller rather than genuine scarcity, nothing catches up and you own the top."
-        )
-    return "No setup here — the floor and the recorded price agree."
-
-
-CHECKLIST = [
-    "Confirm the listing is the same printing and language as this row — Holofoil, "
-    "Foil and Normal are different products at different prices.",
-    "Compare the shipped price, not the floor. On cheap cards shipping can more than "
-    "double what you pay.",
-    "Check how many sellers those copies come from. One seller holding all of them can "
-    "relist at a higher price the moment you clear it.",
-    "Look for a reason. Nothing here knows about bans, reprints, or tournament results — "
-    "a move with a public cause behaves very differently from one without.",
-    "Check the date on the numbers. Market prices lag by up to two days; the floor is "
-    "from your last `radar snipe` and is cached after the first call.",
-]
+# The plain-English read, the setup-specific risk and the pre-buy checklist all
+# live in radar/snipe.py, next to the data they describe.
+from .snipe import CHECKLIST, explain as read, risk  # noqa: E402,F401

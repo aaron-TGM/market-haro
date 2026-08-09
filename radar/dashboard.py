@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .signals import explain
-from .snipe import explain as explain_snipe
+from .snipe import explain as explain_snipe, risk as risk_snipe
 
 # Palette: validated default categorical slots 1-3 (all-pairs, both modes).
 # sustained = blue, spike = orange, breakout = aqua. Every badge also carries a
@@ -119,7 +119,7 @@ select{max-width:260px}
 .board table td,.board table th{padding:7px 11px}
 .mode{font-size:11px;padding:2.5px 8px;border-radius:999px;border:1px solid;font-weight:560;
   white-space:nowrap}
-.mode.discount{color:var(--series-3);border-color:var(--series-3);background:var(--tint-3)}
+.mode.undercut{color:var(--series-3);border-color:var(--series-3);background:var(--tint-3)}
 .mode.squeeze{color:var(--series-2);border-color:var(--series-2);background:var(--tint-2)}
 .thin{color:var(--series-2);font-weight:640}
 .buy{font-size:12px;color:var(--series-1);text-decoration:none;white-space:nowrap;font-weight:560}
@@ -379,38 +379,39 @@ function allocate(rows, budget){
 }
 
 const READ = r => {
-  const {snipe_mode:m, market_price:mkt, floor_low:low, floor_ship:ship,
-         copies:c, gap_pct:gap, floor_multiple:mult} = r;
-  if (m === 'discount' && mkt && low)
-    return `The cheapest Near Mint copy is <b>$${low.toFixed(2)}</b>`
-      + (ship ? ` ($${ship.toFixed(2)} shipped)` : '')
-      + `, ${gap.toFixed(0)}% under the $${mkt.toFixed(2)} the daily batch last recorded.`
-      + (c != null ? ` There are ${c} listed at Near Mint.` : '');
+  const {snipe_mode:m, market_price:mkt, floor_low:low, shelf_med:shelf,
+         copies:c, undercut_pct:u, floor_multiple:mult} = r;
+  if (m === 'undercut' && low && shelf)
+    return `The cheapest Near Mint copy is <b>$${low.toFixed(2)}</b> shipped, while the median copy `
+      + `on the same shelf is <b>$${shelf.toFixed(2)}</b> — ${u.toFixed(0)}% below its neighbours. `
+      + `Both numbers came from the same live call, so this is not the two-day-old batch price talking.`
+      + (c != null ? ` ${c} copies listed.` : '');
   if (m === 'squeeze' && mkt && low)
-    return `The cheapest Near Mint copy is already <b>$${low.toFixed(2)}</b>`
-      + (ship ? ` ($${ship.toFixed(2)} shipped)` : '')
-      + ` — ${mult.toFixed(1)}× the $${mkt.toFixed(2)} the batch still records.`
-      + (c != null ? ` Only ${c} listed at Near Mint.` : '');
-  if (low) return `Floor $${low.toFixed(2)}, in line with the recorded market price.`;
-  return 'No live floor has been pulled for this row. Run <code>radar snipe</code> to price it.';
+    return `The whole shelf starts at <b>$${low.toFixed(2)}</b> shipped`
+      + (mult ? ` — ${mult.toFixed(1)}× the $${mkt.toFixed(2)} the batch still records` : '')
+      + `. The cheap copies are gone and the recorded price hasn't caught up.`
+      + (c != null ? ` Only ${c} listed.` : '');
+  if (low && shelf)
+    return `Cheapest copy $${low.toFixed(2)}, shelf median $${shelf.toFixed(2)} — nothing out of line here.`;
+  return 'No live shelf has been pulled for this row. Run <code>radar snipe</code> to price it.';
 };
 
-const RISK = r => r.snipe_mode === 'discount'
-  ? 'The market price is up to two days old. A big discount can mean the recorded price is '
-    + 'stale-high from a spike that already reversed — in which case the floor <em>is</em> the '
-    + 'real price and there is no gap.'
+const RISK = r => r.snipe_mode === 'undercut'
+  ? 'A copy priced far below its neighbours is usually priced that way for a reason: wrong '
+    + 'printing or language, a condition mismatch, a seller with bad feedback, or a listing that '
+    + 'is already sold and not yet removed. Check the listing itself before assuming free money.'
   : r.snipe_mode === 'squeeze'
   ? 'You would be paying above the last recorded trade on the assumption the batch price catches '
-    + 'up. If those remaining listings are one optimistic seller rather than real scarcity, '
-    + 'nothing catches up and you own the top.'
-  : 'No setup here — the floor and the recorded price agree, so there is nothing to act on.';
+    + 'up. If those listings are one optimistic seller rather than real scarcity, nothing catches '
+    + 'up and you own the top.'
+  : 'No setup here — the cheapest copy is in line with the rest of the shelf.';
 
 const CHECKLIST = [
-  'Confirm the listing is the same <b>printing and language</b> as this row — Holofoil, Foil and Normal are different products at different prices.',
-  'Compare the <b>shipped</b> price, not the floor. On cheap cards shipping can more than double what you pay.',
-  'Check how many <b>sellers</b> those copies come from. One seller holding all of them can relist higher the moment you clear it.',
-  'Look for a <b>reason</b>. Nothing here knows about bans, reprints or tournament results — a move with a public cause behaves very differently from one without.',
-  'Check the <b>dates</b>. Market prices lag up to two days; the floor is from your last <code>radar snipe</code> and is cached after the first call.',
+  'Open the listing and confirm <b>printing, language and condition</b> match this row — an outlier price usually has an outlier reason.',
+  'Check the <b>seller\u2019s feedback</b> and how long the listing has been up.',
+  'Compare against the <b>second-cheapest</b> copy, not the market price. If the gap to number two is small, there is no snipe.',
+  'Look for a <b>cause</b>. Nothing here knows about bans, reprints or tournament results.',
+  'Remember the market price is up to <b>two days old</b>; the shelf is from your last <code>radar snipe</code> and is cached after the first call.',
 ];
 
 function detailHTML(r, plan){
@@ -436,12 +437,13 @@ function detailHTML(r, plan){
         + `<p class="sub2">The snipe board is filled first. Raise the budget, or narrow the filters so fewer rows compete for it.</p>`;
   }
 
-  return `<tr class="detail"><td colspan="13"><div class="det">
+  return `<tr class="detail"><td colspan="14"><div class="det">
     <div>
       <h5>What this row says</h5>
       <p>${READ(r)}</p>
       <div class="kv"><span>Market (batch, up to 2d old)</span><span>${r.market_price!=null?'$'+r.market_price.toFixed(2):'—'}</span></div>
-      <div class="kv"><span>Floor / shipped (live)</span><span>${r.floor_low!=null?'$'+r.floor_low.toFixed(2):'—'} / ${r.floor_ship!=null?'$'+r.floor_ship.toFixed(2):'—'}</span></div>
+      <div class="kv"><span>Cheapest / median copy (live, shipped)</span><span>${r.floor_low!=null?'$'+r.floor_low.toFixed(2):'—'} / ${r.shelf_med!=null?'$'+r.shelf_med.toFixed(2):'—'}</span></div>
+      <div class="kv"><span>Copies listed (Near Mint)</span><span>${r.copies ?? '—'}</span></div>
       <div class="kv"><span>Listings (batch, all conditions)</span><span>${r.total_listings ?? '—'}</span></div>
       <div class="kv"><span>24h / 7d / 30d</span><span>${[r.change_24h,r.change_7d,r.change_30d].map(v=>v==null?'—':(v>0?'+':'')+v.toFixed(0)+'%').join(' / ')}</span></div>
       ${url?`<a class="cta" href="${esc(url)}" target="_blank" rel="noopener">Open the TCGplayer listing &rarr;</a>`:''}
@@ -467,6 +469,13 @@ function detailHTML(r, plan){
     </div>
   </div></td></tr>`;
 }
+
+const underCell = r => {
+  if (r.undercut_pct == null) return '<span class="flat">—</span>';
+  const v = r.undercut_pct;
+  const cls = v >= (DATA.minUndercut ?? 40) ? 'up' : (v < 0 ? 'down' : 'flat');
+  return `<span class="${cls}">${v > 0 ? '+' : ''}${v.toFixed(0)}%</span>`;
+};
 
 const gapCell = r => {
   if (r.gap_pct == null) return '<span class="flat">—</span>';
@@ -520,9 +529,10 @@ function rowHTML(r, i, plan){
     <td class="num">${pct(r.change_30d)}</td>
     <td>${sparkline(r.series)}</td>
     <td class="num">${r.floor_low==null?'<span class="flat">—</span>':money(r.floor_low)}</td>
+    <td class="num">${r.shelf_med==null?'<span class="flat">—</span>':money(r.shelf_med)}</td>
     <td class="num">${r.copies==null?'<span class="flat">—</span>'
       :`<span class="${r.copies<=DATA.thin?'thin':''}">${r.copies}</span>`}</td>
-    <td class="num">${gapCell(r)}</td>
+    <td class="num">${underCell(r)}</td>
     <td><div class="badges">${badges}</div></td>
     <td class="num"><div class="score">${r.score.toFixed(0)}</div>
       <div class="scorebar" style="width:${Math.max(4, r.score)}%"></div></td>
@@ -536,7 +546,8 @@ const SORTERS = {
   score:r=>r.score, price:r=>r.market_price ?? -1, c24:r=>r.change_24h ?? -1e9,
   c7:r=>r.change_7d ?? -1e9, c30:r=>r.change_30d ?? -1e9,
   listings:r=>r.total_listings ?? -1, name:r=>(r.name||'').toLowerCase(),
-  floor:r=>r.floor_low ?? -1, copies:r=>r.copies ?? 1e9, gap:r=>r.gap_pct ?? -1e9,
+  floor:r=>r.floor_low ?? -1, shelf:r=>r.shelf_med ?? -1, copies:r=>r.copies ?? 1e9,
+  under:r=>r.undercut_pct ?? -1e9, gap:r=>r.gap_pct ?? -1e9,
   snipe:r=>r.snipe_score ?? -1,
 };
 
@@ -561,8 +572,8 @@ function filtered(){
     if (!inBands(r)) return false;
     if (state.sigs.size && !(r.signals||[]).some(s=>state.sigs.has(s))) return false;
     if (state.maxCopies != null && !(r.copies != null && r.copies <= state.maxCopies)) return false;
-    if (state.gapDir === 'under' && !(r.gap_pct > 0)) return false;
-    if (state.gapDir === 'over'  && !(r.gap_pct < 0)) return false;
+    if (state.gapDir === 'under' && r.snipe_mode !== 'undercut') return false;
+    if (state.gapDir === 'over'  && r.snipe_mode !== 'squeeze') return false;
     if (state.floorOnly && r.floor_low == null) return false;
     if (state.minScore != null && !(r.score >= state.minScore)) return false;
     const mv = r[WINKEY[state.win]];
@@ -644,7 +655,7 @@ function apply(){
   const shown = rows.slice(0, state.limit);
   document.getElementById('tbody').innerHTML = shown.length
     ? shown.map((r,i)=>rowHTML(r, i, plans.get(r.card_id+'|'+r.printing))).join('')
-    : '<tr><td colspan="13" class="empty">Nothing matches those filters.</td></tr>';
+    : '<tr><td colspan="14" class="empty">Nothing matches those filters.</td></tr>';
 
   document.getElementById('count').textContent =
     `${shown.length ? '1–'+shown.length : '0'} of ${rows.length} matching · ${DATA.rows.length} tracked`;
@@ -837,11 +848,13 @@ GLOSSARY = """
         <dt>Market</dt><dd>TCGplayer's market price, from a <strong>daily batch</strong> feed.
           Checked live on 2026-08-09 it was stamped two days earlier. Good for spotting what's
           moving; not the price anything is currently listed at.</dd>
-        <dt>Floor / Copies</dt><dd>Lowest Near&nbsp;Mint listing and how many copies sit at it,
-          fetched <strong>on demand</strong> by <code>radar snipe</code>. This is the live shelf.
-          Blank until you run it.</dd>
-        <dt>Listings vs. Copies</dt><dd>Listings is the batch count across all conditions; Copies
-          is live and Near&nbsp;Mint only. When they disagree, believe Copies.</dd>
+        <dt>Floor / Shelf / Copies</dt><dd>The cheapest listing, the median listing and the number
+          of Near&nbsp;Mint copies, all fetched <strong>on demand</strong> by
+          <code>radar snipe</code> in one call. Floor includes shipping and matches the
+          &ldquo;As low as&rdquo; figure on the TCGplayer page.</dd>
+        <dt>Why we compare Floor to Shelf, not to Market</dt><dd>Floor and Shelf come from the same
+          live call, so the comparison is real. Anything measured against Market is measuring the
+          two feeds being out of step as much as anything about the card.</dd>
       </dl>
     </div>
     <div>
@@ -859,13 +872,16 @@ GLOSSARY = """
     <div>
       <h4>The two snipe setups</h4>
       <dl>
-        <dt>discount</dt><dd>Live floor sits <strong>below</strong> the recorded market. Copies are
-          listed under what the card last traded at. The trap: the market price may be stale-high
-          from a spike that already reversed.</dd>
-        <dt>squeeze</dt><dd>Live floor sits <strong>above</strong> the recorded market on thin
-          supply. The cheap copies are gone and the batch price hasn't printed the move yet.</dd>
-        <dt>Gap</dt><dd><strong>+%</strong> for a discount (how far under market). <strong>&times;N</strong>
-          for a squeeze (how many times above the recorded price the shelf now sits).</dd>
+        <dt>undercut</dt><dd>The cheapest copy sits at least 40% below the <em>median</em> copy on
+          the same shelf, right now. One listing is out of line with its neighbours. Median
+          undercut across the game is about 20% and a quarter of cards clear 25%, so 40% is
+          well out in the tail.</dd>
+        <dt>squeeze</dt><dd>The whole shelf — cheapest copy included — sits above the recorded
+          batch price on thin supply. The cheap copies are gone and the batch hasn't printed the
+          move yet.</dd>
+        <dt>Neither is a forecast</dt><dd>An undercut says a listing is mispriced relative to its
+          neighbours. A squeeze says the recorded price is behind the shelf. Neither says the card
+          will be worth more tomorrow, and neither knows why anything is moving.</dd>
       </dl>
     </div>
     <div>
@@ -902,7 +918,10 @@ GLOSSARY = """
           be up 400% because of an announcement you haven't seen yet &mdash; or because one
           person bought the shelf.</dd>
         <dt>Depth</dt><dd>Copies counts Near&nbsp;Mint only. Played copies are separate supply and
-          a separate market.</dd>
+          a separate market, and the count can disagree with what the TCGplayer page shows if the
+          page is filtered differently.</dd>
+        <dt>Direction</dt><dd>Nothing on this page predicts a price. Every number here describes
+          the shelf as it is right now, or as it was up to two days ago.</dd>
       </dl>
     </div>
   </div>
@@ -929,7 +948,8 @@ def _row_payload(r: dict) -> dict:
         "total_listings": r.get("total_listings"),
         "sales_volume": r.get("sales_volume"),
         "floor_low": r.get("floor_low"),
-        "floor_ship": r.get("floor_ship"),
+        "shelf_med": r.get("shelf_med"),
+        "undercut_pct": r.get("undercut_pct"),
         "copies": r.get("copies"),
         "gap_pct": r.get("gap_pct"),
         "snipe_score": r.get("snipe_score"),
@@ -1113,8 +1133,10 @@ def render(
     <span class="flabel" style="margin-left:12px" data-tip="Copy counts only exist on rows where a live floor has been pulled. Run <code>radar snipe</code> to populate them.">Supply<span class="info">?</span></span>
     <input type="number" id="maxcopies" placeholder="max copies" min="1" step="1"
            aria-label="Maximum copies listed" style="width:110px">
-    <button class="chip" data-gap="under" aria-pressed="false">Floor under market</button>
-    <button class="chip" data-gap="over" aria-pressed="false">Floor over market</button>
+    <button class="chip" data-gap="under" aria-pressed="false"
+            data-tip="Only rows where the cheapest copy is meaningfully below the rest of the shelf.">Undercut only</button>
+    <button class="chip" data-gap="over" aria-pressed="false"
+            data-tip="Only rows where the whole shelf sits above the recorded batch price.">Squeeze only</button>
     <label class="chip" style="display:inline-flex;gap:6px;align-items:center"
            data-tip="Only show rows where a live listing floor has been pulled.">
       <input type="checkbox" id="flooronly"> Live floor only</label>
@@ -1173,10 +1195,10 @@ def render(
   <th class="num" data-sort="c7" data-tip="Change over <b>7 days</b>. The best single read on whether a move is real.">7d</th>
   <th class="num" data-sort="c30" data-tip="Change over <b>30 days</b>. Context: is this a new move or the tail of an old one?">30d</th>
   <th data-tip="Price history for this printing &mdash; API history plus every daily snapshot you've taken. Denser the longer you run it.">Trend</th>
-  <th class="num" data-sort="floor" data-tip="<b>Lowest Near Mint listing right now.</b> Pulled live by <code>radar snipe</code>, not from the daily batch. Blank means no live look yet.">Floor</th>
-  <th class="num" data-sort="copies" data-tip="How many <b>Near Mint copies are actually listed</b>. Live. Orange means few enough that one buyer can clear the shelf.">Copies</th>
-  <th class="num" data-sort="gap" data-tip="Market vs. live floor. <b>+%</b> = copies listed under market (discount). <b>&times;N</b> = floor sits N times above the recorded price (squeeze).">Gap</th>
-  <th class="num col-listings" data-sort="listings" data-tip="Total listings from the <b>daily batch</b> feed, all conditions. Can disagree with Copies &mdash; the live number is the one to trust.">Listings</th>
+  <th class="num" data-sort="floor" data-tip="<b>Cheapest Near Mint listing right now, shipping included</b> &mdash; this matches the &quot;As low as&quot; figure on the TCGplayer page. Pulled live by <code>radar snipe</code>. Blank means no live look yet.">Floor</th>
+  <th class="num" data-sort="shelf" data-tip="<b>Median</b> Near Mint listing, shipping included &mdash; what the rest of the shelf costs. Same live call as the floor.">Shelf</th>
+  <th class="num" data-sort="copies" data-tip="How many <b>Near Mint copies are listed</b>. Live. Orange means few enough that one buyer can clear the shelf.">Copies</th>
+  <th class="num" data-sort="under" data-tip="How far the <b>cheapest</b> copy sits below the <b>median</b> copy. Both live, same call &mdash; so this is a real comparison, unlike anything measured against the two-day-old batch price. Median across the game is about 20%.">Undercut</th>
   <th data-tip="Which detectors fired. Hover a badge for what each one means.">Signals</th>
   <th class="num" data-sort="score" aria-sort="descending" data-tip="0&ndash;100 attention rank: 45% sustained + 25% spike + 30% breakout, plus small bonuses for higher price and recorded sales. Ranks attention, not conviction.">Score</th>
   <th class="why" data-tip="The one thing the numbers in this row don't already say.">Note</th>
@@ -1205,11 +1227,21 @@ def render(
 
 
 _MODE_TIP = {
-    "discount": "Copies are listed <b>below</b> the recorded market price. Straight arbitrage "
-                "&mdash; unless the market price is stale-high from a spike that already reversed.",
-    "squeeze": "The floor sits <b>above</b> the recorded price on thin supply. The cheap copies "
-               "are gone and the daily batch hasn't caught up yet.",
+    "undercut": "The <b>cheapest</b> copy sits well below the <b>median</b> copy on the same "
+                "shelf, right now. One listing is out of line with its neighbours. It does not "
+                "mean the card is going up.",
+    "squeeze": "The whole shelf, cheapest copy included, sits <b>above</b> the recorded batch "
+               "price on thin supply. The cheap copies are gone and the batch hasn't caught up.",
 }
+
+
+def _under_cell(r: dict) -> str:
+    """How far the cheapest copy is below the median copy."""
+    v = r.get("undercut_pct")
+    if v is None:
+        return '<span class="flat">&mdash;</span>'
+    cls = "up" if v >= 40 else ("down" if v < 0 else "flat")
+    return f'<span class="{cls}">{v:+.0f}%</span>'
 
 
 def _gap_cell(r: dict) -> str:
@@ -1231,9 +1263,8 @@ def _snipe_board(board: Sequence[dict], thin: int) -> str:
     rows = []
     for i, r in enumerate(board):
         mode = r.get("snipe_mode") or ""
-        gap = r.get("gap_pct")
         copies = r.get("copies")
-        low, ship = r.get("floor_low"), r.get("floor_ship")
+        low, shelf = r.get("floor_low"), r.get("shelf_med")
         url = r.get("tcgplayer_url") or (
             f"https://www.tcgplayer.com/product/{r['tcgplayer_id']}" if r.get("tcgplayer_id") else None
         )
@@ -1251,9 +1282,9 @@ def _snipe_board(board: Sequence[dict], thin: int) -> str:
         <div class="meta">{meta}</div></div></div></td>
       <td class="num">{'—' if r.get('market_price') is None else f"${r['market_price']:,.2f}"}</td>
       <td class="num">{'—' if low is None else f"${low:,.2f}"}</td>
-      <td class="num">{'—' if ship is None else f"${ship:,.2f}"}</td>
+      <td class="num">{'—' if shelf is None else f"${shelf:,.2f}"}</td>
       <td class="num">{copies_cell}</td>
-      <td class="num">{_gap_cell(r)}</td>
+      <td class="num">{_under_cell(r)}</td>
       <td><span class="mode {mode}" data-tip="{_MODE_TIP.get(mode, '')}">{mode}</span></td>
       <td class="num score">{r.get('snipe_score', 0):.0f}</td>
       <td class="num plan-cell" data-plankey="{_esc(r.get('card_id'))}|{_esc(r.get('printing') or 'Normal')}"><span class="flat">&mdash;</span></td>
@@ -1265,19 +1296,20 @@ def _snipe_board(board: Sequence[dict], thin: int) -> str:
 <div class="panel board">
   <div class="bhead">
     <div><h3>Snipe board</h3>
-    <p class="cap">Live Near&nbsp;Mint listing floor vs. the daily batch market price, with how many
-    copies are actually listed. <strong>discount</strong> = copies sitting under the recorded price.
-    <strong>squeeze</strong> = the cheap copies are gone and the batch price hasn't caught up.
-    Orange copy counts are {thin} or fewer — one buyer can clear that shelf.</p></div>
+    <p class="cap">The live Near&nbsp;Mint shelf: cheapest listing, median listing and how
+    many copies. <strong>undercut</strong> = the cheapest copy sits well below its neighbours
+    right now, both figures from the same live call. <strong>squeeze</strong> = the whole shelf
+    sits above the recorded batch price on thin supply. Orange copy counts are {thin} or fewer.
+    Neither setup predicts the price will rise.</p></div>
   </div>
   <div class="tablewrap"><table><thead><tr>
     <th class="rank">#</th><th data-tip="Click the name to open the TCGplayer page. Sub-line is set &middot; number &middot; rarity &middot; printing.">Card</th>
     <th class="num" data-tip="TCGplayer <b>market price</b> from the daily batch feed. Measured live on 2026-08-09 it was stamped two days earlier &mdash; treat it as a lagging reference, not the current price.">Market</th>
-    <th class="num" data-tip="<b>Lowest Near Mint listing right now.</b> Pulled live by <code>radar snipe</code>, not from the daily batch. Blank means no live look yet.">Floor</th>
-    <th class="num" data-tip="Lowest Near Mint listing <b>including shipping</b> &mdash; the price you actually pay. On cheap cards this is often double the floor.">Shipped</th>
+    <th class="num" data-tip="<b>Cheapest Near Mint listing right now, shipping included</b> &mdash; this matches the &quot;As low as&quot; figure on the TCGplayer page. Pulled live by <code>radar snipe</code>. Blank means no live look yet.">Floor</th>
+    <th class="num" data-tip="<b>Median</b> Near Mint listing, shipping included &mdash; what the rest of the shelf costs. Same live call as the floor.">Shelf</th>
     <th class="num" data-tip="How many <b>Near Mint copies are actually listed</b>. Live. Orange means few enough that one buyer can clear the shelf.">Copies</th>
-    <th class="num" data-tip="Market vs. live floor. <b>+%</b> = copies listed under market (discount). <b>&times;N</b> = floor sits N times above the recorded price (squeeze).">Gap</th>
-    <th data-tip="<b>discount</b>: copies listed below the recorded market. <b>squeeze</b>: the cheap copies are gone and the batch price hasn't caught up.">Setup</th>
+    <th class="num" data-tip="How far the cheapest copy sits below the median copy. Both live, same call.">Undercut</th>
+    <th data-tip="<b>undercut</b>: one listing is out of line with its neighbours. <b>squeeze</b>: the whole shelf is above the recorded batch price on thin supply.">Setup</th>
     <th class="num" data-tip="0&ndash;100 buy rank: 55% gap + 25% scarcity + 20% momentum. Tunable under <code>snipe:</code> in config.yaml.">Snipe</th>
     <th class="num" data-tip="Suggested position at your budget: copies and total cost. Set a budget at the top of the page.">Buy</th>
     <th class="why" data-tip="Plain-English version of the row.">Read</th><th></th>

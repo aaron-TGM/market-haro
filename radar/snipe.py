@@ -1,29 +1,40 @@
-"""Snipe mode: what can I actually buy right now, and is the supply thin?
+"""Snipe mode: is one copy priced below the rest of the shelf, and how deep is it?
 
-The daily `market_price` from `/sets/:id/prices` is a *batch* figure -- measured
-against live data on 2026-08-09 it was stamped 2026-08-07, i.e. up to two days
-behind. That is fine for spotting which cards are moving, and useless for
-deciding what to buy.
+WHICH FIELD IS THE FLOOR (verified 2026-08-09 against TCGplayer itself)
 
-`/cards/:id/prices/conditions` is different: it is fetched on demand and the
-response carries `meta.cached` plus an `as_of` stamp, so a cold call returns the
-listing floor as it stands right now. It also carries `sample_count` -- how many
-copies are actually listed at that condition. That is the number that decides
-whether buying the shelf moves the price.
+`/cards/:id/prices/conditions` returns both `low_price` and
+`lowest_with_shipping` per condition. They are not two views of the same number:
 
-Comparing the live floor against the stale market price splits into two setups:
+    Gundam Barbatos Adapt (673480)  low_price $2.81   lowest_with_shipping $8.00
+      tcgplayer.com/product/673480  ->  "As low as $8.00", 26 listings
 
-  discount -- floor sits BELOW the recorded market. Copies are listed under what
-              the card last traded at. Straight arbitrage, if the market price
-              isn't simply stale-high from a spike that already reversed.
+    Gundam (LR+) (641452)           low_price $49.99  lowest_with_shipping $49.99
+      tcgplayer.com/product/641452  ->  "As low as $49.99", next copy $161.94
 
-  squeeze  -- floor sits ABOVE the recorded market, on few copies. The cheap
-              copies are gone and the batch price hasn't caught up yet. This is
-              what a card looks like just before the printed price moves.
+`lowest_with_shipping` matched the site exactly on both. `low_price` did not, and
+using it produced fake 70%+ "discounts" on cards you could not actually buy at
+that price. **Treat `lowest_with_shipping` as the floor. `low_price` is kept only
+as `low_ex_ship` and is not used for any signal.**
 
-Neither is advice, and both can be wrong for the same reason: the market price
-is old. `copies` is the honest part of the row -- it's live, and it's what
-decides how much supply you'd have to clear.
+WHAT THE SIGNAL IS NOW
+
+The old signal compared the live floor against `market_price`, which comes from a
+daily batch and runs up to two days behind. Half of every "gap" was just the two
+feeds being out of step.
+
+The comparison that holds up is **lowest shipped vs. median shipped**, because
+both come from the same live call at the same instant:
+
+  undercut -- the cheapest copy sits well below the rest of the shelf. That is a
+              mispriced listing, and it is true regardless of what any batch
+              price says. Gundam (LR+): $49.99 with the next copy at $161.94.
+
+  squeeze  -- the whole shelf, cheapest copy included, sits above the recorded
+              market on thin supply. The cheap copies are gone and the batch
+              price has not caught up.
+
+An undercut says one listing is out of line with its neighbours. It does not say
+the card is going up, and neither detector knows why anything is moving.
 """
 
 from __future__ import annotations
@@ -51,7 +62,7 @@ def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
 
 
 def fetch_floor(client: TCGClient, card_id: Any, printing: str | None = None) -> dict | None:
-    """Live Near Mint floor + copy count for one card. One request."""
+    """Live Near Mint shelf for one card: cheapest, median, and how many. One request."""
     rows = client.get(f"/cards/{card_id}/prices/conditions")
     if not rows:
         return None
@@ -70,7 +81,7 @@ def fetch_floor(client: TCGClient, card_id: Any, printing: str | None = None) ->
 
     nm = pick(NM)
     if not nm:
-        # Some products only ever list in one condition (sealed, tokens).
+        # Sealed and token products often list in a single condition only.
         candidates = [r for r in rows if not printing or r.get("printing") == printing]
         nm = candidates[0] if candidates else None
     if not nm:
@@ -80,15 +91,21 @@ def fetch_floor(client: TCGClient, card_id: Any, printing: str | None = None) ->
         "card_id": str(card_id),
         "printing": nm.get("printing") or printing or "Normal",
         "condition": nm.get("condition"),
-        "floor_low": _f(nm.get("low_price")),
-        "floor_ship": _f(nm.get("lowest_with_shipping")),
+        # The floor: matches TCGplayer's displayed "As low as".
+        "floor_low": _f(nm.get("lowest_with_shipping")),
+        # The rest of the shelf, same call, same instant.
+        "shelf_med": _f(nm.get("median_with_shipping")),
+        # Kept for reference only -- see the module docstring for why it is not
+        # the floor and is never used in a signal.
+        "low_ex_ship": _f(nm.get("low_price")),
         "copies": nm.get("sample_count"),
         "as_of": nm.get("last_updated_at"),
         "conditions": [
             {
                 "condition": r.get("condition"),
                 "printing": r.get("printing"),
-                "low": _f(r.get("low_price")),
+                "low_shipped": _f(r.get("lowest_with_shipping")),
+                "median_shipped": _f(r.get("median_with_shipping")),
                 "copies": r.get("sample_count"),
             }
             for r in rows
@@ -113,7 +130,7 @@ def fetch_floors(
         except RateLimitExhausted:
             log.warning("Floor fetch stopped at %d/%d -- rate limit", i, len(targets[:limit]))
             break
-        except Exception as exc:  # a single bad card shouldn't kill the run
+        except Exception as exc:  # one bad card shouldn't kill the run
             log.debug("Floor fetch failed for %s: %s", card_id, exc)
             continue
         if floor:
@@ -124,9 +141,10 @@ def fetch_floors(
 
 
 def score(rows: Iterable[dict], floors: dict[tuple[str, str], dict], cfg: dict) -> list[dict]:
-    """Attach floor data and a 0-100 snipe score. Returns rows sorted best first."""
+    """Attach the live shelf and a 0-100 snipe score. Best first."""
     max_copies = int(cfg.get("max_copies", 40))
-    min_gap = float(cfg.get("min_gap_pct", 8.0))
+    min_undercut = float(cfg.get("min_undercut_pct", 40.0))
+    min_squeeze = float(cfg.get("min_squeeze_pct", 8.0))
     w_gap = float(cfg.get("weight_gap", 0.55))
     w_scarcity = float(cfg.get("weight_scarcity", 0.25))
     w_momentum = float(cfg.get("weight_momentum", 0.20))
@@ -139,47 +157,49 @@ def score(rows: Iterable[dict], floors: dict[tuple[str, str], dict], cfg: dict) 
         floor = floors.get(key)
         rec["snipe_score"] = 0.0
         rec["snipe_mode"] = None
+        rec["undercut_pct"] = None
         rec["gap_pct"] = None
 
         if not floor or not floor.get("floor_low"):
             out.append(rec)
             continue
 
-        market = _f(row.get("market_price"))
         low = floor["floor_low"]
+        shelf = floor.get("shelf_med")
         copies = floor.get("copies")
         rec["floor_low"] = low
-        rec["floor_ship"] = floor.get("floor_ship")
+        rec["shelf_med"] = shelf
+        rec["low_ex_ship"] = floor.get("low_ex_ship")
         rec["copies"] = copies
         rec["floor_as_of"] = floor.get("as_of")
         rec["floor_condition"] = floor.get("condition")
-        if not market:
-            out.append(rec)
-            continue
 
-        gap = (market - low) / market * 100.0  # positive = floor under market
-        rec["gap_pct"] = round(gap, 1)
-        # For a squeeze, "-462%" is arithmetically right and unreadable. The
-        # multiple is the number that means something: the shelf is 5.6x the
-        # price the batch still thinks this card trades at.
-        rec["floor_multiple"] = round(low / market, 2)
+        # --- the live signal: cheapest copy vs. the rest of the shelf ----------
+        undercut = None
+        if shelf and shelf > 0:
+            undercut = (shelf - low) / shelf * 100.0
+            rec["undercut_pct"] = round(undercut, 1)
+
+        # --- context only: the batch price is up to two days old --------------
+        market = _f(row.get("market_price"))
+        if market:
+            rec["gap_pct"] = round((market - low) / market * 100.0, 1)
+            rec["floor_multiple"] = round(low / market, 2)
 
         c7 = float(row.get("change_7d") or 0.0)
         c24 = float(row.get("change_24h") or 0.0)
         momentum = 100.0 * _clamp(max(c7 / 60.0, c24 / 30.0))
 
-        # Scarcity: 40+ copies is deep supply, a handful is thin.
         cnum = copies if isinstance(copies, (int, float)) else max_copies
         scarcity = 100.0 * _clamp(1.0 - (cnum / max_copies))
 
-        if gap >= min_gap:
-            rec["snipe_mode"] = "discount"
-            gap_component = 100.0 * _clamp(gap / 50.0)
-        elif gap <= -min_gap:
+        gap_component = 0.0
+        if undercut is not None and undercut >= min_undercut:
+            rec["snipe_mode"] = "undercut"
+            gap_component = 100.0 * _clamp(undercut / 60.0)
+        elif market and rec.get("gap_pct") is not None and rec["gap_pct"] <= -min_squeeze:
             rec["snipe_mode"] = "squeeze"
-            gap_component = 100.0 * _clamp(-gap / 100.0)
-        else:
-            gap_component = 0.0
+            gap_component = 100.0 * _clamp(-rec["gap_pct"] / 100.0)
 
         rec["snipe_score"] = round(
             _clamp(
@@ -196,23 +216,57 @@ def score(rows: Iterable[dict], floors: dict[tuple[str, str], dict], cfg: dict) 
 
 
 def explain(rec: dict) -> str:
-    """One line telling you what the setup actually is."""
-    mode, gap, copies = rec.get("snipe_mode"), rec.get("gap_pct"), rec.get("copies")
-    low, ship = rec.get("floor_low"), rec.get("floor_ship")
-    if mode == "discount":
-        s = f"{gap:.0f}% under market at ${low:.2f}"
-        if ship and low and ship > low * 1.05:
-            s += f" (${ship:.2f} shipped)"
+    """One line saying what the setup actually is."""
+    mode = rec.get("snipe_mode")
+    low, shelf = rec.get("floor_low"), rec.get("shelf_med")
+    copies, under = rec.get("copies"), rec.get("undercut_pct")
+
+    if mode == "undercut" and low and shelf:
+        s = f"Cheapest copy ${low:,.2f} vs ${shelf:,.2f} for the rest — {under:.0f}% below the shelf"
         if copies is not None:
             s += f", {copies} listed"
         return s
     if mode == "squeeze":
         mult = rec.get("floor_multiple")
-        s = (f"Floor already ${low:.2f}, {mult:.1f}x the recorded price"
-             if mult else f"Floor already ${low:.2f}")
+        s = f"Whole shelf starts at ${low:,.2f}"
+        if mult:
+            s += f", {mult:.1f}x the recorded price"
         if copies is not None:
-            s += f" — {copies} left"
+            s += f" — {copies} listed"
         return s
-    if low is not None:
-        return f"Floor ${low:.2f}, in line with market"
+    if low and shelf:
+        return f"Cheapest ${low:,.2f}, shelf median ${shelf:,.2f} — nothing out of line."
+    if low:
+        return f"Cheapest copy ${low:,.2f}."
     return ""
+
+
+def risk(rec: dict) -> str:
+    """The specific way this particular setup goes wrong."""
+    mode = rec.get("snipe_mode")
+    if mode == "undercut":
+        return (
+            "A copy priced far below its neighbours is usually priced that way for a "
+            "reason: wrong printing or language, a condition mismatch, a seller with "
+            "bad feedback, or a listing that is already sold and not yet removed. "
+            "Check the listing itself before assuming it is free money."
+        )
+    if mode == "squeeze":
+        return (
+            "You would be paying above the last recorded trade on the assumption the "
+            "batch price catches up. If those listings are one optimistic seller "
+            "rather than real scarcity, nothing catches up and you own the top."
+        )
+    return "No setup here — the cheapest copy is in line with the rest of the shelf."
+
+
+CHECKLIST = [
+    "Open the listing and confirm printing, language and condition match this row — "
+    "an outlier price usually has an outlier reason.",
+    "Check the seller's feedback and how long the listing has been up.",
+    "Compare against the second-cheapest copy, not the market price. If the gap to "
+    "number two is small, there is no snipe.",
+    "Look for a cause. Nothing here knows about bans, reprints or tournament results.",
+    "Remember the market price is up to two days old and the shelf is from your last "
+    "`radar snipe`, cached after the first call.",
+]

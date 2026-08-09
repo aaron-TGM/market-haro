@@ -32,40 +32,56 @@ First run takes a couple of minutes (it backfills price history). After that a r
 
 ## Snipe mode — the part that matters for buying
 
-`market_price` from `/sets/:id/prices` is a **daily batch** figure. Measured against
-live data on 2026-08-09 it was stamped **2026-08-07** — up to two days behind. Good for
-spotting what's moving; useless for deciding what to buy.
+### Which field is the floor
 
-`/cards/:id/prices/conditions` is fetched on demand (the response carries
-`meta.cached` and an `as_of` stamp), so a cold call gives you the **Near Mint listing
-floor right now** plus `sample_count` — how many copies are actually on the shelf.
+`/cards/:id/prices/conditions` returns both `low_price` and `lowest_with_shipping`.
+They are not two views of the same number, and only one of them matches reality:
+
+| Card | `low_price` | `lowest_with_shipping` | TCGplayer page says |
+|---|---|---|---|
+| Gundam Barbatos Adapt (673480) | $2.81 | **$8.00** | "As low as $8.00", 26 listings |
+| Gundam (LR+) (641452) | $49.99 | **$49.99** | "As low as $49.99", next copy $161.94 |
+
+`lowest_with_shipping` matched the site exactly on both. **`low_price` is not the
+buyable price and is never used for a signal** — an earlier version of this tool did use
+it and produced fake 70% "discounts" on cards you could not buy at that price.
+
+### What the signal is
+
+`market_price` comes from a daily batch and runs up to two days behind. Anything measured
+against it is partly measuring the two feeds being out of step. The comparison that holds
+up is **cheapest listing vs. median listing**, because both come from the same live call
+at the same instant:
+
+| Setup | Looks like | Means |
+|---|---|---|
+| **undercut** | cheapest copy ≥40% below the **median** copy | One listing is out of line with its neighbours, right now. Gundam (LR+): $49.99 with the next copy at $161.94. |
+| **squeeze** | the whole shelf sits above the recorded batch price, on thin supply | The cheap copies are gone and the batch price hasn't caught up. |
+
+Median undercut across the game is about 20% and a quarter of cards clear 25%, so the
+40% default sits well out in the tail.
 
 ```bash
 python -m radar snipe        # ~60 requests, one per mover
 ```
 
-Comparing the live floor against the stale batch price gives two setups:
-
-| Setup | Looks like | Means |
-|---|---|---|
-| **discount** | floor **below** the recorded market | Copies listed under what the card last traded at. Straight arbitrage — unless the market price is stale-high from a spike that already reversed. |
-| **squeeze** | floor **above** the recorded market, on few copies | The cheap copies are already gone and the batch price hasn't caught up. This is what a card looks like *just before* the printed price moves. |
-
-Both can be wrong for the same reason — the market price is old. **`copies` is the honest
-number on the row**: it's live, and it's what decides how much supply you'd have to clear.
-Counts at or under `thin_supply` (default 12) are highlighted.
+**Neither setup is a forecast.** An undercut says a listing is mispriced relative to its
+neighbours; a squeeze says the recorded price is behind the shelf. Neither says the card
+will be worth more tomorrow, and neither knows *why* anything is moving. `copies` is the
+most honest number on the row — it is live, and it decides how much supply you would have
+to clear.
 
 Real rows from the 2026-08-09 capture:
 
 ```
-  91  GQuuuuuuX (Omega Psycommu) (C+)   $7.89 market   $20.00 floor    4 copies   squeeze
-  86  Wing Gundam                       $3.56 market   $19.99 floor    1 copy     squeeze
-  83  Gundam Barbatos Adapt             $9.46 market    $2.81 floor   27 copies   discount
-  82  Silver Bullet                     $4.58 market    $1.20 floor   29 copies   discount
+  85  Resource (R-002) (C+)      $6.29 cheapest   $31.47 median    8 copies   undercut  -80%
+  82  McGillis Fareed (C+)       $6.72 cheapest   $19.99 median    3 copies   undercut  -66%
+  81  Shenlong Gundam (R+)      $49.99 cheapest  $134.36 median   10 copies   undercut  -63%
+  86  Wing Gundam               $22.98 shelf     $3.56 recorded    1 copy     squeeze   6.5x
 ```
 
-Snipe score is `0.55 x gap + 0.25 x scarcity + 0.20 x momentum`, all tunable under
-`snipe:` in `config.yaml`. Floors are stored as a time series, so a card going
+Snipe score is `0.55 × gap + 0.25 × scarcity + 0.20 × momentum`, all tunable under
+`snipe:` in `config.yaml`. Shelves are stored as a time series, so a card going
 40 → 12 → 4 copies across runs is supply drying up in front of you.
 
 ## Budget and position sizing
@@ -195,9 +211,11 @@ history precedence, and HTML escaping — no network needed.
   and carries on rather than failing the run.
 - **The daily batch price lags by up to 2 days**; the conditions endpoint does not. Never
   size a buy off `market_price` alone — check the floor and the copy count.
-- **`total_listings` (batch) and `copies` (live) can disagree.** Wing Gundam showed 0
-  listings in the batch and 1 live NM copy at $19.99 on 2026-08-09. The snipe board
-  trusts the live number; the movers table uses the batch one.
+- **`total_listings` (batch) and `copies` (live) can disagree**, and the live count can
+  also disagree with what the TCGplayer page shows if the page is filtered differently.
+  Trust the live count, but check the page before acting.
+- **`low_price` from the conditions endpoint is not the buyable price** — see the table
+  above. Only `lowest_with_shipping` matched the site.
 - **Never commit `.env`.** It's gitignored, along with `data/` and `out/`.
 
 ## Reading the dashboard

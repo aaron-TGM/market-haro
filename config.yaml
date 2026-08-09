@@ -72,8 +72,13 @@ snipe:
   min_change_7d: 10.0
   # Include sealed products in the snipe board.
   include_sealed: false
-  # A gap smaller than this is just noise between two price sources.
-  min_gap_pct: 8.0
+  # How far below the rest of the shelf the cheapest copy has to sit before it
+  # counts as a mispriced listing. Both numbers are live and from the same call,
+  # so this is a real comparison. Median undercut across the game is ~20% and a
+  # quarter of cards clear 25%, so the threshold sits well out in the tail.
+  min_undercut_pct: 40.0
+  # Floor above the (up to 2-day-old) batch price by this much = squeeze.
+  min_squeeze_pct: 8.0
   # Copies at Near Mint. At or below this the shelf is clearable by one buyer.
   max_copies: 40
   thin_supply: 12
