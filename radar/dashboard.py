@@ -124,6 +124,41 @@ select{max-width:260px}
 .thin{color:var(--series-2);font-weight:640}
 .buy{font-size:12px;color:var(--series-1);text-decoration:none;white-space:nowrap;font-weight:560}
 .buy:hover{text-decoration:underline}
+#tip{position:fixed;z-index:50;max-width:300px;background:var(--text-primary);
+  color:var(--surface-1);padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.45;
+  pointer-events:none;opacity:0;transition:opacity .12s;box-shadow:0 6px 20px rgba(0,0,0,.22)}
+#tip.on{opacity:1}
+#tip b{color:inherit}
+[data-tip]{cursor:help}
+.info{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;
+  border:1px solid currentColor;border-radius:50%;font-size:9px;line-height:1;margin-left:4px;
+  opacity:.55;vertical-align:1px;cursor:help;font-weight:600}
+.info:hover{opacity:1}
+thead th .info{margin-left:3px}
+details.gloss{margin-bottom:16px}
+details.gloss summary{cursor:pointer;padding:11px 15px;font-size:13px;font-weight:600;
+  list-style:none;display:flex;align-items:center;gap:8px}
+details.gloss summary::-webkit-details-marker{display:none}
+details.gloss summary::before{content:"";display:inline-block;width:0;height:0;
+  border-left:5px solid var(--text-muted);border-top:4px solid transparent;
+  border-bottom:4px solid transparent;transition:transform .15s}
+details.gloss[open] summary::before{transform:rotate(90deg)}
+details.gloss .gbody{padding:0 15px 15px;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px 26px}
+details.gloss dl{margin:0}
+details.gloss dt{font-size:12.5px;font-weight:620;margin-top:9px}
+details.gloss dt:first-child{margin-top:0}
+details.gloss dd{margin:2px 0 0;font-size:12.5px;color:var(--text-secondary);line-height:1.5}
+details.gloss h4{font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--text-muted);margin:0 0 6px}
+.win{display:flex;border:1px solid var(--border);border-radius:999px;overflow:hidden}
+.winb{background:var(--plane);border:0;border-right:1px solid var(--border);padding:5px 12px;
+  font:inherit;font-size:12.5px;color:var(--text-secondary);cursor:pointer}
+.winb:last-child{border-right:0}
+.winb:hover{color:var(--text-primary)}
+.winb[aria-pressed="true"]{background:var(--tint-1);color:var(--text-primary);font-weight:600}
+th.wincol{color:var(--text-primary)}
+td.wincol{background:var(--tint-1)}
 .chead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
 .seg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex:none}
 .segb{background:var(--plane);border:0;border-right:1px solid var(--border);padding:5px 10px;
@@ -183,7 +218,10 @@ const BANDS = [
 ];
 const state = {q:'', sigs:new Set(), bands:new Set(), set:'', rarity:'', type:'', printing:'',
                min:null, max:null, sort:'score', dir:-1, limit:50, dim:'band',
-               maxCopies:null, gapDir:''};
+               maxCopies:null, gapDir:'', win:'7d', minMove:null, moveDir:'',
+               minScore:null, floorOnly:false};
+const WINKEY = {'24h':'change_24h', '7d':'change_7d', '30d':'change_30d'};
+const WINSORT = {'24h':'c24', '7d':'c7', '30d':'c30'};
 
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -194,11 +232,58 @@ const pct = v => {
   return `<span class="${cls}">${v>0?'+':''}${v.toFixed(1)}%</span>`;
 };
 
+const BADGE_TIP = {
+  sustained: "Up \u22658% over 7d <b>and</b> \u226515% over 30d \u2014 a trend, not a blip.",
+  spike: "Up \u226512% in 24h with the 7d change not already negative. Early, noisier.",
+  breakout: "Cleared its own highest price from 90\u21927 days ago by \u22653%. The recent week is excluded so a steady climb doesn't trip it every day.",
+};
+const tip = document.getElementById('tip');
+function showTip(el){
+  const t = el.getAttribute('data-tip'); if (!t) return;
+  tip.innerHTML = t;
+  tip.classList.add('on');
+  const r = el.getBoundingClientRect();
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = r.left + r.width/2 - w/2;
+  x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+  let y = r.top - h - 8;
+  if (y < 8) y = r.bottom + 8;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+function hideTip(){ tip.classList.remove('on'); }
+// Track the anchor so moving across child nodes inside the same element
+// doesn't flicker the tooltip off and on again.
+let tipAnchor = null;
+document.addEventListener('mouseover', e=>{
+  const el = e.target.closest('[data-tip]');
+  if (el === tipAnchor) return;
+  tipAnchor = el;
+  if (el) showTip(el); else hideTip();
+});
+document.addEventListener('mouseout', e=>{
+  const from = e.target.closest('[data-tip]');
+  if (!from) return;
+  const to = e.relatedTarget && e.relatedTarget.closest
+    ? e.relatedTarget.closest('[data-tip]') : null;
+  if (to !== from){ tipAnchor = to; if (to) showTip(to); else hideTip(); }
+});
+document.addEventListener('focusin', e=>{
+  const el = e.target.closest('[data-tip]'); if (el) showTip(el);
+});
+document.addEventListener('focusout', hideTip);
+// The table header is sticky, so on scroll follow the anchor rather than
+// dropping the tooltip out from under the cursor.
+window.addEventListener('scroll', ()=>{ if (tipAnchor) showTip(tipAnchor); }, {passive:true});
+window.addEventListener('resize', ()=>{ if (tipAnchor) showTip(tipAnchor); });
+
 const gapCell = r => {
   if (r.gap_pct == null) return '<span class="flat">—</span>';
   if (r.gap_pct > 0) return `<span class="up">+${r.gap_pct.toFixed(0)}%</span>`;
   const m = r.floor_multiple;
-  return `<span class="down">${m ? m.toFixed(1)+'\u00d7' : r.gap_pct.toFixed(0)+'%'}</span>`;
+  // The multiple only says something once the floor is meaningfully above market;
+  // "1.0x" on a rounding difference is just noise.
+  if (m && m >= 1.2) return `<span class="down">${m.toFixed(1)}\u00d7</span>`;
+  return `<span class="flat">${r.gap_pct.toFixed(0)}%</span>`;
 };
 
 function sparkline(series){
@@ -223,7 +308,8 @@ function sparkline(series){
 }
 
 function rowHTML(r, i){
-  const badges = (r.signals||[]).map(s=>`<span class="badge ${s}">${s}</span>`).join('');
+  const badges = (r.signals||[]).map(s=>
+    `<span class="badge ${s}" data-tip="${esc(BADGE_TIP[s]||'')}">${s}</span>`).join('');
   const url = r.tcgplayer_url || (r.tcgplayer_id ? 'https://www.tcgplayer.com/product/'+r.tcgplayer_id : null);
   const nm = url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(r.name)}</a>` : esc(r.name);
   const img = r.image_url ? `<img src="${esc(r.image_url)}" alt="" loading="lazy" decoding="async">` : '<img alt="">';
@@ -281,6 +367,15 @@ function filtered(){
     if (state.maxCopies != null && !(r.copies != null && r.copies <= state.maxCopies)) return false;
     if (state.gapDir === 'under' && !(r.gap_pct > 0)) return false;
     if (state.gapDir === 'over'  && !(r.gap_pct < 0)) return false;
+    if (state.floorOnly && r.floor_low == null) return false;
+    if (state.minScore != null && !(r.score >= state.minScore)) return false;
+    const mv = r[WINKEY[state.win]];
+    if (state.moveDir === 'up'   && !(mv > 0)) return false;
+    if (state.moveDir === 'down' && !(mv < 0)) return false;
+    if (state.minMove != null){
+      if (mv == null) return false;
+      if (Math.abs(mv) < state.minMove) return false;
+    }
     return true;
   });
 }
@@ -321,6 +416,12 @@ function apply(){
 
   drawCharts(rows);
 
+  // Make it obvious which window everything is being judged on.
+  const wc = WINSORT[state.win];
+  document.querySelectorAll('thead th[data-sort]').forEach(th=>
+    th.classList.toggle('wincol', th.dataset.sort === wc));
+  document.getElementById('win-label').textContent = state.win;
+
   const shown = rows.slice(0, state.limit);
   document.getElementById('tbody').innerHTML = shown.length
     ? shown.map(rowHTML).join('')
@@ -345,8 +446,15 @@ function apply(){
 
 function reset(){
   Object.assign(state, {q:'', sigs:new Set(), bands:new Set(), set:'', rarity:'', type:'',
-                        printing:'', min:null, max:null, limit:50, maxCopies:null, gapDir:''});
-  const mc = document.getElementById('maxcopies'); if (mc) mc.value = '';
+                        printing:'', min:null, max:null, limit:50, maxCopies:null, gapDir:'',
+                        win:'7d', minMove:null, moveDir:'', minScore:null, floorOnly:false,
+                        sort:'score', dir:-1});
+  ['maxcopies','minmove','minscore'].forEach(id=>{
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const fo = document.getElementById('flooronly'); if (fo) fo.checked = false;
+  document.querySelectorAll('.winb').forEach(b=>
+    b.setAttribute('aria-pressed', b.dataset.win === '7d'));
   document.getElementById('q').value = '';
   ['setfilter','rarityfilter','typefilter','printfilter'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('minp').value = '';
@@ -395,6 +503,29 @@ document.querySelectorAll('thead th[data-sort]').forEach(th=>th.addEventListener
   if (state.sort===k) state.dir*=-1; else {state.sort=k; state.dir = k==='name' ? 1 : -1;}
   apply();
 }));
+document.querySelectorAll('.winb').forEach(b=>b.addEventListener('click', ()=>{
+  state.win = b.dataset.win;
+  document.querySelectorAll('.winb').forEach(x=>x.setAttribute('aria-pressed', x===b));
+  // Selecting a window is also a statement about what you want ranked.
+  state.sort = WINSORT[state.win]; state.dir = -1; state.limit = 50;
+  apply();
+}));
+document.querySelectorAll('.chip[data-move]').forEach(c=>c.addEventListener('click', ()=>{
+  const m = c.dataset.move;
+  state.moveDir = state.moveDir === m ? '' : m;
+  document.querySelectorAll('.chip[data-move]').forEach(x=>
+    x.setAttribute('aria-pressed', x.dataset.move === state.moveDir));
+  state.limit=50; apply();
+}));
+[['minmove','minMove'],['minscore','minScore']].forEach(([id,key])=>{
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', e=>{
+    const v = e.target.value === '' ? null : Number(e.target.value);
+    state[key] = (v==null || Number.isNaN(v)) ? null : v; state.limit=50; apply();
+  });
+});
+const fo = document.getElementById('flooronly');
+if (fo) fo.addEventListener('change', e=>{state.floorOnly=e.target.checked; state.limit=50; apply();});
 const mc = document.getElementById('maxcopies');
 if (mc) mc.addEventListener('input', e=>{
   const v = e.target.value === '' ? null : Number(e.target.value);
@@ -428,6 +559,89 @@ themeBtn.addEventListener('click', ()=>{
 });
 
 apply();
+"""
+
+
+GLOSSARY = """
+<details class="panel gloss">
+  <summary>How to read this</summary>
+  <div class="gbody">
+    <div>
+      <h4>The two price sources</h4>
+      <dl>
+        <dt>Market</dt><dd>TCGplayer's market price, from a <strong>daily batch</strong> feed.
+          Checked live on 2026-08-09 it was stamped two days earlier. Good for spotting what's
+          moving; not the price anything is currently listed at.</dd>
+        <dt>Floor / Copies</dt><dd>Lowest Near&nbsp;Mint listing and how many copies sit at it,
+          fetched <strong>on demand</strong> by <code>radar snipe</code>. This is the live shelf.
+          Blank until you run it.</dd>
+        <dt>Listings vs. Copies</dt><dd>Listings is the batch count across all conditions; Copies
+          is live and Near&nbsp;Mint only. When they disagree, believe Copies.</dd>
+      </dl>
+    </div>
+    <div>
+      <h4>The three detectors</h4>
+      <dl>
+        <dt>sustained</dt><dd>Up &ge;8% over 7d <em>and</em> &ge;15% over 30d. A trend, not a blip.
+          Slow but honest.</dd>
+        <dt>spike</dt><dd>Up &ge;12% in 24h with 7d not already negative. Catches news early,
+          costs you false positives.</dd>
+        <dt>breakout</dt><dd>Price cleared its own highest level from 90&rarr;7 days ago by &ge;3%.
+          The recent week is excluded deliberately &mdash; otherwise every day of a climb beats
+          yesterday and the signal fires constantly.</dd>
+      </dl>
+    </div>
+    <div>
+      <h4>The two snipe setups</h4>
+      <dl>
+        <dt>discount</dt><dd>Live floor sits <strong>below</strong> the recorded market. Copies are
+          listed under what the card last traded at. The trap: the market price may be stale-high
+          from a spike that already reversed.</dd>
+        <dt>squeeze</dt><dd>Live floor sits <strong>above</strong> the recorded market on thin
+          supply. The cheap copies are gone and the batch price hasn't printed the move yet.</dd>
+        <dt>Gap</dt><dd><strong>+%</strong> for a discount (how far under market). <strong>&times;N</strong>
+          for a squeeze (how many times above the recorded price the shelf now sits).</dd>
+      </dl>
+    </div>
+    <div>
+      <h4>The two scores</h4>
+      <dl>
+        <dt>Score</dt><dd>0&ndash;100 attention rank: 45% sustained + 25% spike + 30% breakout,
+          plus small bonuses for higher price and recorded sales. Ranks <em>attention</em>, not
+          conviction. Rows with no detector firing are halved so they sink.</dd>
+        <dt>Snipe</dt><dd>0&ndash;100 buy rank: 55% gap + 25% scarcity + 20% momentum.</dd>
+        <dt>Both are tunable</dt><dd>Every threshold and weight lives in <code>config.yaml</code>
+          under <code>signals:</code> and <code>snipe:</code>.</dd>
+      </dl>
+    </div>
+    <div>
+      <h4>Using the filters</h4>
+      <dl>
+        <dt>Window</dt><dd>Picks which of 24h / 7d / 30d the movement filter and the ranking use.
+          The matching column is highlighted so you can see what's driving the order.</dd>
+        <dt>Min move</dt><dd>Absolute %, so it catches falls as well as rises. Pair it with
+          Risers or Fallers to pick a direction.</dd>
+        <dt>Supply</dt><dd>Max copies plus floor-under / floor-over-market. "Floor over market"
+          with max copies of 10 is the squeeze screen.</dd>
+        <dt>Everything composes</dt><dd>Filters stack, the charts redraw from the same set, and
+          Export CSV writes exactly what's on screen.</dd>
+      </dl>
+    </div>
+    <div>
+      <h4>What this can't tell you</h4>
+      <dl>
+        <dt>Freshness</dt><dd>Market prices lag by up to two days. Floors are live at the moment
+          you ran <code>radar snipe</code> and are cached after the first call, so re-running
+          inside the cache window returns the same numbers.</dd>
+        <dt>Why</dt><dd>Nothing here knows about bans, reprints, or tournament results. A card can
+          be up 400% because of an announcement you haven't seen yet &mdash; or because one
+          person bought the shelf.</dd>
+        <dt>Depth</dt><dd>Copies counts Near&nbsp;Mint only. Played copies are separate supply and
+          a separate market.</dd>
+      </dl>
+    </div>
+  </div>
+</details>
 """
 
 
@@ -542,7 +756,7 @@ def render(
     breadth_tile = ""
     if breadth_pct is not None:
         breadth_tile = f"""
-  <div class="tile"><div class="label">Market breadth</div>
+  <div class="tile"><div class="label" data-tip="Share of every priced product in the game that is up over 7 days. Above 50% means the whole market is rising, not just your picks.">Market breadth<span class="info">?</span></div>
     <div class="value">{breadth_pct}%</div>
     <div class="foot">{breadth_up:,} of {breadth_total:,} up over 7d</div>
     <div class="meter"><i style="width:{breadth_pct}%"></i></div></div>"""
@@ -570,17 +784,19 @@ def render(
   </div>
 </header>
 
+{GLOSSARY}
+
 <div class="tiles">
-  <div class="tile"><div class="label">Cards flagged</div>
+  <div class="tile"><div class="label" data-tip="Products where at least one detector fired, out of everything that cleared the price and listings floors.">Cards flagged<span class="info">?</span></div>
     <div class="value">{len(flagged)}</div>
     <div class="foot">of {len(scored):,} that cleared the filters</div></div>
-  <div class="tile"><div class="label">Sustained climb</div>
+  <div class="tile"><div class="label" data-tip="Up at least 8% over 7d <b>and</b> 15% over 30d. A trend, not a blip.">Sustained climb<span class="info">?</span></div>
     <div class="value">{n_sus}</div><div class="foot">up over 7d and 30d</div></div>
-  <div class="tile"><div class="label">24h spike</div>
+  <div class="tile"><div class="label" data-tip="Up at least 12% in 24h, with the 7d change not already negative.">24h spike<span class="info">?</span></div>
     <div class="value">{n_spk}</div><div class="foot">sudden jump today</div></div>
-  <div class="tile"><div class="label">Breakout</div>
+  <div class="tile"><div class="label" data-tip="Price cleared its own highest level from 90&rarr;7 days ago by at least 3%. The last 7 days are excluded on purpose &mdash; otherwise every day of a climb beats yesterday.">Breakout<span class="info">?</span></div>
     <div class="value">{n_brk}</div><div class="foot">above its own prior range</div></div>
-  <div class="tile"><div class="label">Top mover</div>
+  <div class="tile"><div class="label" data-tip="Largest 7-day gain among flagged cards.">Top mover<span class="info">?</span></div>
     <div class="value">{(f"{top['change_7d']:+.0f}%" if top and top.get('change_7d') is not None else '—')}</div>
     <div class="foot">{_esc(top['name']) if top else 'nothing flagged today'}</div></div>{breadth_tile}
 </div>
@@ -589,7 +805,8 @@ def render(
 
 <div class="panel filters">
   <div class="frow">
-    <input type="search" id="q" placeholder="Search card, set or number…" aria-label="Search">
+    <input type="search" id="q" placeholder="Search card, set or number…" aria-label="Search"
+           data-tip="Matches card name, set name, or collector number.">
     <select id="setfilter" aria-label="Set">{_options(sets, 'All sets')}</select>
     <select id="rarityfilter" aria-label="Rarity">{_options(rarities, 'All rarities')}</select>
     <select id="printfilter" aria-label="Printing">{_options(printings, 'All printings')}</select>
@@ -597,19 +814,40 @@ def render(
     <button class="ghost" id="reset">Reset</button>
   </div>
   <div class="frow">
-    <span class="flabel">Value</span>
+    <span class="flabel" data-tip="Filter by price. Bands stack (pick more than one); the min/max boxes take any range you type.">Value<span class="info">?</span></span>
     <button class="chip" data-band="u5" aria-pressed="false">Under $5</button>
     <button class="chip" data-band="5-20" aria-pressed="false">$5–20</button>
     <button class="chip" data-band="20-100" aria-pressed="false">$20–100</button>
     <button class="chip" data-band="o100" aria-pressed="false">$100+</button>
     <input type="number" id="minp" placeholder="min $" min="0" step="0.5" aria-label="Minimum price">
     <input type="number" id="maxp" placeholder="max $" min="0" step="0.5" aria-label="Maximum price">
-    <span class="flabel" style="margin-left:12px">Supply</span>
+    <span class="flabel" style="margin-left:12px" data-tip="Copy counts only exist on rows where a live floor has been pulled. Run <code>radar snipe</code> to populate them.">Supply<span class="info">?</span></span>
     <input type="number" id="maxcopies" placeholder="max copies" min="1" step="1"
            aria-label="Maximum copies listed" style="width:110px">
     <button class="chip" data-gap="under" aria-pressed="false">Floor under market</button>
     <button class="chip" data-gap="over" aria-pressed="false">Floor over market</button>
-    <span class="flabel" style="margin-left:12px">Signal</span>
+    <label class="chip" style="display:inline-flex;gap:6px;align-items:center"
+           data-tip="Only show rows where a live listing floor has been pulled.">
+      <input type="checkbox" id="flooronly"> Live floor only</label>
+  </div>
+  <div class="frow">
+    <span class="flabel" data-tip="Which time window the movement filter, the ranking and the highlighted column all use.">Window<span class="info">?</span></span>
+    <div class="win" role="group" aria-label="Time window">
+      <button class="winb" data-win="24h" aria-pressed="false">24h</button>
+      <button class="winb" data-win="7d" aria-pressed="true">7d</button>
+      <button class="winb" data-win="30d" aria-pressed="false">30d</button>
+    </div>
+    <input type="number" id="minmove" placeholder="min move %" min="0" step="5"
+           aria-label="Minimum move percent" style="width:118px"
+           data-tip="Minimum absolute % move on the selected window. 20 means &quot;moved at least 20% either way&quot;.">
+    <button class="chip" data-move="up" aria-pressed="false"
+            data-tip="Only cards that rose over the selected window.">Risers</button>
+    <button class="chip" data-move="down" aria-pressed="false"
+            data-tip="Only cards that fell over the selected window &mdash; where the dips are.">Fallers</button>
+    <span class="flabel" style="margin-left:12px" data-tip="Hide anything below this Radar Score.">Score<span class="info">?</span></span>
+    <input type="number" id="minscore" placeholder="min" min="0" max="100" step="5"
+           aria-label="Minimum score" style="width:78px">
+    <span class="flabel" style="margin-left:12px" data-tip="Show only cards where these detectors fired. Multiple selections are OR'd together.">Signal<span class="info">?</span></span>
     <button class="chip" data-sig="sustained" aria-pressed="false">Sustained</button>
     <button class="chip" data-sig="spike" aria-pressed="false">Spike</button>
     <button class="chip" data-sig="breakout" aria-pressed="false">Breakout</button>
@@ -620,7 +858,8 @@ def render(
 <div class="charts">
   <div class="panel chart">
     <h3>Where the movement is</h3>
-    <p class="cap">Products in view, by set — top 10. Updates with the filters.</p>
+    <p class="cap">Products in view, by set — top 10. Updates with the filters.
+      Window: <strong id="win-label">7d</strong>.</p>
     <div class="bars" id="chart-sets"></div>
   </div>
   <div class="panel chart">
@@ -639,19 +878,19 @@ def render(
 
 <div class="panel tablewrap"><table><thead><tr>
   <th class="rank">#</th>
-  <th data-sort="name">Card</th>
-  <th class="num" data-sort="price">Market</th>
-  <th class="num" data-sort="c24">24h</th>
-  <th class="num" data-sort="c7">7d</th>
-  <th class="num" data-sort="c30">30d</th>
-  <th>Trend</th>
-  <th class="num" data-sort="floor">Floor</th>
-  <th class="num" data-sort="copies">Copies</th>
-  <th class="num" data-sort="gap">Gap</th>
-  <th class="num col-listings" data-sort="listings">Listings</th>
-  <th>Signals</th>
-  <th class="num" data-sort="score" aria-sort="descending">Score</th>
-  <th class="why">Note</th>
+  <th data-sort="name" data-tip="Click the name to open the TCGplayer page. Sub-line is set &middot; number &middot; rarity &middot; printing.">Card</th>
+  <th class="num" data-sort="price" data-tip="TCGplayer <b>market price</b> from the daily batch feed. Measured live on 2026-08-09 it was stamped two days earlier &mdash; treat it as a lagging reference, not the current price.">Market</th>
+  <th class="num" data-sort="c24" data-tip="Change in market price over <b>24 hours</b>, straight from the API. Earliest signal, noisiest.">24h</th>
+  <th class="num" data-sort="c7" data-tip="Change over <b>7 days</b>. The best single read on whether a move is real.">7d</th>
+  <th class="num" data-sort="c30" data-tip="Change over <b>30 days</b>. Context: is this a new move or the tail of an old one?">30d</th>
+  <th data-tip="Price history for this printing &mdash; API history plus every daily snapshot you've taken. Denser the longer you run it.">Trend</th>
+  <th class="num" data-sort="floor" data-tip="<b>Lowest Near Mint listing right now.</b> Pulled live by <code>radar snipe</code>, not from the daily batch. Blank means no live look yet.">Floor</th>
+  <th class="num" data-sort="copies" data-tip="How many <b>Near Mint copies are actually listed</b>. Live. Orange means few enough that one buyer can clear the shelf.">Copies</th>
+  <th class="num" data-sort="gap" data-tip="Market vs. live floor. <b>+%</b> = copies listed under market (discount). <b>&times;N</b> = floor sits N times above the recorded price (squeeze).">Gap</th>
+  <th class="num col-listings" data-sort="listings" data-tip="Total listings from the <b>daily batch</b> feed, all conditions. Can disagree with Copies &mdash; the live number is the one to trust.">Listings</th>
+  <th data-tip="Which detectors fired. Hover a badge for what each one means.">Signals</th>
+  <th class="num" data-sort="score" aria-sort="descending" data-tip="0&ndash;100 attention rank: 45% sustained + 25% spike + 30% breakout, plus small bonuses for higher price and recorded sales. Ranks attention, not conviction.">Score</th>
+  <th class="why" data-tip="The one thing the numbers in this row don't already say.">Note</th>
 </tr></thead><tbody id="tbody"></tbody></table>
 <div class="more" id="more" style="display:none">
   <button class="ghost" id="more-btn">Show <span id="more-n">50</span> more</button>
@@ -670,9 +909,18 @@ def render(
   <code>python -m radar run</code></p>
 </footer>
 </div>
+<div id="tip" role="tooltip"></div>
 <script type="application/json" id="radar-data">{payload}</script>
 <script>{JS}</script>
 </body></html>"""
+
+
+_MODE_TIP = {
+    "discount": "Copies are listed <b>below</b> the recorded market price. Straight arbitrage "
+                "&mdash; unless the market price is stale-high from a spike that already reversed.",
+    "squeeze": "The floor sits <b>above</b> the recorded price on thin supply. The cheap copies "
+               "are gone and the daily batch hasn't caught up yet.",
+}
 
 
 def _gap_cell(r: dict) -> str:
@@ -717,7 +965,7 @@ def _snipe_board(board: Sequence[dict], thin: int) -> str:
       <td class="num">{'—' if ship is None else f"${ship:,.2f}"}</td>
       <td class="num">{copies_cell}</td>
       <td class="num">{_gap_cell(r)}</td>
-      <td><span class="mode {mode}">{mode}</span></td>
+      <td><span class="mode {mode}" data-tip="{_MODE_TIP.get(mode, '')}">{mode}</span></td>
       <td class="num score">{r.get('snipe_score', 0):.0f}</td>
       <td class="why">{_esc(explain_snipe(r))}</td>
       <td>{f'<a class="buy" href="{_esc(url)}" target="_blank" rel="noopener">Open &rarr;</a>' if url else ''}</td>
@@ -733,9 +981,15 @@ def _snipe_board(board: Sequence[dict], thin: int) -> str:
     Orange copy counts are {thin} or fewer — one buyer can clear that shelf.</p></div>
   </div>
   <div class="tablewrap"><table><thead><tr>
-    <th class="rank">#</th><th>Card</th><th class="num">Market</th><th class="num">Floor</th>
-    <th class="num">Shipped</th><th class="num">Copies</th><th class="num">Gap</th>
-    <th>Setup</th><th class="num">Snipe</th><th class="why">Read</th><th></th>
+    <th class="rank">#</th><th data-tip="Click the name to open the TCGplayer page. Sub-line is set &middot; number &middot; rarity &middot; printing.">Card</th>
+    <th class="num" data-tip="TCGplayer <b>market price</b> from the daily batch feed. Measured live on 2026-08-09 it was stamped two days earlier &mdash; treat it as a lagging reference, not the current price.">Market</th>
+    <th class="num" data-tip="<b>Lowest Near Mint listing right now.</b> Pulled live by <code>radar snipe</code>, not from the daily batch. Blank means no live look yet.">Floor</th>
+    <th class="num" data-tip="Lowest Near Mint listing <b>including shipping</b> &mdash; the price you actually pay. On cheap cards this is often double the floor.">Shipped</th>
+    <th class="num" data-tip="How many <b>Near Mint copies are actually listed</b>. Live. Orange means few enough that one buyer can clear the shelf.">Copies</th>
+    <th class="num" data-tip="Market vs. live floor. <b>+%</b> = copies listed under market (discount). <b>&times;N</b> = floor sits N times above the recorded price (squeeze).">Gap</th>
+    <th data-tip="<b>discount</b>: copies listed below the recorded market. <b>squeeze</b>: the cheap copies are gone and the batch price hasn't caught up.">Setup</th>
+    <th class="num" data-tip="0&ndash;100 buy rank: 55% gap + 25% scarcity + 20% momentum. Tunable under <code>snipe:</code> in config.yaml.">Snipe</th>
+    <th class="why" data-tip="Plain-English version of the row.">Read</th><th></th>
   </tr></thead><tbody>{''.join(rows)}</tbody></table></div>
 </div>"""
 

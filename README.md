@@ -179,11 +179,22 @@ The **Snipe board** sits at the top: live floor, shipped price, copies, gap, set
 direct link to the TCGplayer page. A squeeze shows its gap as a multiple (`5.6×`) rather
 than a percentage, because "-462% below market" is arithmetically true and unreadable.
 
+**"How to read this"** at the top of the page is a collapsible glossary covering both price
+sources, all three detectors, both snipe setups, both scores, and what the tool can't tell
+you. Every column header, badge and control also has a hover tooltip — the `?` markers are
+just the ones worth pointing at.
+
+**Time window** — a 24h / 7d / 30d selector drives the movement filter, the default ranking
+and which column is highlighted, so it's always visible what the order is based on. Pair it
+with *min move %* (absolute, so it catches falls too) and *Risers* / *Fallers*.
+
 **Filters** — search, set, rarity, printing, and Cards vs. Sealed, plus value filtering
 two ways: preset bands (Under $5 / $5–20 / $20–100 / $100+, multi-select) or exact
-min/max boxes for an arbitrary range. Supply filters: max copies, and floor-under- vs.
-floor-over-market. Signal chips narrow to sustained / spike / breakout. Everything
-composes, and Reset clears it all.
+min/max boxes for an arbitrary range. Supply filters: max copies, floor-under- vs.
+floor-over-market, and live-floor-only. Plus a minimum Radar Score. Signal chips narrow to
+sustained / spike / breakout. Everything composes, and Reset clears it all.
+
+The squeeze screen is: **Floor over market** + **max copies 10**.
 
 **Charts** — "Where the movement is" ranks the sets in view; "Breakdown" toggles between
 price band, rarity, and printing. Both redraw with the filters, so filtering to `R+`
