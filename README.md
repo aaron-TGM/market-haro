@@ -68,6 +68,32 @@ Snipe score is `0.55 x gap + 0.25 x scarcity + 0.20 x momentum`, all tunable und
 `snipe:` in `config.yaml`. Floors are stored as a time series, so a card going
 40 → 12 → 4 copies across runs is supply drying up in front of you.
 
+## Budget and position sizing
+
+Enter a budget at the top of the dashboard and every row gets a suggested position.
+The rules, in full:
+
+```
+unit cost    = lowest Near Mint listing WITH shipping (the number you actually pay)
+position cap = budget x max_position_pct   (25% default; halved for a squeeze)
+quantity     = min(copies listed, cap / unit, remaining budget / unit)
+order        = the snipe board first, then whatever else is in view
+```
+
+Funded rows get a green edge and a `buy N · $X` pill. **Click any row** and it expands
+into four panels: what the row says in plain English, the position at your budget (copies,
+cost, % of budget, what limited it, whether it clears the shelf, budget left after), why it
+ranked where it did (which detectors fired and how strongly), and a before-you-buy
+checklist with the failure mode specific to that setup.
+
+Greedy allocation in rank order is deliberate: it's transparent, it never silently
+reallocates away from the row you're reading, and every line can be checked by hand.
+`max_position_pct`, `squeeze_haircut` and `fee_pct` live under `plan:` in `config.yaml` —
+set `fee_pct` to see break-even resale prices.
+
+This is arithmetic on your inputs and the live floor. It has no view on whether a card is
+worth owning and no idea why the price is moving.
+
 ## The three detectors
 
 Percentage change alone is a bad signal — a card that goes from $0.11 to $0.33 is "up
@@ -141,6 +167,7 @@ radar/
   ingest.py      sets -> cards -> prices -> history backfill
   signals.py     the three detectors + scoring
   snipe.py       live listing floors, discount vs. squeeze, snipe score
+  plan.py        budget -> position sizing (JS twin lives in dashboard.py)
   dashboard.py   single-file HTML output
   cli.py         command line
 tests/

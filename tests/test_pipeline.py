@@ -385,6 +385,81 @@ def test_snipe_board_renders_gaps_readably():
     assert "squeeze" in html
 
 
+def test_plan_allocates_greedily_within_caps():
+    """Position sizing is plain arithmetic; these numbers are checkable by hand."""
+    from radar import plan
+
+    rows = [
+        # squeeze: cap is halved -> 500 * 0.25 * 0.5 = $62.50 -> 2 copies at $20.86
+        dict(card_id="659096", printing="Holofoil", snipe_mode="squeeze",
+             floor_low=20.00, floor_ship=20.86, copies=4),
+        # squeeze, only one copy exists -> supply is the binding constraint
+        dict(card_id="616646", printing="Normal", snipe_mode="squeeze",
+             floor_low=19.99, floor_ship=22.98, copies=1),
+        # squeeze on a $3,800 card -> one copy blows the halved cap
+        dict(card_id="645375", printing="Holofoil", snipe_mode="squeeze",
+             floor_low=3800.0, floor_ship=3800.0, copies=6),
+        # discount: full cap $125 at $8.00 -> 15 copies, under the 27 listed
+        dict(card_id="673480", printing="Holofoil", snipe_mode="discount",
+             floor_low=2.81, floor_ship=8.00, copies=27),
+        # no floor pulled at all
+        dict(card_id="000000", printing="Normal", snipe_mode=None),
+    ]
+    out = plan.allocate(rows, 500.0, max_position_pct=0.25, squeeze_haircut=0.5)
+
+    assert out[0]["qty"] == 2 and out[0]["cost"] == 41.72
+    assert out[0]["limited_by"] == "the per-position cap"
+    assert out[0]["clears_shelf"] is False
+
+    assert out[1]["qty"] == 1 and out[1]["cost"] == 22.98
+    assert out[1]["clears_shelf"] is True, "one copy listed, one copy bought"
+    assert out[1]["limited_by"] == "the number of copies listed"
+
+    assert out[2]["qty"] == 0
+    assert "per-position cap" in out[2]["reason"]
+
+    assert out[3]["qty"] == 15 and out[3]["cost"] == 120.0
+    assert out[3]["budget_pct"] == 24.0
+
+    assert out[4]["qty"] == 0 and "No live floor" in out[4]["reason"]
+
+    # Spend is cumulative, and never exceeds the budget.
+    spent = sum(o["cost"] for o in out)
+    assert spent <= 500.0
+    assert round(spent, 2) == 184.70
+
+    # Shipping is what you pay: the bare floor is only a fallback.
+    assert plan.unit_cost({"floor_low": 2.81, "floor_ship": 8.00}) == 8.00
+    assert plan.unit_cost({"floor_low": 2.81}) == 2.81
+    assert plan.unit_cost({}) is None
+
+
+def test_plan_runs_out_of_budget_gracefully():
+    from radar import plan
+
+    rows = [dict(card_id=str(i), printing="Normal", snipe_mode="discount",
+                 floor_low=10.0, floor_ship=10.0, copies=5) for i in range(6)]
+    out = plan.allocate(rows, 100.0, max_position_pct=0.25)
+    # 25% cap = $25 -> 2 copies each ($20) until the money is gone.
+    assert [o["qty"] for o in out] == [2, 2, 2, 2, 2, 0]
+    assert out[5]["reason"].startswith("$0.00 left")
+    assert sum(o["cost"] for o in out) == 100.0
+
+
+def test_plan_read_and_risk_are_specific():
+    from radar import plan
+
+    discount = dict(snipe_mode="discount", market_price=9.46, floor_low=2.81,
+                    floor_ship=8.00, copies=27, gap_pct=70.3, floor_multiple=0.3)
+    squeeze = dict(snipe_mode="squeeze", market_price=3.56, floor_low=19.99,
+                   floor_ship=22.98, copies=1, gap_pct=-461.5, floor_multiple=5.62)
+    assert "70% under" in plan.read(discount) and "27 listed" in plan.read(discount)
+    assert "5.6x" in plan.read(squeeze) and "Only 1 listed" in plan.read(squeeze)
+    assert "stale-high" in plan.risk(discount)
+    assert "own the top" in plan.risk(squeeze)
+    assert len(plan.CHECKLIST) == 5
+
+
 if __name__ == "__main__":
     passed = 0
     for name, fn in sorted(globals().items()):

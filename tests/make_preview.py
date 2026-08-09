@@ -347,6 +347,7 @@ def main(out_path: str = "out/preview.html") -> Path:
         market=MARKET,
         snipe_board=board,
         thin_supply=12,
+        plan_cfg={"max_position_pct": 0.25, "squeeze_haircut": 0.5, "fee_pct": 0.0},
         scope_note="preview slice: 118 of 657 products ≥$1 that moved ≥40% on a window",
     )
     p = dashboard.write(html, out_path)

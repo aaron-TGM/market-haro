@@ -124,6 +124,43 @@ select{max-width:260px}
 .thin{color:var(--series-2);font-weight:640}
 .buy{font-size:12px;color:var(--series-1);text-decoration:none;white-space:nowrap;font-weight:560}
 .buy:hover{text-decoration:underline}
+.budget{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 15px;margin-bottom:16px}
+.budget .flabel{margin-right:0}
+.budget input{width:120px}
+.budget .plan-sum{font-size:13px;color:var(--text-secondary)}
+.budget .plan-sum b{color:var(--text-primary)}
+.budget .disc{font-size:11.5px;color:var(--text-muted);margin-left:auto;max-width:42ch;text-align:right}
+tr.buy td{box-shadow:inset 3px 0 0 var(--series-3)}
+tr.row{cursor:pointer}
+tr.row .rank::before{content:"";display:inline-block;width:0;height:0;margin-right:6px;
+  border-left:4px solid var(--text-muted);border-top:3.5px solid transparent;
+  border-bottom:3.5px solid transparent;transition:transform .15s;transform-origin:35% 50%}
+tr.row[aria-expanded="true"] .rank::before{transform:rotate(90deg)}
+tr.detail > td{padding:0;background:var(--plane)}
+.det{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px 26px;
+  padding:16px 18px 18px;
+  /* The table can be wider than the screen; pin the detail so it stays readable
+     without scrolling sideways to find it. */
+  position:sticky;left:0;width:min(100%,calc(100vw - 56px))}
+.det h5{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);
+  margin:0 0 7px}
+.det p{margin:0 0 8px;font-size:13px;line-height:1.55}
+.det ul{margin:0;padding-left:17px;font-size:12.5px;line-height:1.55;color:var(--text-secondary)}
+.det li{margin-bottom:5px}
+.det .big{font-size:19px;font-weight:640;line-height:1.25;margin-bottom:4px}
+.det .sub2{font-size:12.5px;color:var(--text-secondary)}
+.det .kv{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;
+  padding:3px 0;border-bottom:1px solid var(--grid)}
+.det .kv:last-child{border-bottom:0}
+.det .kv span:last-child{font-variant-numeric:tabular-nums;color:var(--text-primary)}
+.det .kv span:first-child{color:var(--text-secondary)}
+.det .warn{color:var(--series-2)}
+.det .cta{display:inline-block;margin-top:8px;font-size:12.5px;font-weight:600;
+  color:var(--series-1);text-decoration:none}
+.det .cta:hover{text-decoration:underline}
+.pill{display:inline-block;font-size:11px;padding:2px 7px;border-radius:999px;
+  border:1px solid var(--series-3);color:var(--series-3);background:var(--tint-3);font-weight:600}
+.pill.none{border-color:var(--border);color:var(--text-muted);background:transparent}
 #tip{position:fixed;z-index:50;max-width:300px;background:var(--text-primary);
   color:var(--surface-1);padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.45;
   pointer-events:none;opacity:0;transition:opacity .12s;box-shadow:0 6px 20px rgba(0,0,0,.22)}
@@ -219,7 +256,8 @@ const BANDS = [
 const state = {q:'', sigs:new Set(), bands:new Set(), set:'', rarity:'', type:'', printing:'',
                min:null, max:null, sort:'score', dir:-1, limit:50, dim:'band',
                maxCopies:null, gapDir:'', win:'7d', minMove:null, moveDir:'',
-               minScore:null, floorOnly:false};
+               minScore:null, floorOnly:false, budget:null, inBudgetOnly:false,
+               open:new Set()};
 const WINKEY = {'24h':'change_24h', '7d':'change_7d', '30d':'change_30d'};
 const WINSORT = {'24h':'c24', '7d':'c7', '30d':'c30'};
 
@@ -276,6 +314,160 @@ document.addEventListener('focusout', hideTip);
 window.addEventListener('scroll', ()=>{ if (tipAnchor) showTip(tipAnchor); }, {passive:true});
 window.addEventListener('resize', ()=>{ if (tipAnchor) showTip(tipAnchor); });
 
+
+// ---------------------------------------------------------------------------
+// JavaScript twin of radar/plan.py::allocate(). Keep the two in step --
+// tests/test_pipeline.py pins them to the same fixture.
+// ---------------------------------------------------------------------------
+const unitCost = r => {
+  for (const k of ['floor_ship','floor_low']){
+    const v = r[k];
+    if (typeof v === 'number' && v > 0) return v;
+  }
+  return null;
+};
+
+function allocate(rows, budget){
+  const cfg = DATA.plan || {};
+  const maxPct = cfg.max_position_pct ?? 0.25;
+  const haircut = cfg.squeeze_haircut ?? 0.5;
+  const fee = cfg.fee_pct ?? 0;
+  let remaining = budget;
+  const out = new Map();
+
+  for (const r of rows){
+    const key = r.card_id + '|' + r.printing;
+    const unit = unitCost(r);
+    const copies = (typeof r.copies === 'number') ? r.copies : null;
+    const plan = {unit, qty:0, cost:0, affordable:false, clears:false, reason:'', pct:0,
+                  breakeven:null};
+
+    if (unit == null){
+      plan.reason = 'No live floor yet — run <code>radar snipe</code> to price it.';
+      out.set(key, plan); continue;
+    }
+    let cap = budget * maxPct;
+    if (r.snipe_mode === 'squeeze') cap *= haircut;
+
+    const byCap = Math.floor(cap / unit);
+    const byRem = Math.floor(remaining / unit);
+    const bySupply = copies == null ? byCap : copies;
+    const qty = Math.max(0, Math.min(byCap, byRem, bySupply));
+
+    if (qty < 1){
+      if (byCap < 1) plan.reason =
+        `One copy is ${(unit/budget*100).toFixed(0)}% of the budget, over the ${(maxPct*100).toFixed(0)}% per-position cap.`;
+      else if (byRem < 1) plan.reason = `$${remaining.toFixed(2)} left — one copy costs $${unit.toFixed(2)}.`;
+      else plan.reason = 'No copies listed.';
+      out.set(key, plan); continue;
+    }
+    const cost = qty * unit;
+    remaining -= cost;
+    plan.qty = qty; plan.cost = cost; plan.affordable = true;
+    plan.clears = copies != null && qty >= copies;
+    plan.pct = cost / budget * 100;
+    plan.remaining = remaining;
+    plan.limitedBy = (bySupply <= byCap && bySupply <= byRem) ? 'the number of copies listed'
+                   : (byRem < byCap ? "what's left of the budget" : 'the per-position cap');
+    // Only meaningful once you've told it your selling fee rate; with fee 0 it
+    // would just restate the unit cost.
+    plan.breakeven = (fee > 0 && fee < 1) ? unit / (1 - fee) : null;
+    plan.feePct = fee;
+    out.set(key, plan);
+  }
+  return out;
+}
+
+const READ = r => {
+  const {snipe_mode:m, market_price:mkt, floor_low:low, floor_ship:ship,
+         copies:c, gap_pct:gap, floor_multiple:mult} = r;
+  if (m === 'discount' && mkt && low)
+    return `The cheapest Near Mint copy is <b>$${low.toFixed(2)}</b>`
+      + (ship ? ` ($${ship.toFixed(2)} shipped)` : '')
+      + `, ${gap.toFixed(0)}% under the $${mkt.toFixed(2)} the daily batch last recorded.`
+      + (c != null ? ` There are ${c} listed at Near Mint.` : '');
+  if (m === 'squeeze' && mkt && low)
+    return `The cheapest Near Mint copy is already <b>$${low.toFixed(2)}</b>`
+      + (ship ? ` ($${ship.toFixed(2)} shipped)` : '')
+      + ` — ${mult.toFixed(1)}× the $${mkt.toFixed(2)} the batch still records.`
+      + (c != null ? ` Only ${c} listed at Near Mint.` : '');
+  if (low) return `Floor $${low.toFixed(2)}, in line with the recorded market price.`;
+  return 'No live floor has been pulled for this row. Run <code>radar snipe</code> to price it.';
+};
+
+const RISK = r => r.snipe_mode === 'discount'
+  ? 'The market price is up to two days old. A big discount can mean the recorded price is '
+    + 'stale-high from a spike that already reversed — in which case the floor <em>is</em> the '
+    + 'real price and there is no gap.'
+  : r.snipe_mode === 'squeeze'
+  ? 'You would be paying above the last recorded trade on the assumption the batch price catches '
+    + 'up. If those remaining listings are one optimistic seller rather than real scarcity, '
+    + 'nothing catches up and you own the top.'
+  : 'No setup here — the floor and the recorded price agree, so there is nothing to act on.';
+
+const CHECKLIST = [
+  'Confirm the listing is the same <b>printing and language</b> as this row — Holofoil, Foil and Normal are different products at different prices.',
+  'Compare the <b>shipped</b> price, not the floor. On cheap cards shipping can more than double what you pay.',
+  'Check how many <b>sellers</b> those copies come from. One seller holding all of them can relist higher the moment you clear it.',
+  'Look for a <b>reason</b>. Nothing here knows about bans, reprints or tournament results — a move with a public cause behaves very differently from one without.',
+  'Check the <b>dates</b>. Market prices lag up to two days; the floor is from your last <code>radar snipe</code> and is cached after the first call.',
+];
+
+function detailHTML(r, plan){
+  const url = r.tcgplayer_url || (r.tcgplayer_id ? 'https://www.tcgplayer.com/product/'+r.tcgplayer_id : null);
+  const c = r.components || {};
+  const sig = (r.signals||[]).length ? r.signals.join(', ') : 'none';
+
+  let pos;
+  if (!state.budget){
+    pos = `<p class="sub2">Enter a budget at the top of the page and this becomes a number of copies and a cost.</p>`;
+  } else if (plan && plan.affordable){
+    pos = `<div class="big">${plan.qty} ${plan.qty===1?'copy':'copies'} · $${plan.cost.toFixed(2)}</div>
+      <div class="sub2">at $${plan.unit.toFixed(2)} shipped each · ${plan.pct.toFixed(0)}% of your budget</div>
+      <div class="kv"><span>Limited by</span><span>${plan.limitedBy}</span></div>
+      <div class="kv"><span>Copies listed</span><span>${r.copies ?? '—'}</span></div>
+      <div class="kv"><span>Shelf</span><span>${plan.clears ? 'this clears it' : 'leaves '+((r.copies??0)-plan.qty)+' behind'}</span></div>
+      ${plan.breakeven!=null
+        ? `<div class="kv"><span>Break-even resale (after ${(plan.feePct*100).toFixed(0)}% fees)</span><span>$${plan.breakeven.toFixed(2)}</span></div>`
+        : `<div class="kv"><span>Break-even resale</span><span>set <code>fee_pct</code> in config</span></div>`}
+      <div class="kv"><span>Budget left after</span><span>$${(plan.remaining??0).toFixed(2)}</span></div>`;
+  } else {
+    pos = `<div class="big">No position</div><p class="sub2">${plan ? plan.reason : 'No live floor.'}</p>`
+        + `<p class="sub2">The snipe board is filled first. Raise the budget, or narrow the filters so fewer rows compete for it.</p>`;
+  }
+
+  return `<tr class="detail"><td colspan="13"><div class="det">
+    <div>
+      <h5>What this row says</h5>
+      <p>${READ(r)}</p>
+      <div class="kv"><span>Market (batch, up to 2d old)</span><span>${r.market_price!=null?'$'+r.market_price.toFixed(2):'—'}</span></div>
+      <div class="kv"><span>Floor / shipped (live)</span><span>${r.floor_low!=null?'$'+r.floor_low.toFixed(2):'—'} / ${r.floor_ship!=null?'$'+r.floor_ship.toFixed(2):'—'}</span></div>
+      <div class="kv"><span>Listings (batch, all conditions)</span><span>${r.total_listings ?? '—'}</span></div>
+      <div class="kv"><span>24h / 7d / 30d</span><span>${[r.change_24h,r.change_7d,r.change_30d].map(v=>v==null?'—':(v>0?'+':'')+v.toFixed(0)+'%').join(' / ')}</span></div>
+      ${url?`<a class="cta" href="${esc(url)}" target="_blank" rel="noopener">Open the TCGplayer listing &rarr;</a>`:''}
+    </div>
+    <div>
+      <h5>Position at your budget</h5>
+      ${pos}
+    </div>
+    <div>
+      <h5>Why it ranked here</h5>
+      <div class="kv"><span>Detectors fired</span><span>${sig}</span></div>
+      <div class="kv"><span>Radar score</span><span>${r.score.toFixed(0)}</span></div>
+      ${c.sustained!=null?`<div class="kv"><span>· sustained strength</span><span>${c.sustained.toFixed(0)}</span></div>`:''}
+      ${c.spike!=null?`<div class="kv"><span>· spike strength</span><span>${c.spike.toFixed(0)}</span></div>`:''}
+      ${c.breakout!=null?`<div class="kv"><span>· breakout strength</span><span>${c.breakout.toFixed(0)}</span></div>`:''}
+      ${r.trailing_high!=null?`<div class="kv"><span>90-day ceiling before this run</span><span>$${r.trailing_high.toFixed(2)}</span></div>`:''}
+      ${r.snipe_score?`<div class="kv"><span>Snipe score</span><span>${r.snipe_score.toFixed(0)}${r.snipe_mode?' ('+r.snipe_mode+')':''}</span></div>`:''}
+    </div>
+    <div>
+      <h5>Before you buy</h5>
+      <p class="warn">${RISK(r)}</p>
+      <ul>${CHECKLIST.map(x=>`<li>${x}</li>`).join('')}</ul>
+    </div>
+  </div></td></tr>`;
+}
+
 const gapCell = r => {
   if (r.gap_pct == null) return '<span class="flat">—</span>';
   if (r.gap_pct > 0) return `<span class="up">+${r.gap_pct.toFixed(0)}%</span>`;
@@ -307,7 +499,7 @@ function sparkline(series){
       stroke="var(--surface-1)" stroke-width="2"/></svg>`;
 }
 
-function rowHTML(r, i){
+function rowHTML(r, i, plan){
   const badges = (r.signals||[]).map(s=>
     `<span class="badge ${s}" data-tip="${esc(BADGE_TIP[s]||'')}">${s}</span>`).join('');
   const url = r.tcgplayer_url || (r.tcgplayer_id ? 'https://www.tcgplayer.com/product/'+r.tcgplayer_id : null);
@@ -315,7 +507,10 @@ function rowHTML(r, i){
   const img = r.image_url ? `<img src="${esc(r.image_url)}" alt="" loading="lazy" decoding="async">` : '<img alt="">';
   const meta = [r.set_name, r.number, r.rarity, r.printing!=='Normal'?r.printing:null]
     .filter(Boolean).map(esc).join(' · ');
-  return `<tr>
+  const key = r.card_id + '|' + r.printing;
+  const openNow = state.open.has(key);
+  const buy = plan && plan.affordable;
+  return `<tr class="row${buy?' buy':''}" data-key="${esc(key)}" aria-expanded="${openNow}">
     <td class="rank">${i+1}</td>
     <td><div class="who">${img}<div><div class="nm">${nm}</div>
       <div class="meta">${meta}</div></div></div></td>
@@ -328,12 +523,13 @@ function rowHTML(r, i){
     <td class="num">${r.copies==null?'<span class="flat">—</span>'
       :`<span class="${r.copies<=DATA.thin?'thin':''}">${r.copies}</span>`}</td>
     <td class="num">${gapCell(r)}</td>
-    <td class="num col-listings">${r.total_listings==null?'—':r.total_listings}</td>
     <td><div class="badges">${badges}</div></td>
     <td class="num"><div class="score">${r.score.toFixed(0)}</div>
       <div class="scorebar" style="width:${Math.max(4, r.score)}%"></div></td>
-    <td class="why">${esc(r.why||'')}</td>
-  </tr>`;
+    <td class="why">${buy
+      ? `<span class="pill">buy ${plan.qty} · $${plan.cost.toFixed(0)}</span> ${esc(r.why||'')}`
+      : esc(r.why||'')}</td>
+  </tr>` + (openNow ? detailHTML(r, plan) : '');
 }
 
 const SORTERS = {
@@ -422,10 +618,33 @@ function apply(){
     th.classList.toggle('wincol', th.dataset.sort === wc));
   document.getElementById('win-label').textContent = state.win;
 
+  // One allocation, in buy order: the snipe board gets first claim on the budget
+  // (it is the buy list), then whatever else is in view. A card therefore shows
+  // the same suggested position wherever it appears.
+  let plans = new Map();
+  if (state.budget){
+    const seen = new Set();
+    const order = [];
+    for (const r of (DATA.board || [])){
+      const k = r.card_id+'|'+r.printing;
+      if (!seen.has(k)){ seen.add(k); order.push(r); }
+    }
+    for (const r of rows){
+      const k = r.card_id+'|'+r.printing;
+      if (!seen.has(k)){ seen.add(k); order.push(r); }
+    }
+    plans = allocate(order, state.budget);
+  }
+  if (state.budget && state.inBudgetOnly){
+    rows = rows.filter(r => (plans.get(r.card_id+'|'+r.printing)||{}).affordable);
+  }
+  renderPlanSummary(rows, plans);
+  updateBoardPlans(plans);
+
   const shown = rows.slice(0, state.limit);
   document.getElementById('tbody').innerHTML = shown.length
-    ? shown.map(rowHTML).join('')
-    : '<tr><td colspan="14" class="empty">Nothing matches those filters.</td></tr>';
+    ? shown.map((r,i)=>rowHTML(r, i, plans.get(r.card_id+'|'+r.printing))).join('')
+    : '<tr><td colspan="13" class="empty">Nothing matches those filters.</td></tr>';
 
   document.getElementById('count').textContent =
     `${shown.length ? '1–'+shown.length : '0'} of ${rows.length} matching · ${DATA.rows.length} tracked`;
@@ -444,15 +663,43 @@ function apply(){
   window.__view = rows;
 }
 
+function renderPlanSummary(rows, plans){
+  const el = document.getElementById('plan-sum');
+  if (!state.budget){
+    el.innerHTML = 'Enter a budget to size positions — the snipe board is filled first.';
+    return;
+  }
+  let n = 0, spend = 0;
+  for (const p of plans.values()){
+    if (p && p.affordable){ n++; spend += p.cost; }
+  }
+  const left = state.budget - spend;
+  el.innerHTML = n
+    ? `<b>${n}</b> ${n===1?'card':'cards'} · <b>$${spend.toFixed(2)}</b> of $${state.budget.toFixed(2)} allocated · $${left.toFixed(2)} left`
+    : `Nothing in view fits — one copy of everything here costs more than the ${((DATA.plan?.max_position_pct??0.25)*100).toFixed(0)}% per-position cap.`;
+}
+
+function updateBoardPlans(plans){
+  document.querySelectorAll('.plan-cell[data-plankey]').forEach(td=>{
+    const p = plans.get(td.dataset.plankey);
+    if (!state.budget){ td.innerHTML = '<span class="flat">—</span>'; return; }
+    td.innerHTML = (p && p.affordable)
+      ? `<span class="pill">${p.qty} · $${p.cost.toFixed(0)}</span>`
+      : '<span class="pill none">—</span>';
+  });
+}
+
 function reset(){
   Object.assign(state, {q:'', sigs:new Set(), bands:new Set(), set:'', rarity:'', type:'',
                         printing:'', min:null, max:null, limit:50, maxCopies:null, gapDir:'',
                         win:'7d', minMove:null, moveDir:'', minScore:null, floorOnly:false,
-                        sort:'score', dir:-1});
+                        inBudgetOnly:false, sort:'score', dir:-1});
   ['maxcopies','minmove','minscore'].forEach(id=>{
     const el = document.getElementById(id); if (el) el.value = '';
   });
   const fo = document.getElementById('flooronly'); if (fo) fo.checked = false;
+  const ib = document.getElementById('inbudget'); if (ib) ib.checked = false;
+  state.open.clear();
   document.querySelectorAll('.winb').forEach(b=>
     b.setAttribute('aria-pressed', b.dataset.win === '7d'));
   document.getElementById('q').value = '';
@@ -503,6 +750,24 @@ document.querySelectorAll('thead th[data-sort]').forEach(th=>th.addEventListener
   if (state.sort===k) state.dir*=-1; else {state.sort=k; state.dir = k==='name' ? 1 : -1;}
   apply();
 }));
+const budgetEl = document.getElementById('budget');
+budgetEl.addEventListener('input', e=>{
+  const v = e.target.value === '' ? null : Number(e.target.value);
+  state.budget = (v==null || Number.isNaN(v) || v <= 0) ? null : v;
+  state.limit = 50; apply();
+});
+const ib = document.getElementById('inbudget');
+if (ib) ib.addEventListener('change', e=>{state.inBudgetOnly=e.target.checked; state.limit=50; apply();});
+
+document.getElementById('tbody').addEventListener('click', e=>{
+  if (e.target.closest('a')) return;          // let card links through
+  const tr = e.target.closest('tr.row');
+  if (!tr) return;
+  const key = tr.dataset.key;
+  state.open.has(key) ? state.open.delete(key) : state.open.add(key);
+  apply();
+});
+
 document.querySelectorAll('.winb').forEach(b=>b.addEventListener('click', ()=>{
   state.win = b.dataset.win;
   document.querySelectorAll('.winb').forEach(x=>x.setAttribute('aria-pressed', x===b));
@@ -667,9 +932,12 @@ def _row_payload(r: dict) -> dict:
         "floor_ship": r.get("floor_ship"),
         "copies": r.get("copies"),
         "gap_pct": r.get("gap_pct"),
-        "floor_multiple": r.get("floor_multiple"),
         "snipe_score": r.get("snipe_score"),
         "snipe_mode": r.get("snipe_mode"),
+        "floor_multiple": r.get("floor_multiple"),
+        "components": r.get("components"),
+        "trailing_high": r.get("trailing_high"),
+        "history_points": r.get("history_points"),
         "score": r.get("score", 0.0),
         "signals": r.get("signals", []),
         "why": explain(r) if r.get("signals") else "",
@@ -704,6 +972,7 @@ def render(
     scope_note: str = "",
     snipe_board: Sequence[dict] = (),
     thin_supply: int = 12,
+    plan_cfg: dict[str, Any] | None = None,
 ) -> str:
     """`top_n` caps how many rows are embedded; the page itself pages through them."""
     market = market or {}
@@ -732,8 +1001,17 @@ def render(
     )
 
     payload = (
-        json.dumps({"rows": rows, "obs_date": obs_date, "thin": thin_supply},
-                   separators=(",", ":"))
+        json.dumps(
+            {
+                "rows": rows,
+                "board": [_row_payload(r) for r in snipe_board],
+                "obs_date": obs_date,
+                "thin": thin_supply,
+                "plan": plan_cfg
+                or {"max_position_pct": 0.25, "squeeze_haircut": 0.5, "fee_pct": 0.0},
+            },
+            separators=(",", ":"),
+        )
         .replace("&", "\\u0026")
         .replace("<", "\\u003c")
         .replace(">", "\\u003e")
@@ -783,6 +1061,17 @@ def render(
     <button class="ghost" id="theme">Dark mode</button>
   </div>
 </header>
+
+<div class="panel budget">
+  <span class="flabel" data-tip="Total you're willing to spend across everything in view. Positions are sized in rank order until it runs out.">Budget<span class="info">?</span></span>
+  <input type="number" id="budget" placeholder="$" min="0" step="25" aria-label="Budget">
+  <label class="chip" style="display:inline-flex;gap:6px;align-items:center"
+         data-tip="Hide rows the budget can't take a position in.">
+    <input type="checkbox" id="inbudget"> Only what fits</label>
+  <span class="plan-sum" id="plan-sum"></span>
+  <span class="disc">Sizing is arithmetic on your inputs and the live floor —
+    it has no view on whether a card is worth owning. Click any row for the full read.</span>
+</div>
 
 {GLOSSARY}
 
@@ -967,6 +1256,7 @@ def _snipe_board(board: Sequence[dict], thin: int) -> str:
       <td class="num">{_gap_cell(r)}</td>
       <td><span class="mode {mode}" data-tip="{_MODE_TIP.get(mode, '')}">{mode}</span></td>
       <td class="num score">{r.get('snipe_score', 0):.0f}</td>
+      <td class="num plan-cell" data-plankey="{_esc(r.get('card_id'))}|{_esc(r.get('printing') or 'Normal')}"><span class="flat">&mdash;</span></td>
       <td class="why">{_esc(explain_snipe(r))}</td>
       <td>{f'<a class="buy" href="{_esc(url)}" target="_blank" rel="noopener">Open &rarr;</a>' if url else ''}</td>
     </tr>""")
@@ -989,6 +1279,7 @@ def _snipe_board(board: Sequence[dict], thin: int) -> str:
     <th class="num" data-tip="Market vs. live floor. <b>+%</b> = copies listed under market (discount). <b>&times;N</b> = floor sits N times above the recorded price (squeeze).">Gap</th>
     <th data-tip="<b>discount</b>: copies listed below the recorded market. <b>squeeze</b>: the cheap copies are gone and the batch price hasn't caught up.">Setup</th>
     <th class="num" data-tip="0&ndash;100 buy rank: 55% gap + 25% scarcity + 20% momentum. Tunable under <code>snipe:</code> in config.yaml.">Snipe</th>
+    <th class="num" data-tip="Suggested position at your budget: copies and total cost. Set a budget at the top of the page.">Buy</th>
     <th class="why" data-tip="Plain-English version of the row.">Read</th><th></th>
   </tr></thead><tbody>{''.join(rows)}</tbody></table></div>
 </div>"""

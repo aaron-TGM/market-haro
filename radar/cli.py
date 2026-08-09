@@ -185,6 +185,7 @@ def cmd_report(cfg, args) -> int:
             market=db.market_breadth(obs),
             snipe_board=board,
             thin_supply=int(scfg.get("thin_supply", 12)),
+            plan_cfg=cfg.raw.get("plan") or {},
         )
         out = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
         dashboard.write(html, out)

@@ -82,6 +82,16 @@ snipe:
   weight_momentum: 0.20
   board_size: 15
 
+# Position sizing in the dashboard's budget box. Arithmetic on your inputs --
+# it has no view on whether a card is worth owning.
+plan:
+  # Most of the budget any single card may take.
+  max_position_pct: 0.25
+  # A squeeze means paying above the last recorded trade, so size it smaller.
+  squeeze_haircut: 0.5
+  # Your selling fee rate, if you want a break-even figure. 0.15 = 15%.
+  fee_pct: 0.0
+
 report:
   top_n: 400   # rows embedded in the dashboard; the page pages through them
   output_path: out/dashboard.html
