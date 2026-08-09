@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .signals import explain
+from .snipe import explain as explain_snipe
 
 # Palette: validated default categorical slots 1-3 (all-pairs, both modes).
 # sustained = blue, spike = orange, breakout = aqua. Every badge also carries a
@@ -110,6 +111,19 @@ select{max-width:260px}
 .brow .bv{font-size:12px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
 .brow.empty .bt{background:var(--grid)}
 .chart .none{color:var(--text-muted);font-size:12.5px;padding:12px 0}
+.board{margin-bottom:18px;overflow:hidden}
+.board .bhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  flex-wrap:wrap;padding:14px 16px 10px}
+.board h3{font-size:14px;font-weight:640;margin:0}
+.board .cap{font-size:11.5px;color:var(--text-muted);margin:2px 0 0;max-width:70ch}
+.board table td,.board table th{padding:7px 11px}
+.mode{font-size:11px;padding:2.5px 8px;border-radius:999px;border:1px solid;font-weight:560;
+  white-space:nowrap}
+.mode.discount{color:var(--series-3);border-color:var(--series-3);background:var(--tint-3)}
+.mode.squeeze{color:var(--series-2);border-color:var(--series-2);background:var(--tint-2)}
+.thin{color:var(--series-2);font-weight:640}
+.buy{font-size:12px;color:var(--series-1);text-decoration:none;white-space:nowrap;font-weight:560}
+.buy:hover{text-decoration:underline}
 .chead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
 .seg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex:none}
 .segb{background:var(--plane);border:0;border-right:1px solid var(--border);padding:5px 10px;
@@ -168,7 +182,8 @@ const BANDS = [
   {key:'o100', label:'$100+',      min:100,  max:Infinity},
 ];
 const state = {q:'', sigs:new Set(), bands:new Set(), set:'', rarity:'', type:'', printing:'',
-               min:null, max:null, sort:'score', dir:-1, limit:50, dim:'band'};
+               min:null, max:null, sort:'score', dir:-1, limit:50, dim:'band',
+               maxCopies:null, gapDir:''};
 
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -177,6 +192,13 @@ const pct = v => {
   if (v==null) return '<span class="flat">—</span>';
   const cls = v > 0.05 ? 'up' : (v < -0.05 ? 'down' : 'flat');
   return `<span class="${cls}">${v>0?'+':''}${v.toFixed(1)}%</span>`;
+};
+
+const gapCell = r => {
+  if (r.gap_pct == null) return '<span class="flat">—</span>';
+  if (r.gap_pct > 0) return `<span class="up">+${r.gap_pct.toFixed(0)}%</span>`;
+  const m = r.floor_multiple;
+  return `<span class="down">${m ? m.toFixed(1)+'\u00d7' : r.gap_pct.toFixed(0)+'%'}</span>`;
 };
 
 function sparkline(series){
@@ -216,6 +238,10 @@ function rowHTML(r, i){
     <td class="num">${pct(r.change_7d)}</td>
     <td class="num">${pct(r.change_30d)}</td>
     <td>${sparkline(r.series)}</td>
+    <td class="num">${r.floor_low==null?'<span class="flat">—</span>':money(r.floor_low)}</td>
+    <td class="num">${r.copies==null?'<span class="flat">—</span>'
+      :`<span class="${r.copies<=DATA.thin?'thin':''}">${r.copies}</span>`}</td>
+    <td class="num">${gapCell(r)}</td>
     <td class="num col-listings">${r.total_listings==null?'—':r.total_listings}</td>
     <td><div class="badges">${badges}</div></td>
     <td class="num"><div class="score">${r.score.toFixed(0)}</div>
@@ -228,6 +254,8 @@ const SORTERS = {
   score:r=>r.score, price:r=>r.market_price ?? -1, c24:r=>r.change_24h ?? -1e9,
   c7:r=>r.change_7d ?? -1e9, c30:r=>r.change_30d ?? -1e9,
   listings:r=>r.total_listings ?? -1, name:r=>(r.name||'').toLowerCase(),
+  floor:r=>r.floor_low ?? -1, copies:r=>r.copies ?? 1e9, gap:r=>r.gap_pct ?? -1e9,
+  snipe:r=>r.snipe_score ?? -1,
 };
 
 function inBands(r){
@@ -250,6 +278,9 @@ function filtered(){
     if (state.max != null && !(r.market_price <= state.max)) return false;
     if (!inBands(r)) return false;
     if (state.sigs.size && !(r.signals||[]).some(s=>state.sigs.has(s))) return false;
+    if (state.maxCopies != null && !(r.copies != null && r.copies <= state.maxCopies)) return false;
+    if (state.gapDir === 'under' && !(r.gap_pct > 0)) return false;
+    if (state.gapDir === 'over'  && !(r.gap_pct < 0)) return false;
     return true;
   });
 }
@@ -293,7 +324,7 @@ function apply(){
   const shown = rows.slice(0, state.limit);
   document.getElementById('tbody').innerHTML = shown.length
     ? shown.map(rowHTML).join('')
-    : '<tr><td colspan="11" class="empty">Nothing matches those filters.</td></tr>';
+    : '<tr><td colspan="14" class="empty">Nothing matches those filters.</td></tr>';
 
   document.getElementById('count').textContent =
     `${shown.length ? '1–'+shown.length : '0'} of ${rows.length} matching · ${DATA.rows.length} tracked`;
@@ -314,7 +345,8 @@ function apply(){
 
 function reset(){
   Object.assign(state, {q:'', sigs:new Set(), bands:new Set(), set:'', rarity:'', type:'',
-                        printing:'', min:null, max:null, limit:50});
+                        printing:'', min:null, max:null, limit:50, maxCopies:null, gapDir:''});
+  const mc = document.getElementById('maxcopies'); if (mc) mc.value = '';
   document.getElementById('q').value = '';
   ['setfilter','rarityfilter','typefilter','printfilter'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('minp').value = '';
@@ -324,7 +356,8 @@ function reset(){
 }
 
 function exportCSV(){
-  const cols = ['score','name','set_name','number','rarity','printing','product_type','market_price',
+  const cols = ['score','snipe_score','snipe_mode','name','set_name','number','rarity','printing',
+                'product_type','market_price','floor_low','floor_ship','copies','gap_pct',
                 'change_24h','change_7d','change_30d','total_listings','signals','tcgplayer_url'];
   const esc2 = v => {
     const s = Array.isArray(v) ? v.join('|') : (v==null?'':String(v));
@@ -361,6 +394,18 @@ document.querySelectorAll('thead th[data-sort]').forEach(th=>th.addEventListener
   const k=th.dataset.sort;
   if (state.sort===k) state.dir*=-1; else {state.sort=k; state.dir = k==='name' ? 1 : -1;}
   apply();
+}));
+const mc = document.getElementById('maxcopies');
+if (mc) mc.addEventListener('input', e=>{
+  const v = e.target.value === '' ? null : Number(e.target.value);
+  state.maxCopies = (v==null || Number.isNaN(v)) ? null : v; state.limit=50; apply();
+});
+document.querySelectorAll('.chip[data-gap]').forEach(c=>c.addEventListener('click', ()=>{
+  const g = c.dataset.gap;
+  state.gapDir = state.gapDir === g ? '' : g;
+  document.querySelectorAll('.chip[data-gap]').forEach(x=>
+    x.setAttribute('aria-pressed', x.dataset.gap === state.gapDir));
+  state.limit=50; apply();
 }));
 document.querySelectorAll('.segb').forEach(b=>b.addEventListener('click', ()=>{
   state.dim = b.dataset.dim;
@@ -404,6 +449,13 @@ def _row_payload(r: dict) -> dict:
         "change_30d": r.get("change_30d"),
         "total_listings": r.get("total_listings"),
         "sales_volume": r.get("sales_volume"),
+        "floor_low": r.get("floor_low"),
+        "floor_ship": r.get("floor_ship"),
+        "copies": r.get("copies"),
+        "gap_pct": r.get("gap_pct"),
+        "floor_multiple": r.get("floor_multiple"),
+        "snipe_score": r.get("snipe_score"),
+        "snipe_mode": r.get("snipe_mode"),
         "score": r.get("score", 0.0),
         "signals": r.get("signals", []),
         "why": explain(r) if r.get("signals") else "",
@@ -436,6 +488,8 @@ def render(
     watchlist: Sequence[dict] = (),
     market: dict[str, Any] | None = None,
     scope_note: str = "",
+    snipe_board: Sequence[dict] = (),
+    thin_supply: int = 12,
 ) -> str:
     """`top_n` caps how many rows are embedded; the page itself pages through them."""
     market = market or {}
@@ -464,7 +518,8 @@ def render(
     )
 
     payload = (
-        json.dumps({"rows": rows, "obs_date": obs_date}, separators=(",", ":"))
+        json.dumps({"rows": rows, "obs_date": obs_date, "thin": thin_supply},
+                   separators=(",", ":"))
         .replace("&", "\\u0026")
         .replace("<", "\\u003c")
         .replace(">", "\\u003e")
@@ -479,7 +534,8 @@ def render(
   <div class="panel tablewrap"><table><thead><tr>
     <th class="rank">#</th><th>Card</th><th class="num">Market</th>
     <th class="num">24h</th><th class="num">7d</th><th class="num">30d</th>
-    <th>Trend</th><th class="num col-listings">Listings</th><th>Signals</th>
+    <th>Trend</th><th class="num">Floor</th><th class="num">Copies</th>
+    <th class="num col-listings">Listings</th><th>Signals</th>
     <th class="num">Score</th><th class="why">Note</th>
   </tr></thead><tbody>{body}</tbody></table></div>"""
 
@@ -529,6 +585,8 @@ def render(
     <div class="foot">{_esc(top['name']) if top else 'nothing flagged today'}</div></div>{breadth_tile}
 </div>
 
+{_snipe_board(snipe_board, thin_supply)}
+
 <div class="panel filters">
   <div class="frow">
     <input type="search" id="q" placeholder="Search card, set or number…" aria-label="Search">
@@ -546,6 +604,11 @@ def render(
     <button class="chip" data-band="o100" aria-pressed="false">$100+</button>
     <input type="number" id="minp" placeholder="min $" min="0" step="0.5" aria-label="Minimum price">
     <input type="number" id="maxp" placeholder="max $" min="0" step="0.5" aria-label="Maximum price">
+    <span class="flabel" style="margin-left:12px">Supply</span>
+    <input type="number" id="maxcopies" placeholder="max copies" min="1" step="1"
+           aria-label="Maximum copies listed" style="width:110px">
+    <button class="chip" data-gap="under" aria-pressed="false">Floor under market</button>
+    <button class="chip" data-gap="over" aria-pressed="false">Floor over market</button>
     <span class="flabel" style="margin-left:12px">Signal</span>
     <button class="chip" data-sig="sustained" aria-pressed="false">Sustained</button>
     <button class="chip" data-sig="spike" aria-pressed="false">Spike</button>
@@ -582,6 +645,9 @@ def render(
   <th class="num" data-sort="c7">7d</th>
   <th class="num" data-sort="c30">30d</th>
   <th>Trend</th>
+  <th class="num" data-sort="floor">Floor</th>
+  <th class="num" data-sort="copies">Copies</th>
+  <th class="num" data-sort="gap">Gap</th>
   <th class="num col-listings" data-sort="listings">Listings</th>
   <th>Signals</th>
   <th class="num" data-sort="score" aria-sort="descending">Score</th>
@@ -607,6 +673,71 @@ def render(
 <script type="application/json" id="radar-data">{payload}</script>
 <script>{JS}</script>
 </body></html>"""
+
+
+def _gap_cell(r: dict) -> str:
+    """Discount reads as a percentage off; a squeeze reads as a multiple."""
+    gap = r.get("gap_pct")
+    if gap is None:
+        return '<span class="flat">—</span>'
+    if gap > 0:
+        return f'<span class="up">+{gap:.0f}%</span>'
+    mult = r.get("floor_multiple")
+    body = f"{mult:.1f}&times;" if mult else f"{gap:.0f}%"
+    return f'<span class="down">{body}</span>'
+
+
+def _snipe_board(board: Sequence[dict], thin: int) -> str:
+    """The buy list: live listing floor vs the daily batch price, and how many copies."""
+    if not board:
+        return ""
+    rows = []
+    for i, r in enumerate(board):
+        mode = r.get("snipe_mode") or ""
+        gap = r.get("gap_pct")
+        copies = r.get("copies")
+        low, ship = r.get("floor_low"), r.get("floor_ship")
+        url = r.get("tcgplayer_url") or (
+            f"https://www.tcgplayer.com/product/{r['tcgplayer_id']}" if r.get("tcgplayer_id") else None
+        )
+        copies_cell = (
+            "—" if copies is None
+            else (f'<span class="thin">{copies}</span>' if copies <= thin else str(copies))
+        )
+        meta = " · ".join(
+            _esc(x) for x in [r.get("set_name"), r.get("number"),
+                              r.get("printing") if r.get("printing") != "Normal" else None] if x
+        )
+        rows.append(f"""<tr>
+      <td class="rank">{i + 1}</td>
+      <td><div class="who"><div><div class="nm">{_esc(r.get('name'))}</div>
+        <div class="meta">{meta}</div></div></div></td>
+      <td class="num">{'—' if r.get('market_price') is None else f"${r['market_price']:,.2f}"}</td>
+      <td class="num">{'—' if low is None else f"${low:,.2f}"}</td>
+      <td class="num">{'—' if ship is None else f"${ship:,.2f}"}</td>
+      <td class="num">{copies_cell}</td>
+      <td class="num">{_gap_cell(r)}</td>
+      <td><span class="mode {mode}">{mode}</span></td>
+      <td class="num score">{r.get('snipe_score', 0):.0f}</td>
+      <td class="why">{_esc(explain_snipe(r))}</td>
+      <td>{f'<a class="buy" href="{_esc(url)}" target="_blank" rel="noopener">Open &rarr;</a>' if url else ''}</td>
+    </tr>""")
+
+    return f"""
+<div class="panel board">
+  <div class="bhead">
+    <div><h3>Snipe board</h3>
+    <p class="cap">Live Near&nbsp;Mint listing floor vs. the daily batch market price, with how many
+    copies are actually listed. <strong>discount</strong> = copies sitting under the recorded price.
+    <strong>squeeze</strong> = the cheap copies are gone and the batch price hasn't caught up.
+    Orange copy counts are {thin} or fewer — one buyer can clear that shelf.</p></div>
+  </div>
+  <div class="tablewrap"><table><thead><tr>
+    <th class="rank">#</th><th>Card</th><th class="num">Market</th><th class="num">Floor</th>
+    <th class="num">Shipped</th><th class="num">Copies</th><th class="num">Gap</th>
+    <th>Setup</th><th class="num">Snipe</th><th class="why">Read</th><th></th>
+  </tr></thead><tbody>{''.join(rows)}</tbody></table></div>
+</div>"""
 
 
 def _spark_svg(series: Sequence[Sequence[Any]]) -> str:
@@ -674,6 +805,8 @@ def _static_row(r: dict, i: int) -> str:
   <td class="num">{pct(r.get('change_7d'))}</td>
   <td class="num">{pct(r.get('change_30d'))}</td>
   <td>{_spark_svg(r.get('series'))}</td>
+  <td class="num">{'—' if r.get('floor_low') is None else f"${r['floor_low']:,.2f}"}</td>
+  <td class="num">{'—' if r.get('copies') is None else r['copies']}</td>
   <td class="num col-listings">{r.get('total_listings') if r.get('total_listings') is not None else '—'}</td>
   <td><div class="badges">{badges}</div></td>
   <td class="num"><div class="score">{r.get('score', 0):.0f}</div></td>

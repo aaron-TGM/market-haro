@@ -10,7 +10,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import dashboard, ingest, signals
+from . import dashboard, ingest, signals, snipe as snipe_mod
 from .client import TCGClient
 from .config import ConfigError, load_config
 from .db import Database
@@ -146,6 +146,21 @@ def cmd_report(cfg, args) -> int:
         series = db.all_series()
         ranked = signals.evaluate(rows, series, cfg.signals, as_of=date.fromisoformat(obs))
 
+        # Fold in any live listing floors we've pulled (radar snipe).
+        scfg = cfg.raw.get("snipe", {}) or {}
+        floors = db.latest_floors()
+        if floors:
+            ranked = snipe_mod.score(ranked, floors, scfg)
+            ranked.sort(key=lambda r: (bool(r.get("signals")), r.get("score", 0)), reverse=True)
+        # The board is driven by live listing data, so a stale batch listing count
+        # shouldn't hide a row -- only the price floor filter applies here.
+        board = [
+            r for r in ranked
+            if r.get("snipe_mode") and r.get("filter_reason") != "below price floor"
+        ]
+        board.sort(key=lambda r: r.get("snipe_score", 0), reverse=True)
+        board = board[: int(scfg.get("board_size", 15))]
+
         watch_ids = set()
         for tid in cfg.watchlist_tcgplayer_ids:
             row = db.card_by_tcgplayer_id(tid)
@@ -168,6 +183,8 @@ def cmd_report(cfg, args) -> int:
             fallers=fallers,
             watchlist=watchlist,
             market=db.market_breadth(obs),
+            snipe_board=board,
+            thin_supply=int(scfg.get("thin_supply", 12)),
         )
         out = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
         dashboard.write(html, out)
@@ -250,6 +267,72 @@ def cmd_enrich(cfg, args) -> int:
     return 0
 
 
+def cmd_snipe(cfg, args) -> int:
+    """Pull live listing floors for the cards that are moving, and rank buys."""
+    db = Database(cfg.db_path)
+    client = _client(cfg)
+    scfg = cfg.raw.get("snipe", {}) or {}
+    try:
+        obs = args.date or db.latest_obs_date()
+        if not obs:
+            print("No snapshots yet -- run `python -m radar run` first.")
+            return 1
+
+        rows = [dict(r) for r in db.latest_prices(obs)]
+        min_price = float(scfg.get("min_market_price", 2.0))
+        min_c7 = float(scfg.get("min_change_7d", 10.0))
+        include_sealed = bool(scfg.get("include_sealed", False))
+
+        movers = [
+            r for r in rows
+            if (r.get("market_price") or 0) >= min_price
+            and (include_sealed or r.get("product_type") != "Sealed Products")
+            and ((r.get("change_7d") or 0) >= min_c7 or (r.get("change_24h") or 0) >= min_c7)
+        ]
+        movers.sort(key=lambda r: (r.get("change_7d") or 0), reverse=True)
+        n = args.targets or int(scfg.get("targets", 60))
+        movers = movers[:n]
+        if not movers:
+            print("Nothing is moving enough to be worth a live look right now.")
+            return 0
+
+        print(f"Fetching live listing floors for {len(movers)} movers...")
+        floors = snipe_mod.fetch_floors(
+            client, [(r["card_id"], r.get("printing") or "Normal") for r in movers], limit=n
+        )
+        if floors:
+            db.save_floors(floors.values())
+
+        ranked = snipe_mod.score(movers, floors, scfg)
+        # The board is driven by live listing data, so a stale batch listing count
+        # shouldn't hide a row -- only the price floor filter applies here.
+        board = [
+            r for r in ranked
+            if r.get("snipe_mode") and r.get("filter_reason") != "below price floor"
+        ][: args.top]
+
+        thin = int(scfg.get("thin_supply", 12))
+        print(f"\n{'':2}{'SCORE':>6}  {'CARD':<40} {'MARKET':>9} {'FLOOR':>9} "
+              f"{'SHIPPED':>9} {'COPIES':>7} {'GAP':>7}  SETUP")
+        for r in board:
+            mark = "*" if (r.get("copies") or 999) <= thin else " "
+            print(
+                f"{mark} {r['snipe_score']:6.1f}  {r['name'][:40]:<40} "
+                f"${(r.get('market_price') or 0):8.2f} ${(r.get('floor_low') or 0):8.2f} "
+                f"${(r.get('floor_ship') or 0):8.2f} {str(r.get('copies') or '?'):>7} "
+                f"{(r.get('gap_pct') or 0):+6.0f}%  {r.get('snipe_mode')}"
+            )
+        if not board:
+            print("  no setups cleared the gap threshold.")
+        print(f"\n  * = {thin} copies or fewer at Near Mint")
+        print(f"  {client.requests_made} requests used. "
+              f"Floors are live as of this run; market prices are the daily batch.")
+        print("  Re-run `python -m radar report` to fold these into the dashboard.")
+    finally:
+        db.close()
+    return 0
+
+
 def cmd_run(cfg, args) -> int:
     rc = cmd_sync(cfg, args)
     if rc != 0:
@@ -258,6 +341,11 @@ def cmd_run(cfg, args) -> int:
     if getattr(args, "enrich", False):
         cmd_enrich(cfg, args)
         # Sales volume feeds the score, so re-report once it's in.
+        rc = cmd_report(cfg, args)
+    if getattr(args, "snipe", False):
+        args.targets = None
+        args.top = 15
+        cmd_snipe(cfg, args)
         rc = cmd_report(cfg, args)
     return rc
 
@@ -300,6 +388,11 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--min-price", type=float, default=None)
     b.add_argument("--limit", type=int, default=None, help="max cards this run")
 
+    n = sub.add_parser("snipe", help="live listing floors + copy counts for the movers")
+    n.add_argument("--date", help="observation date (YYYY-MM-DD), default = latest")
+    n.add_argument("--targets", type=int, default=None, help="how many movers to look up")
+    n.add_argument("--top", type=int, default=20, help="rows to print")
+
     e = sub.add_parser("enrich", help="pull real sales figures for flagged cards")
     e.add_argument("--date", help="observation date (YYYY-MM-DD), default = latest")
     e.add_argument("--limit", type=int, default=200, help="max flagged cards to enrich")
@@ -313,6 +406,8 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--no-history", action="store_true")
     a.add_argument("--enrich", action="store_true",
                    help="also pull sales volume for flagged cards, then re-score")
+    a.add_argument("--snipe", action="store_true",
+                   help="also pull live listing floors for the movers")
     a.add_argument("--limit", type=int, default=200)
     a.add_argument("--date")
     a.add_argument("--out")
@@ -326,6 +421,7 @@ COMMANDS = {
     "sync": cmd_sync,
     "backfill": cmd_backfill,
     "enrich": cmd_enrich,
+    "snipe": cmd_snipe,
     "report": cmd_report,
     "run": cmd_run,
     "stats": cmd_stats,

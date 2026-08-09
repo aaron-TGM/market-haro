@@ -59,6 +59,29 @@ signals:
     # Cards with recorded sales are more trustworthy than quiet listings.
     volume_bonus_max: 6.0
 
+# Snipe mode: live listing floors for the cards that are moving.
+#
+# `market_price` from the daily batch runs up to ~2 days behind. The conditions
+# endpoint is fetched on demand, so it gives the floor and the copy count as they
+# stand now. That difference is the whole edge here.
+snipe:
+  # How many movers to pull live floors for. One request each.
+  targets: 60
+  # Only bother with cards that are actually moving and worth buying.
+  min_market_price: 2.00
+  min_change_7d: 10.0
+  # Include sealed products in the snipe board.
+  include_sealed: false
+  # A gap smaller than this is just noise between two price sources.
+  min_gap_pct: 8.0
+  # Copies at Near Mint. At or below this the shelf is clearable by one buyer.
+  max_copies: 40
+  thin_supply: 12
+  weight_gap: 0.55
+  weight_scarcity: 0.25
+  weight_momentum: 0.20
+  board_size: 15
+
 report:
   top_n: 400   # rows embedded in the dashboard; the page pages through them
   output_path: out/dashboard.html

@@ -313,6 +313,78 @@ def test_sealed_can_be_excluded():
         db.close()
 
 
+def test_snipe_discount_and_squeeze():
+    """Live floor vs. batch market splits into the two setups, with real numbers."""
+    from radar import snipe
+
+    cfg = {"min_gap_pct": 8.0, "max_copies": 40, "weight_gap": 0.55,
+           "weight_scarcity": 0.25, "weight_momentum": 0.20}
+    rows = [
+        # Silver Bullet, captured live 2026-08-09: $4.58 market, $1.20 floor, 29 copies.
+        dict(card_id="689710", printing="Holofoil", name="Silver Bullet",
+             market_price=4.58, change_7d=115.0, change_24h=0.0),
+        # Wing Gundam: floor $19.99 on ONE copy against a $3.56 batch price.
+        dict(card_id="616646", printing="Normal", name="Wing Gundam",
+             market_price=3.56, change_7d=20.0, change_24h=0.0),
+        # Improved Technique: floor $5.00 vs $5.23 market -- inside the noise band.
+        dict(card_id="673508", printing="Holofoil", name="Improved Technique",
+             market_price=5.23, change_7d=26.0, change_24h=0.0),
+        # No floor pulled for this one at all.
+        dict(card_id="999999", printing="Normal", name="Unknown",
+             market_price=10.0, change_7d=50.0, change_24h=0.0),
+    ]
+    floors = {
+        ("689710", "Holofoil"): {"floor_low": 1.20, "floor_ship": 5.00, "copies": 29},
+        ("616646", "Normal"): {"floor_low": 19.99, "floor_ship": 22.98, "copies": 1},
+        ("673508", "Holofoil"): {"floor_low": 5.00, "floor_ship": 5.99, "copies": 34},
+    }
+    out = {r["card_id"]: r for r in snipe.score(rows, floors, cfg)}
+
+    assert out["689710"]["snipe_mode"] == "discount"
+    assert round(out["689710"]["gap_pct"]) == 74
+    assert "74% under market at $1.20" in snipe.explain(out["689710"])
+
+    assert out["616646"]["snipe_mode"] == "squeeze"
+    assert out["616646"]["floor_multiple"] == 5.62      # 19.99 / 3.56
+    assert "5.6x the recorded price" in snipe.explain(out["616646"])
+    assert "1 left" in snipe.explain(out["616646"])
+
+    # Inside the noise band -> not a setup, but the floor is still attached.
+    assert out["673508"]["snipe_mode"] is None
+    assert out["673508"]["floor_low"] == 5.00
+    assert out["673508"]["snipe_score"] < out["689710"]["snipe_score"]
+
+    # No floor data -> untouched, and sorted below anything with a setup.
+    assert out["999999"]["snipe_mode"] is None
+    assert out["999999"].get("floor_low") is None
+
+    # Thin supply must outrank deep supply at a comparable gap.
+    thin = dict(card_id="a", printing="Normal", name="Thin", market_price=10.0, change_7d=20.0)
+    deep = dict(card_id="b", printing="Normal", name="Deep", market_price=10.0, change_7d=20.0)
+    f2 = {("a", "Normal"): {"floor_low": 5.0, "copies": 3},
+          ("b", "Normal"): {"floor_low": 5.0, "copies": 40}}
+    ranked = snipe.score([thin, deep], f2, cfg)
+    assert ranked[0]["card_id"] == "a", ranked
+
+
+def test_snipe_board_renders_gaps_readably():
+    """A squeeze shows as a multiple; -462% is technically true and useless."""
+    from radar import dashboard, snipe
+
+    cfg = {"min_gap_pct": 8.0, "max_copies": 40}
+    rows = [dict(card_id="616646", printing="Normal", name="Wing Gundam",
+                 set_name="Edition Beta", number="GD01-040", market_price=3.56,
+                 change_7d=20.0, tcgplayer_id=616646, signals=[], score=0.0)]
+    floors = {("616646", "Normal"): {"floor_low": 19.99, "floor_ship": 22.98, "copies": 1}}
+    scored = snipe.score(rows, floors, cfg)
+    html = dashboard.render(scored, obs_date="2026-08-09", stats={"snapshot_dates": 1},
+                            snipe_board=scored, thin_supply=12)
+    assert "Snipe board" in html
+    assert "5.6&times;" in html
+    assert "-462%" not in html
+    assert "squeeze" in html
+
+
 if __name__ == "__main__":
     passed = 0
     for name, fn in sorted(globals().items()):

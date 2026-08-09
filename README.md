@@ -30,6 +30,44 @@ open out/dashboard.html
 First run takes a couple of minutes (it backfills price history). After that a run is
 ~60 API requests and a few seconds. Your Pro plan allows 10,000/day.
 
+## Snipe mode — the part that matters for buying
+
+`market_price` from `/sets/:id/prices` is a **daily batch** figure. Measured against
+live data on 2026-08-09 it was stamped **2026-08-07** — up to two days behind. Good for
+spotting what's moving; useless for deciding what to buy.
+
+`/cards/:id/prices/conditions` is fetched on demand (the response carries
+`meta.cached` and an `as_of` stamp), so a cold call gives you the **Near Mint listing
+floor right now** plus `sample_count` — how many copies are actually on the shelf.
+
+```bash
+python -m radar snipe        # ~60 requests, one per mover
+```
+
+Comparing the live floor against the stale batch price gives two setups:
+
+| Setup | Looks like | Means |
+|---|---|---|
+| **discount** | floor **below** the recorded market | Copies listed under what the card last traded at. Straight arbitrage — unless the market price is stale-high from a spike that already reversed. |
+| **squeeze** | floor **above** the recorded market, on few copies | The cheap copies are already gone and the batch price hasn't caught up. This is what a card looks like *just before* the printed price moves. |
+
+Both can be wrong for the same reason — the market price is old. **`copies` is the honest
+number on the row**: it's live, and it's what decides how much supply you'd have to clear.
+Counts at or under `thin_supply` (default 12) are highlighted.
+
+Real rows from the 2026-08-09 capture:
+
+```
+  91  GQuuuuuuX (Omega Psycommu) (C+)   $7.89 market   $20.00 floor    4 copies   squeeze
+  86  Wing Gundam                       $3.56 market   $19.99 floor    1 copy     squeeze
+  83  Gundam Barbatos Adapt             $9.46 market    $2.81 floor   27 copies   discount
+  82  Silver Bullet                     $4.58 market    $1.20 floor   29 copies   discount
+```
+
+Snipe score is `0.55 x gap + 0.25 x scarcity + 0.20 x momentum`, all tunable under
+`snipe:` in `config.yaml`. Floors are stored as a time series, so a card going
+40 → 12 → 4 copies across runs is supply drying up in front of you.
+
 ## The three detectors
 
 Percentage change alone is a bad signal — a card that goes from $0.11 to $0.33 is "up
@@ -60,11 +98,12 @@ not conviction. Cards with no detector firing are halved so they sink below real
 |---|---|
 | `python -m radar doctor` | Verify API key, game slug, and every endpoint. Run this first. |
 | `python -m radar sync` | Pull catalogue + today's prices into SQLite |
+| `python -m radar snipe` | **Live listing floors + copy counts for the movers** |
 | `python -m radar backfill --range all` | One-time deep history pull (weekly, back to Apr 2025) |
 | `python -m radar enrich` | Pull real sales figures for flagged cards only (1 request each) |
 | `python -m radar report` | Score the latest snapshot, write dashboard + JSON + CSV |
 | `python -m radar run` | `sync` then `report` — this is the cron command |
-| `python -m radar run --enrich` | ...and pull sales volume for the calls, then re-score |
+| `python -m radar run --enrich --snipe` | Full pass: sync, score, sales volume, live floors |
 | `python -m radar stats` | What's in the local database |
 | `python -m radar games` | List every game slug the API knows |
 
@@ -101,6 +140,7 @@ radar/
   db.py          SQLite schema and upserts
   ingest.py      sets -> cards -> prices -> history backfill
   signals.py     the three detectors + scoring
+  snipe.py       live listing floors, discount vs. squeeze, snipe score
   dashboard.py   single-file HTML output
   cli.py         command line
 tests/
@@ -126,14 +166,24 @@ history precedence, and HTML escaping — no network needed.
   lag — e.g. product `707579` (Amuro Ray R+, Freedom Ascension) was missing as of
   2026-08-09, while the base `705621` printing was present. The watchlist logs a warning
   and carries on rather than failing the run.
+- **The daily batch price lags by up to 2 days**; the conditions endpoint does not. Never
+  size a buy off `market_price` alone — check the floor and the copy count.
+- **`total_listings` (batch) and `copies` (live) can disagree.** Wing Gundam showed 0
+  listings in the batch and 1 live NM copy at $19.99 on 2026-08-09. The snipe board
+  trusts the live number; the movers table uses the batch one.
 - **Never commit `.env`.** It's gitignored, along with `data/` and `out/`.
 
 ## Reading the dashboard
 
+The **Snipe board** sits at the top: live floor, shipped price, copies, gap, setup and a
+direct link to the TCGplayer page. A squeeze shows its gap as a multiple (`5.6×`) rather
+than a percentage, because "-462% below market" is arithmetically true and unreadable.
+
 **Filters** — search, set, rarity, printing, and Cards vs. Sealed, plus value filtering
 two ways: preset bands (Under $5 / $5–20 / $20–100 / $100+, multi-select) or exact
-min/max boxes for an arbitrary range. Signal chips narrow to sustained / spike /
-breakout. Everything composes, and Reset clears it all.
+min/max boxes for an arbitrary range. Supply filters: max copies, and floor-under- vs.
+floor-over-market. Signal chips narrow to sustained / spike / breakout. Everything
+composes, and Reset clears it all.
 
 **Charts** — "Where the movement is" ranks the sets in view; "Breakdown" toggles between
 price band, rarity, and printing. Both redraw with the filters, so filtering to `R+`

@@ -76,6 +76,22 @@ CREATE TABLE IF NOT EXISTS price_points (
 CREATE INDEX IF NOT EXISTS idx_pp_card_date ON price_points(card_id, obs_date);
 CREATE INDEX IF NOT EXISTS idx_pp_date ON price_points(obs_date);
 
+-- Live listing floors from /cards/:id/prices/conditions. Kept as a time series
+-- because watching `copies` fall is the whole point -- a card going 40 -> 12 -> 4
+-- copies over three days is supply drying up in front of you.
+CREATE TABLE IF NOT EXISTS floors (
+    card_id     TEXT NOT NULL,
+    printing    TEXT NOT NULL DEFAULT 'Normal',
+    obs_ts      TEXT NOT NULL,
+    condition   TEXT,
+    floor_low   REAL,
+    floor_ship  REAL,
+    copies      INTEGER,
+    conditions  TEXT,
+    PRIMARY KEY (card_id, printing, obs_ts)
+);
+CREATE INDEX IF NOT EXISTS idx_floors_card ON floors(card_id, printing, obs_ts DESC);
+
 CREATE TABLE IF NOT EXISTS runs (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     started_at     TEXT NOT NULL,
@@ -287,6 +303,55 @@ class Database:
                 rows,
             )
         return len(rows)
+
+    def save_floors(self, floors: Iterable[dict]) -> int:
+        now = utcnow()
+        rows = [
+            (
+                str(f["card_id"]),
+                f.get("printing") or "Normal",
+                now,
+                f.get("condition"),
+                _float_or_none(f.get("floor_low")),
+                _float_or_none(f.get("floor_ship")),
+                _int_or_none(f.get("copies")),
+                json.dumps(f.get("conditions") or [], separators=(",", ":")),
+            )
+            for f in floors
+        ]
+        with self.tx() as c:
+            c.executemany(
+                """INSERT INTO floors
+                   (card_id,printing,obs_ts,condition,floor_low,floor_ship,copies,conditions)
+                   VALUES (?,?,?,?,?,?,?,?)
+                   ON CONFLICT(card_id,printing,obs_ts) DO UPDATE SET
+                     floor_low=excluded.floor_low, floor_ship=excluded.floor_ship,
+                     copies=excluded.copies, conditions=excluded.conditions""",
+                rows,
+            )
+        return len(rows)
+
+    def latest_floors(self) -> dict[tuple[str, str], dict]:
+        """Most recent floor reading per (card, printing), plus the previous copy count."""
+        out: dict[tuple[str, str], dict] = {}
+        for row in self.conn.execute(
+            """SELECT f.* FROM floors f
+               JOIN (SELECT card_id, printing, MAX(obs_ts) AS m FROM floors
+                     GROUP BY card_id, printing) t
+                 ON t.card_id=f.card_id AND t.printing=f.printing AND t.m=f.obs_ts"""
+        ):
+            out[(row["card_id"], row["printing"])] = {k: row[k] for k in row.keys()}
+        # How many copies were on the shelf last time we looked?
+        for row in self.conn.execute(
+            """SELECT card_id, printing, copies, obs_ts FROM floors
+               ORDER BY card_id, printing, obs_ts DESC"""
+        ):
+            key = (row["card_id"], row["printing"])
+            cur = out.get(key)
+            if cur and row["obs_ts"] < cur["obs_ts"] and "prev_copies" not in cur:
+                cur["prev_copies"] = row["copies"]
+                cur["prev_ts"] = row["obs_ts"]
+        return out
 
     def start_run(self, note: str = "") -> int:
         with self.tx() as c:

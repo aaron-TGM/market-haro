@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("TCGAPI_KEY", "preview-not-used")
 
-from radar import dashboard, signals  # noqa: E402
+from radar import dashboard, signals, snipe  # noqa: E402
 
 OBS = "2026-08-09"
 
@@ -192,6 +192,52 @@ SERIES = {
 # Population figures over all 1,657 priced products, for the breadth tile.
 MARKET = {"priced": 1657, "up_7d": 625}
 
+
+# Cards that showed up in the live snipe sweep but sit outside the >=40% slice
+# above. Same capture, 2026-08-09.
+# (name, set, number, printing, market, 24h, 7d, 30d, tcgplayer_id, rarity)
+EXTRA = [
+    ("Gundam Aerial (Permet Score Six) (LR+)", "Starter Deck 01: Heroic Beginnings", "ST01-006", "Holofoil", 38.49, 0, 16, 39, 641457, "LR+"),
+    ("Resource (R-039) (C+)", "Phantom Aria", "R-039", "Holofoil", 2.03, 0, 20, 13, 689795, "C+"),
+    ("Resource (R-015) (C++)", "Dual Impact", "R-015", "Holofoil", 30.17, 0, 21, 31, 659373, "C++"),
+    ("Char's Zaku II", "Edition Beta", "GD01-026", "Holofoil", 4.45, 0, 20, -16, 616640, "Rare"),
+    ("Strike Gundam (C+)", "Starter Deck 04: SEED Strike", "ST04-002", "Holofoil", 12.86, 0, 20, 28, 641549, "C+"),
+    ("Resource (R-008) (C+)", "Newtype Rising", "R-008", "Holofoil", 8.52, 0, 19, 20, 645351, "C+"),
+    ("GFreD", "Steel Requiem", "GD03-035", "Holofoil", 6.25, 0, 16, 6, 670506, "Rare"),
+    ("A Show of Resolve", "Edition Beta", "GD01-100", "Normal", 8.55, 0, 16, 17, 616662, "Common"),
+    ("Aegis Gundam (LR+)", "Starter Deck 04: SEED Strike", "ST04-006", "Holofoil", 52.63, 0, 15, 26, 641553, "LR+"),
+    ("Gundam Barbatos 2nd Form (C+)", "Starter Deck 05: Iron Bloom", "ST05-002", "Holofoil", 9.52, 0, 23, 14, 653638, "C+"),
+    ("Gundam Exia (ST07-002) (C+)", "Starter Deck 07: Celestial Drive", "ST07-002", "Holofoil", 5.95, 0, 19, 16, 671987, "C+"),
+    ("Gundam Barbatos Lupus (LR+)", "Steel Requiem", "GD03-050", "Holofoil", 48.63, 0, 15, 29, 675695, "LR+"),
+    ("Zechs Merquise (C+)", "Starter Deck 02: Wings of Advance", "ST02-011", "Holofoil", 19.19, 0, 19, 22, 641494, "C+"),
+    ("Unforeseen Incident (C+)", "Starter Deck 01: Heroic Beginnings", "ST01-014", "Holofoil", 30.84, 0, 20, 36, 641465, "C+"),
+]
+
+# Live Near Mint listing floors pulled from /cards/:id/prices/conditions on
+# 2026-08-09 04:0x UTC -- i.e. the shelf as it stood at capture time, against
+# market prices stamped 2026-08-07. {tcgplayer_id: (low, lowest_with_shipping, copies)}
+FLOORS = {
+    689710: (1.20, 5.00, 29),   673480: (2.81, 8.00, 27),   641452: (49.99, 49.99, 16),
+    643172: (3.21, 8.20, 37),   670488: (1.65, 5.15, 44),   641457: (16.66, 16.66, 15),
+    645360: (49.99, 49.99, 10), 689795: (1.00, 3.07, 48),   643152: (4.74, 7.98, 40),
+    645345: (6.29, 6.29, 8),    684548: (3.00, 5.43, 45),   659373: (17.77, 17.77, 22),
+    616640: (3.00, 5.00, 22),   641549: (8.94, 8.94, 17),   645351: (6.00, 6.00, 7),
+    670506: (4.75, 7.26, 45),   655173: (6.00, 8.39, 24),   616662: (7.00, 7.45, 11),
+    641553: (44.01, 49.00, 11), 653638: (8.00, 10.50, 12),  689647: (7.00, 7.12, 50),
+    684008: (4.00, 5.37, 21),   684029: (74.99, 74.99, 11), 673508: (5.00, 5.99, 34),
+    641507: (6.75, 7.33, 26),   671987: (5.95, 8.00, 14),   659358: (74.49, 75.98, 19),
+    670514: (8.79, 10.77, 18),  616619: (10.00, 11.99, 7),  671976: (33.56, 35.00, 11),
+    675695: (67.00, 71.49, 19), 645369: (40.50, 44.49, 22), 659408: (21.00, 21.99, 22),
+    641494: (29.99, 29.99, 13), 670574: (14.00, 18.89, 18), 653646: (24.99, 25.00, 8),
+    645375: (3800.0, 3800.0, 6), 641465: (72.00, 74.99, 7), 659096: (20.00, 20.86, 4),
+    616646: (19.99, 22.98, 1),
+}
+
+SNIPE_CFG = {
+    "min_gap_pct": 8.0, "max_copies": 40, "thin_supply": 12,
+    "weight_gap": 0.55, "weight_scarcity": 0.25, "weight_momentum": 0.20,
+}
+
 CFG = {
     "min_market_price": 1.0,
     "min_listings": 2,
@@ -249,12 +295,42 @@ def parse_capture() -> list[dict]:
     return rows
 
 
+def _extra_rows() -> list[dict]:
+    out = []
+    for name, sname, num, printing, mkt, c24, c7, c30, tid, rarity in EXTRA:
+        out.append(dict(
+            card_id=str(tid), printing=printing, product_type="Cards", name=name,
+            set_name=sname, number=num, rarity=rarity, market_price=mkt,
+            change_24h=c24, change_7d=c7, change_30d=c30, total_listings=None,
+            sales_volume=0, tcgplayer_id=tid,
+            tcgplayer_url=f"https://www.tcgplayer.com/product/{tid}",
+            image_url=f"https://product-images.tcgplayer.com/fit-in/400x400/{tid}.jpg",
+        ))
+    return out
+
+
 def main(out_path: str = "out/preview.html") -> Path:
-    rows = parse_capture()
+    rows = parse_capture() + _extra_rows()
     series = {(str(tid), p): SERIES[tid] for tid in SERIES for p in PRINTINGS}
     as_of = date.fromisoformat(OBS)
 
     ranked = signals.evaluate(rows, series, CFG, as_of=as_of)
+
+    floors = {}
+    for r in rows:
+        f = FLOORS.get(r["tcgplayer_id"])
+        if f:
+            floors[(r["card_id"], r["printing"])] = {
+                "card_id": r["card_id"], "printing": r["printing"], "condition": "Near Mint",
+                "floor_low": f[0], "floor_ship": f[1], "copies": f[2],
+            }
+    ranked = snipe.score(ranked, floors, SNIPE_CFG)
+    ranked.sort(key=lambda r: (bool(r.get("signals")), r.get("score", 0)), reverse=True)
+    board = sorted(
+        (r for r in ranked
+         if r.get("snipe_mode") and r.get("filter_reason") != "below price floor"),
+        key=lambda r: r.get("snipe_score", 0), reverse=True,
+    )[:15]
     watch = [r for r in ranked if r["card_id"] in {"684008", "655173"}]
     fallers = sorted(
         (r for r in ranked if not r.get("filtered") and (r.get("change_7d") or 0) < 0),
@@ -269,12 +345,18 @@ def main(out_path: str = "out/preview.html") -> Path:
         fallers=fallers,
         watchlist=watch,
         market=MARKET,
+        snipe_board=board,
+        thin_supply=12,
         scope_note="preview slice: 118 of 657 products ≥$1 that moved ≥40% on a window",
     )
     p = dashboard.write(html, out_path)
 
     flagged = [r for r in ranked if r["signals"]]
-    print(f"{len(rows)} rows parsed · {len(flagged)} flagged · dashboard -> {p}")
+    print(f"{len(rows)} rows · {len(flagged)} flagged · {len(board)} on the snipe board -> {p}")
+    for r in board[:6]:
+        print(f"  snipe {r['snipe_score']:5.1f}  {r['name'][:38]:<38} "
+              f"${r.get('market_price') or 0:8.2f} -> floor ${r.get('floor_low') or 0:8.2f} "
+              f"x{r.get('copies')}  {r.get('snipe_mode')}")
     for r in flagged[:8]:
         print(f"  {r['score']:5.1f}  {r['name'][:44]:<44} {','.join(r['signals'])}")
     return p
