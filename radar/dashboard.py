@@ -385,7 +385,7 @@ function detailHTML(r, plan){
        <div class="kv"><span>Copies at Near Mint</span><span>${r.copies ?? '—'}</span></div>`
     : '<p class="sub2">No live entry price pulled for this card yet.</p>';
 
-  return `<tr class="detail"><td colspan="11"><div class="det">
+  return `<tr class="detail"><td colspan="13"><div class="det">
     <div>
       <h5>The case</h5>
       <p>${esc(r.thesis||'')}</p>
@@ -396,7 +396,9 @@ function detailHTML(r, plan){
       <h5>Score, broken down</h5>
       ${componentBars(r.components)}
       <div class="kv" style="margin-top:8px"><span>Weighted total</span><span>${r.invest_score.toFixed(0)} / 100</span></div>
-      <div class="kv"><span>90-day change</span><span>${r.change_90d!=null?(r.change_90d>0?'+':'')+r.change_90d+'%':'—'}</span></div>
+      <div class="kv"><span>1d / 7d / 30d / 90d</span><span>${
+        [r.change_24h,r.change_7d,r.change_30d,r.change_90d]
+          .map(v=>v==null?'—':(v>0?'+':'')+v.toFixed(0)+'%').join(' / ')}</span></div>
       <div class="kv"><span>Weeks closing up</span><span>${r.consistency_pct ?? '—'}%</span></div>
       <div class="kv"><span>Daily volatility</span><span>${r.volatility_pct ?? '—'}%</span></div>
       <div class="kv"><span>Off its 90-day high</span><span>${r.drawdown_pct ?? '—'}%</span></div>
@@ -429,6 +431,8 @@ function rowHTML(r, i, plan){
     <td><div class="who">${img}<div><div class="nm">${nm}<span class="rar">${esc(r.rarity||'—')}</span></div>
       <div class="meta">${meta}</div></div></div></td>
     <td class="num">${money(r.market_price)}</td>
+    <td class="num col-hide">${pct(r.change_24h)}</td>
+    <td class="num">${pct(r.change_7d)}</td>
     <td class="num col-hide">${pct(r.change_30d)}</td>
     <td class="num">${pct(r.change_90d)}</td>
     <td>${sparkline(r.series)}</td>
@@ -442,7 +446,8 @@ function rowHTML(r, i, plan){
 }
 
 const SORTERS = {
-  score:r=>r.invest_score, price:r=>r.market_price ?? -1, c30:r=>r.change_30d ?? -1e9,
+  score:r=>r.invest_score, price:r=>r.market_price ?? -1,
+  c24:r=>r.change_24h ?? -1e9, c7:r=>r.change_7d ?? -1e9, c30:r=>r.change_30d ?? -1e9,
   c90:r=>r.change_90d ?? -1e9, cons:r=>r.consistency_pct ?? -1, sales:r=>r.avg_daily_sales ?? -1,
   entry:r=>r.floor_low ?? -1, name:r=>(r.name||'').toLowerCase(),
 };
@@ -501,7 +506,7 @@ function apply(){
   const shown = rows.slice(0, state.limit);
   document.getElementById('tbody').innerHTML = shown.length
     ? shown.map((r,i)=>rowHTML(r, i, plans.get(r.card_id+'|'+r.printing))).join('')
-    : '<tr><td colspan="11" class="empty">Nothing matches those filters.</td></tr>';
+    : '<tr><td colspan="13" class="empty">Nothing matches those filters.</td></tr>';
   document.getElementById('count').textContent =
     `${shown.length?'1–'+shown.length:'0'} of ${rows.length} candidates`;
 
@@ -529,7 +534,7 @@ function reset(){
 
 function exportCSV(){
   const cols = ['invest_score','name','set_name','number','rarity','printing','market_price',
-                'change_30d','change_90d','consistency_pct','volatility_pct','drawdown_pct',
+                'change_24h','change_7d','change_30d','change_90d','consistency_pct','volatility_pct','drawdown_pct',
                 'avg_daily_sales','days_traded_pct','floor_low','shelf_med','copies','tcgplayer_url'];
   const e2 = v => { const s = v==null?'':String(v); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
   const body = [cols.join(',')].concat((window.__view||[]).map(r=>cols.map(c=>e2(r[c])).join(','))).join('\n');
@@ -689,6 +694,8 @@ def _row_payload(r: dict) -> dict:
         "tcgplayer_id": r.get("tcgplayer_id"),
         "tcgplayer_url": r.get("tcgplayer_url"),
         "market_price": r.get("market_price"),
+        "change_24h": r.get("change_24h"),
+        "change_7d": r.get("change_7d"),
         "change_30d": r.get("change_30d"),
         "change_90d": r.get("change_90d"),
         "consistency_pct": r.get("consistency_pct"),
@@ -738,6 +745,10 @@ def _rejected_table(rejected: Sequence[dict]) -> str:
 TIPS = {
     "price": "Market price from the daily batch feed &mdash; up to two days behind. Used for the "
              "Value component and as a reference, not as the price you pay.",
+    "c24": "Change over 24 hours. Noise at this timeframe &mdash; shown for context, and it "
+           "carries no weight in the score. A one-day move is not a reason to buy a hold.",
+    "c7": "Change over 7 days. Useful for spotting a candidate that has just turned, but the "
+          "score is built on the 90-day picture, not this.",
     "c30": "Change over 30 days. Context only; the screen ranks on the 90-day picture.",
     "c90": "Change over 90 days. One of the two inputs to the Trend component.",
     "trend90": "90 days of daily market price. This is the shape you are buying into.",
@@ -885,6 +896,8 @@ def render(
   <th class="rank">#</th>
   <th data-sort="name" data-tip="{TIPS['card']}">Card</th>
   <th class="num" data-sort="price" data-tip="{TIPS['price']}">Price</th>
+  <th class="num col-hide" data-sort="c24" data-tip="{TIPS['c24']}">1d</th>
+  <th class="num" data-sort="c7" data-tip="{TIPS['c7']}">7d</th>
   <th class="num col-hide" data-sort="c30" data-tip="{TIPS['c30']}">30d</th>
   <th class="num" data-sort="c90" data-tip="{TIPS['c90']}">90d</th>
   <th data-tip="{TIPS['trend90']}">90-day trend</th>

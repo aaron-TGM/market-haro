@@ -100,6 +100,10 @@ Enter a **budget** at the top and each row gets a position: copies, cost, what l
 and — because this is a hold — *how many days it takes to sell that many at the card's own
 sales rate*.
 
+Change columns run **1d / 7d / 30d / 90d**, all sortable. Only the 90-day figure feeds the
+score — the shorter windows are context. On this game the 24h number is zero for most
+cards most days, because the batch feed only moves when a sale prints.
+
 Filters: search, set, rarity, price band, minimum score, and **minimum sales/day** (set it
 to 1.0 to keep only what you can exit reasonably quickly).
 
