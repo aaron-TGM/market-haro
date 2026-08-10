@@ -129,7 +129,14 @@ def _row(fields: list[str], with_entry: bool) -> dict:
     return dict(
         card_id=str(tid), tcgplayer_id=tid, printing=printing, product_type="Cards",
         name=name, set_name=sname, number=num or None, rarity=rarity,
-        market_price=mkt, change_24h=c24, change_7d=c7, change_30d=c30, change_90d=c90,
+        market_price=mkt, change_7d=c7, change_30d=c30, change_90d=c90,
+        # c24 is the API's price_change_24h as captured. It is not displayed any
+        # more -- the field reads zero on ~97% of Gundam products. The 3d figure
+        # is computed from the daily series instead, so it is present only for
+        # the fixture rows that carry real history, which is exactly what a fresh
+        # install shows before the history backfill has run.
+        **{"h3d": _hchange(SERIES.get(tid, []), 3)},
+        **_settled_fields(tid, mkt),
         consistency_pct=cons, volatility_pct=vola, drawdown_pct=dd,
         avg_daily_sales=sales, days_traded_pct=traded, history_points=pts,
         floor_low=entry, shelf_med=shelf, copies=copies,
@@ -137,6 +144,90 @@ def _row(fields: list[str], with_entry: bool) -> dict:
         image_url=f"https://product-images.tcgplayer.com/fit-in/400x400/{tid}.jpg",
         series=SERIES.get(tid, []),
     )
+
+
+# Real settled-price capture, 2026-08-09, from /cards/:id/history?range=quarter.
+# Volume-weighted average of avg_sales_price over the last 14 days with sales --
+# what copies actually changed hands for, versus the listed market price.
+# Format: tcgplayer_id | sold_avg | days_with_sales | copies_sold
+# A blank sold_avg means under three days of recorded sales in the fortnight,
+# which is exactly what the screen shows as "not enough to say".
+SETTLED = """
+659248|157.66|8|16
+646004|64.15|11|36
+645344|295.39|7|12
+645373|104.68|7|19
+645360|108.87|6|40
+675680|52.80|9|14
+645367|88.35|5|23
+645374|95.75|6|13
+616528|63.19|5|52
+616677|96.81|4|4
+670587|31.74|7|25
+645363|114.23|7|14
+659252|57.56|10|20
+681981|92.77|10|24
+645372|153.15|10|19
+645357|59.51|9|32
+641452|161.29|5|20
+641521|114.34|5|21
+645355|85.17|9|45
+675706|139.84|8|18
+641571|75.33|5|42
+675688|41.40|8|31
+645366|40.68|10|43
+670590|379.85|4|13
+670578|35.78|7|41
+670580|46.90|8|41
+675696|46.75|7|27
+645347|14.51|12|20
+645358|34.08|6|29
+645343|68.50|7|28
+616669||0|0
+654138||1|2
+675685|80.04|6|8
+641553|54.54|6|31
+641564|31.78|6|58
+646544|68.84|3|29
+691178|72.80|5|10
+"""
+
+
+def _settled_map():
+    out = {}
+    for line in SETTLED.strip().splitlines():
+        tid, sold, days, vol = line.split("|")
+        out[int(tid)] = (
+            float(sold) if sold else None,
+            int(days),
+            int(vol),
+        )
+    return out
+
+
+SETTLED_BY_TID = _settled_map()
+
+
+def _hchange(series, days):
+    """% change over `days` from a [(date, price), ...] fixture series."""
+    from radar.invest import _change_over
+
+    if not series:
+        return None
+    return _change_over([(d, p, 0.0) for d, p in series], days)
+
+
+def _settled_fields(tid, ask):
+    """Settled price + how far the listed price has run ahead of it."""
+    sold, days, vol = SETTLED_BY_TID.get(tid, (None, 0, 0))
+    if sold is None:
+        return {"settled_price": None, "ask_premium_pct": None, "settled_days": days}
+    return {
+        "settled_price": sold,
+        "ask_premium_pct": round((ask / sold - 1) * 100, 1) if ask and sold else None,
+        "settled_days": days,
+        "settled_volume": vol,
+    }
 
 
 def parse() -> list[dict]:

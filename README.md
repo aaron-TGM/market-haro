@@ -100,9 +100,54 @@ Enter a **budget** at the top and each row gets a position: copies, cost, what l
 and — because this is a hold — *how many days it takes to sell that many at the card's own
 sales rate*.
 
-Change columns run **1d / 7d / 30d / 90d**, all sortable. Only the 90-day figure feeds the
-score — the shorter windows are context. On this game the 24h number is zero for most
-cards most days, because the batch feed only moves when a sale prints.
+Change columns run **3d / 7d / 30d / 90d**, all sortable, and every one of them is computed
+from the stored daily series rather than read off the API. Only the 90-day figure feeds the
+score — the shorter windows are context.
+
+There used to be a 1d column fed by the API's `price_change_24h`. It was removed because the
+field is wrong, not empty: measured 2026-08-09 across all 1,701 Gundam products it was
+non-zero on **3.2%** of rows, and on a 129-card spot check it reported `0` for **8 of the 9**
+cards whose daily history had actually moved 1% or more day over day. The underlying history
+moves on 37% of days. The fix was to stop trusting the field, not to drop the timeframe.
+
+3 days rather than 1 because of how sparse daily moves are on this game (125 cards, 90 days
+of daily history each):
+
+| Window | Days with a move | Move ≥1% | Move ≥3% | Typical move |
+|--------|-----------------|----------|----------|--------------|
+| 1 day  | 37%             | 17%      | 6%       | 2.1% |
+| 2 days | 53%             | 29%      | 13%      | 2.8% |
+| 3 days | 63%             | 39%      | 20%      | 3.5% |
+| 7 days | 80%             | 62%      | 39%      | 6.3% |
+
+A 1d column is blank or 0.0% on nearly two-thirds of rows. 3d is the shortest window that
+says something most of the time.
+
+### vs sold
+
+The **vs sold** column is the gap between the listed price and the volume-weighted average
+of what copies *actually sold for* over the last 14 days. Listings are what sellers hope
+for; `avg_sales_price` is what buyers agreed to. Green means buyers have been paying above
+the current ask; red means sellers are ahead of the market. Blank means under three days
+with a recorded sale — two transactions averaged together is not a price.
+
+Measured across 1,201 observations of 290 Gundam cards, sorted into fifths by that gap:
+
+| Listed vs. sold | Median next 30 days |
+|-----------------|--------------------|
+| ~7% below       | **+10.3%** |
+| ~1% below       | +3.2% |
+| level           | +1.1% |
+| ~3% above       | −0.5% |
+| ~9% above       | **−4.0%** |
+
+Spearman ρ = −0.31 (t = −8.2), stable across both halves of the window (−0.32 / −0.28), and
+still −0.23 after removing 30-day momentum. Stronger at 14 days (−0.38) than at 30 — the
+correction lands fast.
+
+It is deliberately **not in the score**. It is a timing read, not a quality read: a card can
+be worth owning and still be listed ahead of itself, which says wait, not no. It shows in
+the row, in the detail panel, and in the Watch line, and carries zero weight in the ranking.
 
 Filters: search, set, rarity, price band, minimum score, and **minimum sales/day** (set it
 to 1.0 to keep only what you can exit reasonably quickly).
@@ -249,7 +294,21 @@ sizing, and HTML escaping.
   it for the Value component and as a reference; the entry price is live.
 - **`market_price: 0` means "no market data"**, usually pre-release — not "free".
 - **The API returns `price_change_24h/7d/30d`**; internally they're `change_24h/7d/30d`.
-  Pinned by a test.
+  Pinned by a test. `price_change_24h` is **not trusted** — see the 3d note above. 7d and 30d
+  are used only as a coarse pre-filter before history is loaded; the displayed figures are
+  computed from the daily series.
+- **`avg_sales_price` is a different number from `market_price`** and the difference is the
+  point. The first is realised transactions, the second is derived from listings. Days with
+  `sales_volume: 0` carry no `avg_sales_price` and are skipped.
+- **There is no settling-price forecast, and that was a decision.** The inputs suggested —
+  sales velocity, size of the run, supply, rarity — were each tested against 90 days of daily
+  history and none of them predicted the next 30 days (run size r = −0.13, velocity r = −0.15,
+  run speed r = −0.06 across 47 run-ups of 25%+; the largest rarity bucket was n = 7; listing
+  counts exist only as of today, so testing them against the past is lookahead bias). There
+  was also nothing to settle back to: after a 25%+ run the median card was **up another 24%**
+  thirty days later and 77% sat above the peak, because the whole market rose over this
+  window. A model fitted here would have predicted perpetual gains. `vs sold` is what
+  survived — a price copies are changing hands at, not a price they are heading to.
 - **Printings are `Normal`, `Foil`, and `Holofoil`**, and they move independently — each is
   scored as its own row. The alt-art parallels are where the value sits.
 - **Sealed products are excluded from the hold screen** (`include_sealed` still governs the

@@ -506,6 +506,120 @@ def test_invest_features_from_history():
     assert invest.features([("2026-01-01", 0, 0)] * 40) is None
 
 
+def test_short_window_changes_come_from_history_not_the_api_field():
+    """The API's price_change_24h is broken; short windows are computed here.
+
+    Measured 2026-08-09 across 1,701 Gundam products, price_change_24h was
+    non-zero on 3.2% of rows. On a 129-card spot check it reported 0 for 8 of
+    the 9 cards whose daily history had actually moved >=1% day over day. So the
+    field is not "no data" -- it is wrong data, and it must never reach a column.
+
+    Windows are indexed by date, not list position, because the last stored
+    close sits anywhere from today to three days back depending on the card.
+    """
+    from radar import invest
+
+    # A clean daily run, no gaps: $100 -> $110 over the last three days.
+    series = [(f"2026-06-{d:02d}", 90.0, 1) for d in range(1, 31)]
+    series += [
+        ("2026-07-01", 100.0, 1), ("2026-07-02", 104.0, 1),
+        ("2026-07-03", 107.0, 1), ("2026-07-04", 110.0, 1),
+    ]
+    f = invest.features(series)
+    assert f["as_of"] == "2026-07-04"
+    assert f["h1d"] == pytest_approx(110 / 107 - 1)
+    assert f["h3d"] == pytest_approx(110 / 100 - 1)
+
+    # A gap of up to three days still resolves to the nearest earlier close --
+    # one missing day must not blank the column.
+    gappy = [(f"2026-06-{d:02d}", 90.0, 1) for d in range(1, 31)]
+    gappy += [("2026-07-01", 100.0, 1), ("2026-07-04", 110.0, 1)]
+    g = invest.features(gappy)
+    assert g["h3d"] == pytest_approx(110 / 100 - 1)
+
+    # Past the tolerance it returns None rather than quietly comparing a close
+    # from a week ago and labelling it "3d".
+    stale = [(f"2026-06-{d:02d}", 90.0, 1) for d in range(1, 21)]
+    stale += [(f"2026-05-{d:02d}", 90.0, 1) for d in range(1, 11)]
+    stale += [("2026-06-20", 100.0, 1), ("2026-07-04", 110.0, 1)]
+    assert invest.features(stale)["h3d"] is None
+
+
+def pytest_approx(frac):
+    """Expected percentage, rounded the way features() rounds it."""
+    return round(frac * 100, 1)
+
+
+def test_settled_price_is_measured_not_forecast():
+    """`settled` reports where copies traded; it never extrapolates.
+
+    The four inputs Aaron asked for -- sales velocity, size of the run, supply
+    and rarity -- were tested against 90 days of daily Gundam history and none
+    of them predicted the next 30 days (|r| < 0.15; rarity buckets n <= 7;
+    listing counts are only available as of today, so testing them backwards is
+    lookahead). The ask-versus-sold gap did hold up (rho = -0.31, n = 1,201),
+    and that is a measurement of the present, not a forecast. See invest.settled.
+    """
+    from radar import invest
+
+    # Listed at $110 while copies have been going for $100.
+    pts = [(f"2026-07-{d:02d}", 110.0, 2.0, 100.0) for d in range(1, 15)]
+    out = invest.settled(pts)
+    assert out["settled_price"] == 100.0
+    assert out["ask_premium_pct"] == 10.0
+    assert out["settled_days"] == 14
+    assert out["settled_volume"] == 28
+
+    # Volume-weighted, not a plain mean: the 10-copy day at $50 outweighs the
+    # two 1-copy days at $100.
+    mixed = [
+        ("2026-07-01", 60.0, 1.0, 100.0),
+        ("2026-07-02", 60.0, 1.0, 100.0),
+        ("2026-07-03", 60.0, 10.0, 50.0),
+    ]
+    assert invest.settled(mixed)["settled_price"] == 58.33  # (100+100+500)/12
+
+    # Under three days of real sales it says nothing rather than something thin.
+    thin = [("2026-07-01", 60.0, 1.0, 100.0), ("2026-07-02", 60.0, 1.0, 100.0)]
+    assert invest.settled(thin)["settled_price"] is None
+    # Days with listings but no sales don't count as sales.
+    quiet = [(f"2026-07-{d:02d}", 60.0, 0.0, None) for d in range(1, 15)]
+    assert invest.settled(quiet)["settled_price"] is None
+
+    # A stretched ask reaches the Watch line -- as timing, not as a rejection.
+    row = {"drawdown_pct": 0, "consistency_pct": 90, "avg_daily_sales": 2.0,
+           "ask_premium_pct": 12.8, "settled_price": 295.39}
+    watch = invest.watch_for(row)
+    assert "295.39" in watch and "13%" in watch
+    assert not row.get("disqualified")
+    # ...and it is not a gate.
+    assert invest.disqualify({"name": "X", "market_price": 50.0, "history_points": 90,
+                              "avg_daily_sales": 2.0, "change_90d": 40, "volatility_pct": 2.0,
+                              "ask_premium_pct": 12.8},
+                             {"min_price": 10.0, "min_history_days": 45,
+                              "max_volatility_pct": 8.0}) is None
+
+
+def test_dashboard_never_shows_the_broken_24h_field():
+    """No 1d column, and nothing reads change_24h into the payload."""
+    import re
+
+    from radar import dashboard, invest
+
+    ROOT = Path(__file__).resolve().parent.parent
+    src = (ROOT / "radar" / "dashboard.py").read_text()
+    assert "change_24h" not in src
+    assert not re.search(r'data-sort="c24"', src)
+
+    sys.path.insert(0, str(ROOT / "tests"))
+    import make_preview
+
+    rows = invest.evaluate(make_preview.parse(), {"min_price": 10.0})
+    html = dashboard.render(rows, obs_date="2026-08-09", stats={}, market={}, plan_cfg={})
+    assert ">3d<" in html
+    assert ">1d<" not in html
+
+
 def test_invest_gates_reject_for_the_right_reasons():
     """Every rejection is a specific, stated reason -- these are the real cases."""
     from radar import invest
@@ -593,7 +707,7 @@ def test_invest_words_are_specific():
 
     dead = invest.evaluate([{**row, "avg_daily_sales": 0}], {"min_price": 10.0})[0]
     assert invest.thesis(dead).startswith("No recorded sales")
-    assert len(invest.CHECKLIST) == 5
+    assert len(invest.CHECKLIST) == 6
 
 
 def test_english_only_is_enforced_on_the_shelf():

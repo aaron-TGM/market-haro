@@ -49,6 +49,7 @@ describes what a card has done and whether it can be exited.
 from __future__ import annotations
 
 import math
+from datetime import date as _date, timedelta as _timedelta
 from typing import Any, Iterable, Sequence
 
 # Rarity as a proxy for structural scarcity. Alt-art and parallel treatments
@@ -75,23 +76,121 @@ def _f(v: Any) -> float | None:
 # --------------------------------------------------------------------------
 # Features: everything the score needs, measured from 90 days of history.
 # --------------------------------------------------------------------------
+def _change_over(pts: Sequence[Sequence[Any]], days: int) -> float | None:
+    """% change from the last close back to the close `days` calendar days earlier.
+
+    Indexed by date, not by list position, because the daily series has gaps --
+    the most recent point sits anywhere from today to three days back depending
+    on the card. Falls back to the nearest earlier close within a 3-day window
+    so one missing day doesn't blank the column; returns None past that.
+    """
+    if len(pts) < 2:
+        return None
+    try:
+        last_d = _date.fromisoformat(pts[-1][0][:10])
+    except (ValueError, TypeError):
+        return None
+    target = last_d - _timedelta(days=days)
+    best: tuple[int, float] | None = None
+    for row in pts[:-1]:
+        d, price = row[0], row[1]
+        try:
+            cur = _date.fromisoformat(str(d)[:10])
+        except (ValueError, TypeError):
+            continue
+        if cur > target:
+            continue
+        gap = (target - cur).days
+        if gap > 3:
+            continue
+        if best is None or gap < best[0]:
+            best = (gap, price)
+    if best is None or not best[1]:
+        return None
+    return round((pts[-1][1] / best[1] - 1) * 100, 1)
+
+
+def settled(pts: Sequence[tuple[str, float, float, float | None]], window: int = 14) -> dict:
+    """Where copies are actually changing hands, versus what they are listed at.
+
+    `market_price` is derived from listings. `avg_sales_price` on days with
+    volume is what buyers really paid. The volume-weighted average of the latter
+    over the last two weeks is the settled price, and `ask_premium_pct` is how
+    far the listed price has run ahead of it.
+
+    WHY THIS IS HERE AND A FORECAST IS NOT
+    --------------------------------------
+    Aaron asked for a predicted settling price built from sales velocity, the
+    size of the run, supply and rarity. I tested those four directly on 90 days
+    of daily Gundam history and they do not support a forecast:
+
+      run size vs next 30d       r = -0.13   (n=47 run-ups of 25%+)
+      sales velocity vs next 30d r = -0.15
+      run speed vs next 30d      r = -0.06
+      rarity                     largest bucket n=7 -- not measurable
+      listings vs next 30d       rho = -0.20, but listing counts are only
+                                 available as of today, so testing them against
+                                 the past is lookahead bias. Unusable.
+
+    There was also nothing to settle *back* to. After a 25%+ run, the median
+    card was **up another 24% thirty days later** and 77% were above the peak.
+    The whole market rose over this window; a model fitted here would predict
+    perpetual gains, which is not a settling price, it is a bull market.
+
+    The ask-versus-sold gap is the one thing that did hold up, and it holds up
+    because both sides are measured at the same moment from history alone:
+
+      premium vs next 30d      rho = -0.307   (n = 1,201 over 290 cards)
+      first half of window     rho = -0.318
+      second half of window    rho = -0.284
+      after removing momentum  rho = -0.227
+      at 14 days instead of 30 rho = -0.384   -- the correction lands fast
+
+    Sorted into fifths by premium, the cheapest fifth (asking 7% BELOW recent
+    sales) returned +10.3% over the next 30 days; the priciest fifth (asking
+    9% above) returned -4.0%. As a point estimate the sold-average beat today's
+    listed price: median absolute error 8.0% versus 9.5%.
+
+    That is worth showing. It is still not a forecast, and it is not labelled
+    as one -- it is the price copies have been trading at.
+    """
+    recent = [p for p in pts[-window:] if len(p) > 3 and p[3] and p[2] > 0]
+    volume = sum(p[2] for p in recent)
+    if len(recent) < 3 or volume <= 0:
+        # Under three days of real sales the average is one or two transactions
+        # wearing a decimal point. Say nothing rather than something thin.
+        return {"settled_price": None, "ask_premium_pct": None, "settled_days": len(recent)}
+    price = sum(p[3] * p[2] for p in recent) / volume
+    ask = pts[-1][1]
+    return {
+        "settled_price": round(price, 2),
+        "ask_premium_pct": round((ask / price - 1) * 100, 1) if price else None,
+        "settled_days": len(recent),
+        "settled_volume": round(volume),
+    }
+
+
 def features(series: Sequence[Sequence[Any]]) -> dict[str, Any] | None:
-    """From [(date, market_price, sales_volume), ...] -> the measurements.
+    """From [(date, market_price, sales_volume, avg_sales_price), ...] -> measurements.
+
+    The fourth element is optional; without it the settled price is simply
+    absent rather than estimated.
 
     Returns None when there isn't enough history to say anything.
     """
-    pts: list[tuple[str, float, float]] = []
+    pts: list[tuple[str, float, float, float | None]] = []
     for row in series:
         date = row[0]
         price = _f(row[1]) if len(row) > 1 else None
         volume = _f(row[2]) if len(row) > 2 else 0.0
+        sold = _f(row[3]) if len(row) > 3 else None
         if price and price > 0:
-            pts.append((date, price, volume or 0.0))
+            pts.append((date, price, volume or 0.0, sold if sold and sold > 0 else None))
     if len(pts) < 30:
         return None
 
-    px = [p for _, p, _ in pts]
-    vol = [v for _, _, v in pts]
+    px = [p[1] for p in pts]
+    vol = [p[2] for p in pts]
     last, first, high = px[-1], px[0], max(px)
 
     # Weekly closes, walking back from today so the most recent week is whole.
@@ -106,6 +205,18 @@ def features(series: Sequence[Sequence[Any]]) -> dict[str, Any] | None:
 
     days = len(vol)
     return {
+        # Short-window changes computed from the stored daily series rather than
+        # taken from the API's price_change_24h field. That field is unreliable:
+        # measured 2026-08-09 across 1,701 Gundam products it was non-zero on
+        # 3.2% of rows, and on a spot check of 129 cards it reported 0 for 8 of
+        # the 9 that had actually moved >=1% day over day. The daily history
+        # moves on 37% of days, so the data exists -- only the field is wrong.
+        "h1d": _change_over(pts, 1),
+        "h3d": _change_over(pts, 3),
+        "h7d": _change_over(pts, 7),
+        "h30d": _change_over(pts, 30),
+        "as_of": pts[-1][0],
+        **settled(pts),
         "change_90d": round((last / first - 1) * 100) if first else None,
         "drawdown_pct": round((1 - last / high) * 100, 1) if high else 0.0,
         "consistency_pct": consistency,
@@ -269,6 +380,15 @@ def watch_for(row: dict) -> str:
         parts.append(f"only {cons:.0f}% of weeks closed up, so the trend is not clean")
     if sales < 1:
         parts.append(f"at {sales:.1f} sales a day, exiting more than a few copies takes time")
+    # A stretched ask is a timing problem, not a reason to drop the card. It says
+    # wait, not no -- so it belongs here rather than in the score or the gates.
+    prem = _f(row.get("ask_premium_pct"))
+    if prem is not None and prem > 5:
+        parts.append(
+            f"the listed price is running {prem:.0f}% above what copies have actually "
+            f"been selling for (${row.get('settled_price'):,.2f}), which historically "
+            f"drifted back rather than held"
+        )
     if not parts:
         parts.append("nothing in the numbers is flashing yet")
     return (
@@ -285,6 +405,8 @@ CHECKLIST = [
     "Sanity-check the sales figure against the TCGplayer sales history on the page.",
     "Decide the exit before you buy: at this sales rate, how long does it take to sell "
     "the quantity you're holding?",
+    "Compare the entry price to what copies have actually sold for, not just to the other "
+    "listings. Listings are what sellers hope for; the sale price is what buyers agreed to.",
     "Look for a reason the card is moving. Nothing here knows about bans, reprints, "
     "rotation or tournament results.",
 ]

@@ -452,17 +452,31 @@ class Database:
             )
         return out
 
-    def all_series_with_volume(self) -> dict[tuple[str, str], list[tuple[str, float, float]]]:
-        """Every price series with its daily sales volume -- the input to the hold screen."""
-        out: dict[tuple[str, str], list[tuple[str, float, float]]] = {}
+    def all_series_with_volume(
+        self,
+    ) -> dict[tuple[str, str], list[tuple[str, float, float, float | None]]]:
+        """Every price series with its daily sales volume and realised sale price.
+
+        Four columns, not three: `market_price` is derived from listings, while
+        `avg_sales_price` is what copies actually changed hands for that day.
+        The gap between them is the settled-price measurement in invest.py.
+        """
+        out: dict[tuple[str, str], list[tuple[str, float, float, float | None]]] = {}
         for row in self.conn.execute(
-            """SELECT card_id, printing, obs_date, market_price, sales_volume
+            """SELECT card_id, printing, obs_date, market_price, sales_volume,
+                      avg_sales_price
                FROM price_points
                WHERE market_price IS NOT NULL
                ORDER BY card_id, printing, obs_date ASC"""
         ):
+            asp = row["avg_sales_price"]
             out.setdefault((row["card_id"], row["printing"]), []).append(
-                (row["obs_date"], float(row["market_price"]), float(row["sales_volume"] or 0))
+                (
+                    row["obs_date"],
+                    float(row["market_price"]),
+                    float(row["sales_volume"] or 0),
+                    float(asp) if asp else None,
+                )
             )
         return out
 

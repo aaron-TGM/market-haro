@@ -196,7 +196,7 @@ def cmd_invest(cfg, args) -> int:
             key = (r["card_id"], r.get("printing") or "Normal")
             hist = series.get(key, [])
             feats = invest_mod.features(hist) or {}
-            rec = {**r, **feats, "series": [(d, p) for d, p, _ in hist[-90:]]}
+            rec = {**r, **feats, "series": [(pt[0], pt[1]) for pt in hist[-90:]]}
             measured.append(rec)
 
         # 3. Live entry price for the strongest ones only.
@@ -243,7 +243,8 @@ def cmd_invest(cfg, args) -> int:
         if cfg.report.get("write_csv", True):
             cp = out.with_suffix(".csv")
             cols = ["invest_score", "name", "set_name", "number", "rarity", "printing",
-                    "market_price", "change_30d", "change_90d", "consistency_pct",
+                    "market_price", "settled_price", "ask_premium_pct",
+                    "change_30d", "change_90d", "consistency_pct",
                     "volatility_pct", "drawdown_pct", "avg_daily_sales", "days_traded_pct",
                     "floor_low", "shelf_med", "copies", "tcgplayer_url"]
             with cp.open("w", newline="", encoding="utf-8") as fh:

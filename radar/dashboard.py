@@ -175,6 +175,9 @@ tr.buy td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 .up{color:var(--up);font-weight:700}
 .down{color:var(--down);font-weight:700}
 .flat{color:var(--text-muted)}
+/* Listed above what copies have been selling for / listed below it. */
+.hot{color:var(--down);font-weight:700}
+.cool{color:var(--up);font-weight:700}
 .warnc{color:var(--warn);font-weight:700}
 .spark{display:block}
 .score{font-variant-numeric:tabular-nums;font-weight:700;font-size:16px;color:var(--accent)}
@@ -385,7 +388,26 @@ function detailHTML(r, plan){
        <div class="kv"><span>Copies at Near Mint</span><span>${r.copies ?? '—'}</span></div>`
     : '<p class="sub2">No live entry price pulled for this card yet.</p>';
 
-  return `<tr class="detail"><td colspan="13"><div class="det">
+  // Where copies have actually been changing hands, and how far the asking
+  // price has run ahead of that. Descriptive, not a forecast -- see the tooltip.
+  const settled = (r.settled_price != null)
+    ? `<div class="kv"><span>Trading at</span><span>$${r.settled_price.toFixed(2)}</span></div>
+       <div class="kv"><span>Listed price is</span><span class="${
+          r.ask_premium_pct==null?'':(r.ask_premium_pct>5?'hot':(r.ask_premium_pct<-2?'cool':''))}">${
+          r.ask_premium_pct==null ? '—'
+          : (r.ask_premium_pct>=0 ? '+'+r.ask_premium_pct.toFixed(1)+'% above' 
+                                  : Math.abs(r.ask_premium_pct).toFixed(1)+'% below')}</span></div>
+       <div class="kv"><span>Based on</span><span>${r.settled_volume ?? '—'} sales / ${r.settled_days} days</span></div>
+       <p class="sub2">${
+          r.ask_premium_pct==null ? ''
+          : r.ask_premium_pct>5
+            ? 'Sellers are asking more than buyers have been paying. Cards in this state gave back a median 4% over the next 30 days.'
+            : r.ask_premium_pct<-2
+              ? 'Copies have been selling above the listed price. Cards in this state gained a median 10% over the next 30 days.'
+              : 'Asking price and sale price agree. Nothing to read into.'}</p>`
+    : '<p class="sub2">Under three days of recorded sales in the last fortnight — not enough to say what it trades at.</p>';
+
+  return `<tr class="detail"><td colspan="14"><div class="det">
     <div>
       <h5>The case</h5>
       <p>${esc(r.thesis||'')}</p>
@@ -396,15 +418,17 @@ function detailHTML(r, plan){
       <h5>Score, broken down</h5>
       ${componentBars(r.components)}
       <div class="kv" style="margin-top:8px"><span>Weighted total</span><span>${r.invest_score.toFixed(0)} / 100</span></div>
-      <div class="kv"><span>1d / 7d / 30d / 90d</span><span>${
-        [r.change_24h,r.change_7d,r.change_30d,r.change_90d]
+      <div class="kv"><span>3d / 7d / 30d / 90d</span><span>${
+        [r.change_3d,r.change_7d,r.change_30d,r.change_90d]
           .map(v=>v==null?'—':(v>0?'+':'')+v.toFixed(0)+'%').join(' / ')}</span></div>
       <div class="kv"><span>Weeks closing up</span><span>${r.consistency_pct ?? '—'}%</span></div>
       <div class="kv"><span>Daily volatility</span><span>${r.volatility_pct ?? '—'}%</span></div>
       <div class="kv"><span>Off its 90-day high</span><span>${r.drawdown_pct ?? '—'}%</span></div>
     </div>
     <div>
-      <h5>Entry today</h5>
+      <h5 data-tip="Volume-weighted average of what copies actually SOLD for over the last 14 days, next to what they are listed at. Listings are an asking price; this is a paid price. Measured across 1,201 observations of 290 Gundam cards: the fifth of cards asking ~7% BELOW recent sales returned a median +10.3% over the next 30 days, the fifth asking ~9% above returned -4.0% (rho = -0.31, stable across both halves of the window). It is a description of where the card trades, not a forecast of where it will go.">What it actually trades at<span class="info">?</span></h5>
+      ${settled}
+      <h5 style="margin-top:14px">Entry today</h5>
       ${entry}
       <h5 style="margin-top:14px">Position at your budget</h5>
       ${pos}
@@ -431,7 +455,10 @@ function rowHTML(r, i, plan){
     <td><div class="who">${img}<div><div class="nm">${nm}<span class="rar">${esc(r.rarity||'—')}</span></div>
       <div class="meta">${meta}</div></div></div></td>
     <td class="num">${money(r.market_price)}</td>
-    <td class="num col-hide">${pct(r.change_24h)}</td>
+    <td class="num">${r.ask_premium_pct==null ? '<span class="flat">—</span>'
+      : `<span class="${r.ask_premium_pct>5?'hot':(r.ask_premium_pct<-2?'cool':'')}">${
+          (r.ask_premium_pct>0?'+':'')+r.ask_premium_pct.toFixed(0)}%</span>`}</td>
+    <td class="num col-hide">${pct(r.change_3d)}</td>
     <td class="num">${pct(r.change_7d)}</td>
     <td class="num col-hide">${pct(r.change_30d)}</td>
     <td class="num">${pct(r.change_90d)}</td>
@@ -447,7 +474,7 @@ function rowHTML(r, i, plan){
 
 const SORTERS = {
   score:r=>r.invest_score, price:r=>r.market_price ?? -1,
-  c24:r=>r.change_24h ?? -1e9, c7:r=>r.change_7d ?? -1e9, c30:r=>r.change_30d ?? -1e9,
+  prem:r=>r.ask_premium_pct ?? 1e9, c3:r=>r.change_3d ?? -1e9, c7:r=>r.change_7d ?? -1e9, c30:r=>r.change_30d ?? -1e9,
   c90:r=>r.change_90d ?? -1e9, cons:r=>r.consistency_pct ?? -1, sales:r=>r.avg_daily_sales ?? -1,
   entry:r=>r.floor_low ?? -1, name:r=>(r.name||'').toLowerCase(),
 };
@@ -506,7 +533,7 @@ function apply(){
   const shown = rows.slice(0, state.limit);
   document.getElementById('tbody').innerHTML = shown.length
     ? shown.map((r,i)=>rowHTML(r, i, plans.get(r.card_id+'|'+r.printing))).join('')
-    : '<tr><td colspan="13" class="empty">Nothing matches those filters.</td></tr>';
+    : '<tr><td colspan="14" class="empty">Nothing matches those filters.</td></tr>';
   document.getElementById('count').textContent =
     `${shown.length?'1–'+shown.length:'0'} of ${rows.length} candidates`;
 
@@ -534,7 +561,7 @@ function reset(){
 
 function exportCSV(){
   const cols = ['invest_score','name','set_name','number','rarity','printing','market_price',
-                'change_24h','change_7d','change_30d','change_90d','consistency_pct','volatility_pct','drawdown_pct',
+                'change_3d','change_7d','change_30d','change_90d','consistency_pct','volatility_pct','drawdown_pct',
                 'avg_daily_sales','days_traded_pct','floor_low','shelf_med','copies','tcgplayer_url'];
   const e2 = v => { const s = v==null?'':String(v); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
   const body = [cols.join(',')].concat((window.__view||[]).map(r=>cols.map(c=>e2(r[c])).join(','))).join('\n');
@@ -650,12 +677,39 @@ GLOSSARY = """
       </dl>
     </div>
     <div>
+      <h4>Listed price vs. sold price</h4>
+      <dl>
+        <dt>Two different numbers</dt><dd><b>Price</b> is derived from listings &mdash; what
+          sellers are asking. <b>Trading at</b> is the volume-weighted average of what copies
+          actually changed hands for over the last 14 days.</dd>
+        <dt>vs sold</dt><dd>The gap between them. Green means buyers have been paying more than
+          the current ask. Red means sellers are ahead of the market.</dd>
+        <dt>What it predicted</dt><dd>Over 1,201 observations of 290 Gundam cards: the fifth of
+          cards asking ~7% <i>below</i> recent sales returned a median <b>+10.3%</b> over the
+          next 30 days; the fifth asking ~9% above returned <b>&minus;4.0%</b>. Spearman
+          &rho;&nbsp;=&nbsp;&minus;0.31, and it held in both halves of the window
+          (&minus;0.32 / &minus;0.28) and after removing momentum (&minus;0.23).</dd>
+        <dt>Why it isn't in the score</dt><dd>It's a timing read, not a quality read. A card can
+          be worth owning and still be listed ahead of itself &mdash; that says wait, not no. It
+          shows in the row and in the Watch line, and carries no weight in the ranking.</dd>
+        <dt>Blank</dt><dd>Fewer than three days with a recorded sale in the fortnight. Two
+          transactions averaged together is not a price.</dd>
+      </dl>
+    </div>
+    <div>
       <h4>What this can't tell you</h4>
       <dl>
         <dt>Why</dt><dd>Nothing here knows about bans, reprints, rotation or tournament results.
           Those are what actually end a run.</dd>
         <dt>The future</dt><dd>Every number describes what a card has already done. None of it
           is a forecast, and a steady 90-day climb is not a promise of a 91st day.</dd>
+        <dt>A settling price</dt><dd>Tested and not built. Across 47 run-ups of 25%+, the size of
+          the run, the sales velocity and the speed all failed to predict what came next
+          (|r|&nbsp;&lt;&nbsp;0.15), rarity buckets were too small to measure, and listing counts
+          only exist as of today so testing them against the past would be cheating. There was
+          also nothing to settle back to: after a 25% run the median card was up another 24%
+          thirty days later. <b>Trading at</b> is what survived &mdash; a price copies are
+          changing hands at, not a price they are heading to.</dd>
         <dt>Freshness</dt><dd>Market price and history come from a daily batch that runs up to
           two days behind. The entry price is live as of your last <code>radar invest</code>.</dd>
         <dt>Condition depth</dt><dd>Entry prices and copy counts are Near&nbsp;Mint only. Played
@@ -694,9 +748,9 @@ def _row_payload(r: dict) -> dict:
         "tcgplayer_id": r.get("tcgplayer_id"),
         "tcgplayer_url": r.get("tcgplayer_url"),
         "market_price": r.get("market_price"),
-        "change_24h": r.get("change_24h"),
-        "change_7d": r.get("change_7d"),
-        "change_30d": r.get("change_30d"),
+        "change_3d": r.get("h3d"),
+        "change_7d": r.get("h7d") if r.get("h7d") is not None else r.get("change_7d"),
+        "change_30d": r.get("h30d") if r.get("h30d") is not None else r.get("change_30d"),
         "change_90d": r.get("change_90d"),
         "consistency_pct": r.get("consistency_pct"),
         "volatility_pct": r.get("volatility_pct"),
@@ -707,6 +761,10 @@ def _row_payload(r: dict) -> dict:
         "shelf_med": r.get("shelf_med"),
         "copies": r.get("copies"),
         "entry_vs_shelf_pct": r.get("entry_vs_shelf_pct"),
+        "settled_price": r.get("settled_price"),
+        "ask_premium_pct": r.get("ask_premium_pct"),
+        "settled_days": r.get("settled_days"),
+        "settled_volume": r.get("settled_volume"),
         "invest_score": r.get("invest_score", 0.0),
         "components": r.get("components"),
         "thesis": thesis(r),
@@ -745,8 +803,17 @@ def _rejected_table(rejected: Sequence[dict]) -> str:
 TIPS = {
     "price": "Market price from the daily batch feed &mdash; up to two days behind. Used for the "
              "Value component and as a reference, not as the price you pay.",
-    "c24": "Change over 24 hours. Noise at this timeframe &mdash; shown for context, and it "
-           "carries no weight in the score. A one-day move is not a reason to buy a hold.",
+    "prem": "How far the listed price has run ahead of what copies have actually been "
+            "SOLD for in the last 14 days. Green means buyers have been paying more than "
+            "the current ask; red means sellers are asking more than anyone has paid. "
+            "Sorted low to high, the cheapest fifth returned a median +10.3% over the next "
+            "30 days and the priciest fifth -4.0% (n=1,201, rho=-0.31). Blank means fewer "
+            "than three days of recorded sales &mdash; too thin to average.",
+    "c3": "Change over 3 days, computed from the stored daily series rather than taken from "
+          "the API's 24-hour field &mdash; that field reads zero on 97% of Gundam products and "
+          "misses most real moves. 3 days rather than 1 because a single day shows a move on "
+          "only 37% of days, while 3 days catches 63% and the typical move is 3.5% instead of "
+          "2.1%. Context only; it carries no weight in the score.",
     "c7": "Change over 7 days. Useful for spotting a candidate that has just turned, but the "
           "score is built on the 90-day picture, not this.",
     "c30": "Change over 30 days. Context only; the screen ranks on the 90-day picture.",
@@ -896,7 +963,8 @@ def render(
   <th class="rank">#</th>
   <th data-sort="name" data-tip="{TIPS['card']}">Card</th>
   <th class="num" data-sort="price" data-tip="{TIPS['price']}">Price</th>
-  <th class="num col-hide" data-sort="c24" data-tip="{TIPS['c24']}">1d</th>
+  <th class="num" data-sort="prem" data-tip="{TIPS['prem']}">vs sold</th>
+  <th class="num col-hide" data-sort="c3" data-tip="{TIPS['c3']}">3d</th>
   <th class="num" data-sort="c7" data-tip="{TIPS['c7']}">7d</th>
   <th class="num col-hide" data-sort="c30" data-tip="{TIPS['c30']}">30d</th>
   <th class="num" data-sort="c90" data-tip="{TIPS['c90']}">90d</th>
