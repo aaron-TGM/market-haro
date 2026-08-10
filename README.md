@@ -124,6 +124,49 @@ viewer may not separate them by hue. Every delta on this page therefore carries 
 at ΔE 2.7, which is why amber is used only for chrome and accents here, never as a data
 series alongside green.)
 
+## English printings only
+
+Enforced in three places, because a Japanese copy trades in a different market and must
+never become the entry price for an English card:
+
+- the conditions endpoint is asked for `language=English`, and **every returned row is
+  re-checked** — if nothing English is on the shelf the card gets no entry price rather
+  than a wrong one;
+- product names and set names are screened with word-boundary matching (a loose substring
+  test flags "**Sai*kor*o** Gundam" as Korean and "Im*p*roved Technique" as Japanese —
+  both are real cards);
+- every TCGplayer link carries `?Language=English`, so the page you open is filtered the
+  same way the screen is.
+
+Measured on 2026-08-10: all 92 condition rows across a 60-card sample came back English,
+and all 27 Gundam sets are English-language. So today this is a guard rather than a filter
+— but it will hold if the API starts carrying Japanese product.
+
+## Does the score actually predict anything?
+
+A walk-forward test on the same data: score each card using **only its first 45 days** of
+history, then measure the next 45 days. 117 cards cleared the gates as of the cut.
+
+| | mean | median | win rate |
+|---|---|---|---|
+| Top 20% by score | +37.8% | **+44.1%** | **87%** |
+| All eligible | +28.5% | +16.8% | — |
+| Bottom 20% by score | +25.6% | **+5.7%** | 57% |
+
+Spearman ρ between score and forward return = **0.238** (t = 2.62, p < 0.05).
+
+**Read that honestly.** ρ = 0.24 is a *weak* positive correlation — the ranking tilts the
+odds, it does not pick winners. Three of the top 23 still lost money (worst −11.4%), and
+the best performer in the bottom quintile returned +197%. Three further caveats:
+
+1. **The whole market rose.** Every eligible card averaged +28.5% over the window. The
+   edge is relative; in a falling market this tells you nothing about absolute outcomes.
+2. **Survivorship bias.** The universe was drawn from cards worth $10+ *today*, so cards
+   that collapsed below $10 are missing. This inflates every number in the table.
+3. **One window, one game, n=117.** Not a walk-forward across many periods.
+
+Treat it as encouraging, not validated.
+
 ## What this can't tell you
 
 Every number describes what a card has **already done**. Nothing here is a forecast, and

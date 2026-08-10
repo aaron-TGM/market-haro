@@ -120,6 +120,13 @@ def features(series: Sequence[Sequence[Any]]) -> dict[str, Any] | None:
 # Gates: reasons a card is not a hold candidate at all.
 # --------------------------------------------------------------------------
 def disqualify(row: dict, cfg: dict) -> str | None:
+    from .snipe import is_english_product
+
+    if not is_english_product(row.get("name"), row.get("set_name"), row.get("number")):
+        return "Not an English printing — different market, excluded"
+    if row.get("floor_language") and row["floor_language"] != cfg.get("language", "English"):
+        return f"Entry price is a {row['floor_language']} listing — excluded"
+
     price = _f(row.get("market_price")) or 0.0
     if price < float(cfg.get("min_price", 10.0)):
         return f"Under ${float(cfg.get('min_price', 10.0)):,.0f} — too little value to preserve"

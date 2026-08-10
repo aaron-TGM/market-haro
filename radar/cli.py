@@ -206,7 +206,9 @@ def cmd_invest(cfg, args) -> int:
         targets = [(r["card_id"], r.get("printing") or "Normal") for r in alive[:n_entry]]
         if targets and not args.no_fetch:
             print(f"Pulling live entry prices for the top {len(targets)}...")
-            floors = snipe_mod.fetch_floors(client, targets, limit=n_entry)
+            floors = snipe_mod.fetch_floors(
+                client, targets, limit=n_entry, language=icfg.get("language", "English")
+            )
             if floors:
                 db.save_floors(floors.values())
             for r in preliminary:
@@ -215,6 +217,7 @@ def cmd_invest(cfg, args) -> int:
                     r["floor_low"] = f.get("floor_low")
                     r["shelf_med"] = f.get("shelf_med")
                     r["copies"] = f.get("copies")
+                    r["floor_language"] = f.get("language")
         else:
             for r in preliminary:
                 f = db.latest_floors().get((r["card_id"], r.get("printing") or "Normal"))
@@ -302,7 +305,8 @@ def cmd_snipe(cfg, args) -> int:
 
         print(f"Fetching live listing floors for {len(movers)} movers...")
         floors = snipe_mod.fetch_floors(
-            client, [(r["card_id"], r.get("printing") or "Normal") for r in movers], limit=n
+            client, [(r["card_id"], r.get("printing") or "Normal") for r in movers],
+            limit=n, language=scfg.get("language", "English"),
         )
         if floors:
             db.save_floors(floors.values())

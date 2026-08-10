@@ -596,6 +596,70 @@ def test_invest_words_are_specific():
     assert len(invest.CHECKLIST) == 5
 
 
+def test_english_only_is_enforced_on_the_shelf():
+    """A non-English listing must never become the entry price for an English card."""
+    from radar import snipe
+
+    class MixedClient:
+        requests_made = 0
+        budget_left = 10
+        last_params = {}
+        def get(self, path, **params):
+            MixedClient.last_params = params
+            return [
+                {"printing": "Holofoil", "condition": "Near Mint", "language": "Japanese",
+                 "lowest_with_shipping": 12.00, "median_with_shipping": 14.00, "sample_count": 40},
+                {"printing": "Holofoil", "condition": "Near Mint", "language": "English",
+                 "lowest_with_shipping": 88.00, "median_with_shipping": 95.00, "sample_count": 21},
+            ]
+
+    c = MixedClient()
+    floor = snipe.fetch_floor(c, 645344, "Holofoil")
+    assert c.last_params.get("language") == "English", "ask the API for English too"
+    assert floor["floor_low"] == 88.00, "the $12 Japanese copy is a different market"
+    assert floor["shelf_med"] == 95.00
+    assert floor["copies"] == 21
+    assert floor["language"] == "English"
+
+    # Nothing English on the shelf -> no entry price at all, rather than a wrong one.
+    class JapaneseOnly(MixedClient):
+        def get(self, path, **params):
+            return [{"printing": "Holofoil", "condition": "Near Mint", "language": "Japanese",
+                     "lowest_with_shipping": 12.00, "median_with_shipping": 14.00, "sample_count": 40}]
+    assert snipe.fetch_floor(JapaneseOnly(), 645344, "Holofoil") is None
+
+
+def test_non_english_products_are_screened_out():
+    """Word-boundary matching, so real card names aren't caught by accident."""
+    from radar import invest, snipe
+
+    assert snipe.is_english_product("Wing Gundam Zero (LR+)", "Newtype Rising")
+    # These are real Gundam card names a loose substring test flags by mistake.
+    assert snipe.is_english_product("Saikoro Gundam", "Eternal Nexus")
+    assert snipe.is_english_product("Improved Technique", "Steel Requiem")
+    assert snipe.is_english_product("Asticassia School of Technology, Earth House (C+)", "SD01")
+
+    assert not snipe.is_english_product("Gundam Epyon (Japanese)", "Dual Impact")
+    assert not snipe.is_english_product("Wing Gundam", "Newtype Rising JPN")
+    assert not snipe.is_english_product("Char's Zaku II [Chinese]", "Dual Impact")
+    assert not snipe.is_english_product("\u30ac\u30f3\u30c0\u30e0", "Dual Impact")
+
+    cfg = {"min_price": 10.0, "language": "English"}
+    base = dict(market_price=100.0, history_points=89, avg_daily_sales=1.5,
+                change_90d=50.0, volatility_pct=2.0)
+    assert invest.disqualify({**base, "name": "Gundam (Japanese)"}, cfg).startswith("Not an English")
+    assert invest.disqualify({**base, "name": "Gundam", "floor_language": "Japanese"}, cfg) \
+        .startswith("Entry price is a Japanese")
+    assert invest.disqualify({**base, "name": "Gundam"}, cfg) is None
+
+
+def test_tcgplayer_links_carry_the_english_filter():
+    from radar.ingest import _norm_card
+
+    card = _norm_card({"id": 1, "name": "X", "tcgplayer_id": 645344}, 800021, "Newtype Rising")
+    assert card["tcgplayer_url"].endswith("/product/645344?Language=English")
+
+
 if __name__ == "__main__":
     passed = 0
     for name, fn in sorted(globals().items()):

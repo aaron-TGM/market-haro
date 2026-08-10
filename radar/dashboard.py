@@ -126,6 +126,7 @@ input[type=number]{width:106px}
   text-transform:uppercase;letter-spacing:.1em}
 .plan-sum{font-size:12px;color:var(--text-secondary);letter-spacing:.04em}
 .plan-sum b{color:var(--accent);font-weight:700}
+.plan-sum .conc{color:var(--warn)}
 .disc{font-size:10.5px;color:var(--text-muted);margin-left:auto;max-width:46ch;
   text-align:right;line-height:1.6}
 
@@ -461,14 +462,30 @@ function filtered(){
   });
 }
 
-function renderPlanSummary(plans){
+function renderPlanSummary(plans, rows){
   const el = document.getElementById('plan-sum');
   if (!state.budget){ el.innerHTML = 'Enter a budget to size positions down the ranking.'; return; }
   let n=0, spend=0;
-  for (const p of plans.values()) if (p.affordable){ n++; spend += p.cost; }
-  el.innerHTML = n
-    ? `<b>${n}</b> ${n===1?'card':'cards'} · <b>$${spend.toFixed(2)}</b> of $${state.budget.toFixed(2)} placed · $${(state.budget-spend).toFixed(2)} left`
-    : `Nothing here fits — one copy of everything costs more than the ${((DATA.plan?.max_position_pct??0.25)*100).toFixed(0)}% per-position cap.`;
+  const bySet = {};
+  for (const r of rows){
+    const p = plans.get(r.card_id+'|'+r.printing);
+    if (!p || !p.affordable) continue;
+    n++; spend += p.cost;
+    const k = r.set_name || '—';
+    bySet[k] = (bySet[k]||0) + p.cost;
+  }
+  if (!n){
+    el.innerHTML = `Nothing here fits — one copy of everything costs more than the ${((DATA.plan?.max_position_pct??0.25)*100).toFixed(0)}% per-position cap.`;
+    return;
+  }
+  let html = `<b>${n}</b> ${n===1?'card':'cards'} · <b>$${spend.toFixed(2)}</b> of $${state.budget.toFixed(2)} placed · $${(state.budget-spend).toFixed(2)} left`;
+  // Ranking by score alone can quietly put the whole budget in one set.
+  const top = Object.entries(bySet).sort((a,b)=>b[1]-a[1])[0];
+  if (top && spend > 0){
+    const share = top[1]/spend*100;
+    if (share >= 50) html += ` · <span class="conc">${share.toFixed(0)}% of it in ${esc(top[0])}</span>`;
+  }
+  el.innerHTML = html;
 }
 
 function apply(){
@@ -479,7 +496,7 @@ function apply(){
   const plans = state.budget ? allocate(rows, state.budget) : new Map();
   if (state.budget && state.inBudgetOnly)
     rows = rows.filter(r => (plans.get(r.card_id+'|'+r.printing)||{}).affordable);
-  renderPlanSummary(plans);
+  renderPlanSummary(plans, rows);
 
   const shown = rows.slice(0, state.limit);
   document.getElementById('tbody').innerHTML = shown.length
@@ -728,8 +745,10 @@ TIPS = {
             "market is 67%; the top quarter is above 92%.",
     "sales": "Average copies sold per day over 90 days. Below 1.0 is shown in orange &mdash; at "
              "that rate, exiting a stack takes weeks. Median across the market is 1.3.",
-    "entry": "Cheapest Near Mint listing right now, shipping included &mdash; this is what you "
-             "would actually pay. Matches the &quot;As low as&quot; figure on TCGplayer.",
+    "entry": "Cheapest <b>English</b> Near Mint listing right now, shipping included &mdash; what "
+             "you would actually pay. Matches the &quot;As low as&quot; figure on the TCGplayer "
+             "page with the English filter on. Japanese and other printings trade in a separate "
+             "market and are excluded everywhere on this page.",
     "score": "Weighted blend of value, liquidity, trend, stability and scarcity. Click any row "
              "for the breakdown. It ranks how well a card fits a buy-and-hold thesis; it is not "
              "a prediction.",
@@ -807,7 +826,7 @@ def render(
       days, and sell often enough to get out of. Ranked for buying and sitting on &mdash; not for
       flipping.</p>
     <p class="stamp">{_esc(obs_date)} · {len(candidates)} candidates from {len(ranked)} screened ·
-      source: tcgapi.dev{(' · ' + _esc(scope_note)) if scope_note else ''}</p>
+      English printings only · source: tcgapi.dev{(' · ' + _esc(scope_note)) if scope_note else ''}</p>
   </div>
   <div class="hbtns">
     <button class="ghost" id="csv">Export CSV</button>

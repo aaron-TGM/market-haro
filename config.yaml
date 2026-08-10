@@ -64,6 +64,10 @@ signals:
 # at $10+ that were up over 30 days (2026-08-09, 90 days of daily history each).
 # See radar/invest.py for the quartiles.
 invest:
+  # English printings only. Enforced on the product name/set and again on every
+  # listing row -- a Japanese copy trades in a different market and must never
+  # become the entry price for an English card.
+  language: English
   # Below this there isn't enough value to be worth preserving.
   min_price: 10.00
   # Where the Value component tops out.
@@ -88,6 +92,8 @@ invest:
 # endpoint is fetched on demand, so it gives the floor and the copy count as they
 # stand now. That difference is the whole edge here.
 snipe:
+  # Passed to the conditions endpoint and re-checked on every row.
+  language: English
   # How many movers to pull live floors for. One request each.
   targets: 60
   # Only bother with cards that are actually moving and worth buying.

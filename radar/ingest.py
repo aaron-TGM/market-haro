@@ -75,11 +75,13 @@ def _norm_card(row: dict, set_id: Any, set_name: str | None) -> dict:
         "number": row.get("number"),
         "rarity": row.get("rarity"),
         "image_url": row.get("image_url"),
-        "tcgplayer_url": row.get("tcgplayer_url")
-        or (
-            f"https://www.tcgplayer.com/product/{row['tcgplayer_id']}"
+        # ?Language=English so the page you open is filtered the same way the
+        # screen is -- otherwise you land on a listing set that includes
+        # printings the entry price was never measured against.
+        "tcgplayer_url": (
+            f"https://www.tcgplayer.com/product/{row['tcgplayer_id']}?Language=English"
             if row.get("tcgplayer_id")
-            else None
+            else row.get("tcgplayer_url")
         ),
         "product_type": row.get("product_type"),
         "foil_only": row.get("foil_only"),

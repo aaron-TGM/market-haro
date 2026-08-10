@@ -40,6 +40,7 @@ the card is going up, and neither detector knows why anything is moving.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Iterable, Sequence
 
 from .client import RateLimitExhausted, TCGClient
@@ -47,6 +48,24 @@ from .client import RateLimitExhausted, TCGClient
 log = logging.getLogger("radar.snipe")
 
 NM = "Near Mint"
+DEFAULT_LANGUAGE = "English"
+
+# Word-boundary matching on purpose: a loose substring test flags "Saikoro
+# Gundam" as Korean and "Improved Technique" as Japanese.
+NON_ENGLISH = re.compile(
+    r"\b(japan|japanese|jpn|jp|nihongo|chinese|china|chn|korean|korea|kor|"
+    r"german|french|spanish|italian|portuguese|thai|russian)\b"
+    r"|[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]",
+    re.I,
+)
+
+
+def is_english_product(*fields: Any) -> bool:
+    """False if any of name/set/edition looks like a non-English printing."""
+    for f in fields:
+        if f and NON_ENGLISH.search(str(f)):
+            return False
+    return True
 
 
 def _f(v: Any) -> float | None:
@@ -61,12 +80,31 @@ def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, x))
 
 
-def fetch_floor(client: TCGClient, card_id: Any, printing: str | None = None) -> dict | None:
-    """Live Near Mint shelf for one card: cheapest, median, and how many. One request."""
-    rows = client.get(f"/cards/{card_id}/prices/conditions")
+def fetch_floor(
+    client: TCGClient,
+    card_id: Any,
+    printing: str | None = None,
+    language: str = DEFAULT_LANGUAGE,
+) -> dict | None:
+    """Live Near Mint shelf for one card: cheapest, median, and how many. One request.
+
+    English only, enforced twice: the endpoint is asked for the language, and
+    every row is checked again on the way back. Measured across 60 Gundam cards
+    on 2026-08-10 the API returned English for all 92 condition rows, so today
+    this is a guard rather than a filter -- but a Japanese listing priced in a
+    different market must never become the entry price for an English card.
+    """
+    rows = client.get(f"/cards/{card_id}/prices/conditions", language=language)
     if not rows:
         return None
     rows = rows if isinstance(rows, list) else [rows]
+
+    before = len(rows)
+    rows = [r for r in rows if (r.get("language") or language) == language]
+    if len(rows) != before:
+        log.debug("card %s: dropped %d non-%s rows", card_id, before - len(rows), language)
+    if not rows:
+        return None
 
     def pick(cond: str) -> dict | None:
         exact = [
@@ -91,6 +129,7 @@ def fetch_floor(client: TCGClient, card_id: Any, printing: str | None = None) ->
         "card_id": str(card_id),
         "printing": nm.get("printing") or printing or "Normal",
         "condition": nm.get("condition"),
+        "language": nm.get("language") or language,
         # The floor: matches TCGplayer's displayed "As low as".
         "floor_low": _f(nm.get("lowest_with_shipping")),
         # The rest of the shelf, same call, same instant.
@@ -118,6 +157,7 @@ def fetch_floors(
     targets: Sequence[tuple[Any, str]],
     *,
     limit: int = 60,
+    language: str = DEFAULT_LANGUAGE,
 ) -> dict[tuple[str, str], dict]:
     """One request per card. Stops cleanly on budget or rate limit."""
     out: dict[tuple[str, str], dict] = {}
@@ -126,7 +166,7 @@ def fetch_floors(
             log.warning("Floor fetch stopped at %d/%d -- budget", i, len(targets[:limit]))
             break
         try:
-            floor = fetch_floor(client, card_id, printing)
+            floor = fetch_floor(client, card_id, printing, language=language)
         except RateLimitExhausted:
             log.warning("Floor fetch stopped at %d/%d -- rate limit", i, len(targets[:limit]))
             break
