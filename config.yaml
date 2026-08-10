@@ -59,6 +59,29 @@ signals:
     # Cards with recorded sales are more trustworthy than quiet listings.
     volume_bonus_max: 6.0
 
+# The hold screen: cards with real value, a steady climb, and a way out.
+# Thresholds are anchored to the measured distribution across 212 Gundam singles
+# at $10+ that were up over 30 days (2026-08-09, 90 days of daily history each).
+# See radar/invest.py for the quartiles.
+invest:
+  # Below this there isn't enough value to be worth preserving.
+  min_price: 10.00
+  # Where the Value component tops out.
+  value_ceiling: 200.00
+  # Under this much history a "trend" is just a release.
+  min_history_days: 45
+  # Daily volatility above this is a trading card, not a holding.
+  max_volatility_pct: 8.0
+  # How many candidates to pull a live entry price for. One request each.
+  entry_lookups: 40
+  # Component weights. Liquidity and trend carry the most because they are the
+  # two things that decide whether a hold works out.
+  weight_value: 0.20
+  weight_liquidity: 0.25
+  weight_trend: 0.25
+  weight_stability: 0.20
+  weight_scarcity: 0.10
+
 # Snipe mode: live listing floors for the cards that are moving.
 #
 # `market_price` from the daily batch runs up to ~2 days behind. The conditions

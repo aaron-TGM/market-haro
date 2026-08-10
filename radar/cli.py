@@ -10,7 +10,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import dashboard, ingest, signals, snipe as snipe_mod
+from . import dashboard, ingest, invest as invest_mod, signals, snipe as snipe_mod
 from .client import TCGClient
 from .config import ConfigError, load_config
 from .db import Database
@@ -134,137 +134,140 @@ def cmd_backfill(cfg, args) -> int:
     return 0
 
 
-def cmd_report(cfg, args) -> int:
-    db = Database(cfg.db_path)
-    try:
-        obs = args.date or db.latest_obs_date()
-        if not obs:
-            print("No snapshots in the database yet. Run `python -m radar sync` first.")
-            return 1
-
-        rows = [dict(r) for r in db.latest_prices(obs)]
-        series = db.all_series()
-        ranked = signals.evaluate(rows, series, cfg.signals, as_of=date.fromisoformat(obs))
-
-        # Fold in any live listing floors we've pulled (radar snipe).
-        scfg = cfg.raw.get("snipe", {}) or {}
-        floors = db.latest_floors()
-        if floors:
-            ranked = snipe_mod.score(ranked, floors, scfg)
-            ranked.sort(key=lambda r: (bool(r.get("signals")), r.get("score", 0)), reverse=True)
-        # The board is driven by live listing data, so a stale batch listing count
-        # shouldn't hide a row -- only the price floor filter applies here.
-        board = [
-            r for r in ranked
-            if r.get("snipe_mode") and r.get("filter_reason") != "below price floor"
-        ]
-        board.sort(key=lambda r: r.get("snipe_score", 0), reverse=True)
-        board = board[: int(scfg.get("board_size", 15))]
-
-        watch_ids = set()
-        for tid in cfg.watchlist_tcgplayer_ids:
-            row = db.card_by_tcgplayer_id(tid)
-            if row:
-                watch_ids.add(str(row["id"]))
-        watchlist = [r for r in ranked if r["card_id"] in watch_ids]
-
-        n_fall = int(cfg.report.get("include_fallers", 15))
-        fallers = sorted(
-            (r for r in ranked if not r.get("filtered") and (r.get("change_7d") or 0) < 0),
-            key=lambda r: r.get("change_7d") or 0,
-        )[:n_fall]
-
-        stats = db.stats()
-        html = dashboard.render(
-            ranked,
-            obs_date=obs,
-            stats=stats,
-            top_n=int(cfg.report.get("top_n", 400)),
-            fallers=fallers,
-            watchlist=watchlist,
-            market=db.market_breadth(obs),
-            snipe_board=board,
-            thin_supply=int(scfg.get("thin_supply", 12)),
-            plan_cfg=cfg.raw.get("plan") or {},
-        )
-        out = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
-        dashboard.write(html, out)
-        print(f"Dashboard -> {out}")
-
-        flagged = [r for r in ranked if r.get("signals")]
-
-        # Persist the calls so you can ask later "what did the radar say on the 9th,
-        # and was it right?" -- and so `enrich` knows which cards to spend requests on.
-        db.record_alerts(0, obs, flagged)
-
-        if cfg.report.get("write_json", True):
-            jp = out.with_suffix(".json")
-            jp.write_text(
-                json.dumps(
-                    {
-                        "obs_date": obs,
-                        "generated_from": stats,
-                        "flagged": [
-                            {
-                                k: v
-                                for k, v in r.items()
-                                if k not in ("series", "raw", "components")
-                            }
-                            for r in flagged
-                        ],
-                    },
-                    indent=2,
-                    default=str,
-                ),
-                encoding="utf-8",
-            )
-            print(f"JSON      -> {jp}")
-        if cfg.report.get("write_csv", True):
-            cp = out.with_suffix(".csv")
-            cols = [
-                "score", "name", "set_name", "number", "rarity", "printing",
-                "market_price", "change_24h", "change_7d", "change_30d",
-                "total_listings", "sales_volume", "trailing_high",
-                "breakout_excess_pct", "tcgplayer_url",
-            ]
-            with cp.open("w", newline="", encoding="utf-8") as fh:
-                w = csv.writer(fh)
-                w.writerow(cols + ["signals"])
-                for r in flagged:
-                    w.writerow([r.get(c) for c in cols] + ["|".join(r.get("signals", []))])
-            print(f"CSV       -> {cp}")
-
-        # Terminal summary so a cron run says something useful in the log.
-        print(f"\nTop movers for {obs}:")
-        for r in flagged[: args.top]:
-            print(
-                f"  {r['score']:5.1f}  {r['name'][:38]:<38} {r.get('set_name', '')[:22]:<22} "
-                f"${(r.get('market_price') or 0):7.2f}  "
-                f"24h {(r.get('change_24h') or 0):+6.1f}%  "
-                f"7d {(r.get('change_7d') or 0):+7.1f}%  "
-                f"30d {(r.get('change_30d') or 0):+8.1f}%  "
-                f"[{','.join(r['signals'])}]"
-            )
-        if not flagged:
-            print("  nothing cleared the thresholds today.")
-    finally:
-        db.close()
-    return 0
-
-
-def cmd_enrich(cfg, args) -> int:
-    """Pull real sales figures for flagged cards (one request each)."""
+def cmd_invest(cfg, args) -> int:
+    """The hold screen: score every candidate and write the dashboard."""
+    icfg = cfg.raw.get("invest", {}) or {}
     db = Database(cfg.db_path)
     client = _client(cfg)
     try:
         obs = args.date or db.latest_obs_date()
         if not obs:
-            print("Nothing to enrich -- run `python -m radar run` first.")
+            print("No snapshots yet. Run `python -m radar sync` first.")
             return 1
-        n = ingest.enrich_flagged(cfg, db, client, obs, limit=args.limit)
+
+        min_price = float(icfg.get("min_price", 10.0))
+        rows = [dict(r) for r in db.latest_prices(obs)]
+        candidates = [
+            r for r in rows
+            if r.get("product_type") != "Sealed Products"
+            and (r.get("market_price") or 0) >= min_price
+            and (r.get("change_30d") or 0) > 0
+        ]
+        print(f"{len(candidates)} cards at ${min_price:,.0f}+ and up over 30d.")
+
+        # 1. Make sure each candidate has daily history with sales volume.
+        series = db.all_series_with_volume()
+        need = [
+            r for r in candidates
+            if len(series.get((r["card_id"], r.get("printing") or "Normal"), [])) < 45
+        ]
+        if need and not args.no_fetch:
+            print(f"Fetching 90-day history for {len(need)} of them...")
+            points = []
+            for i, r in enumerate(need, 1):
+                if client.budget_left <= 0:
+                    print(f"  stopped at {i}/{len(need)} -- request budget")
+                    break
+                try:
+                    hist = client.card_history(r["card_id"], "quarter")
+                except Exception:
+                    continue
+                for h in hist:
+                    d = h.get("date")
+                    if not d:
+                        continue
+                    points.append({
+                        "card_id": r["card_id"],
+                        "printing": h.get("printing") or r.get("printing") or "Normal",
+                        "obs_date": str(d)[:10],
+                        "market_price": h.get("market_price") or None,
+                        "sales_volume": h.get("sales_volume"),
+                        "avg_sales_price": h.get("avg_sales_price") or None,
+                        "source": "history",
+                    })
+            points = [p for p in points if p["market_price"]]
+            if points:
+                db.upsert_price_points(points)
+            series = db.all_series_with_volume()
+
+        # 2. Measure.
+        measured = []
+        for r in candidates:
+            key = (r["card_id"], r.get("printing") or "Normal")
+            hist = series.get(key, [])
+            feats = invest_mod.features(hist) or {}
+            rec = {**r, **feats, "series": [(d, p) for d, p, _ in hist[-90:]]}
+            measured.append(rec)
+
+        # 3. Live entry price for the strongest ones only.
+        preliminary = invest_mod.evaluate(measured, icfg)
+        alive = [r for r in preliminary if not r.get("disqualified")]
+        n_entry = args.entries or int(icfg.get("entry_lookups", 40))
+        targets = [(r["card_id"], r.get("printing") or "Normal") for r in alive[:n_entry]]
+        if targets and not args.no_fetch:
+            print(f"Pulling live entry prices for the top {len(targets)}...")
+            floors = snipe_mod.fetch_floors(client, targets, limit=n_entry)
+            if floors:
+                db.save_floors(floors.values())
+            for r in preliminary:
+                f = floors.get((r["card_id"], r.get("printing") or "Normal"))
+                if f:
+                    r["floor_low"] = f.get("floor_low")
+                    r["shelf_med"] = f.get("shelf_med")
+                    r["copies"] = f.get("copies")
+        else:
+            for r in preliminary:
+                f = db.latest_floors().get((r["card_id"], r.get("printing") or "Normal"))
+                if f:
+                    r["floor_low"] = f.get("floor_low")
+                    r["copies"] = f.get("copies")
+
+        # 4. Score for real (scarcity uses copies) and render.
+        ranked = invest_mod.evaluate(preliminary, icfg)
+        html = dashboard.render(
+            ranked,
+            obs_date=obs,
+            stats=db.stats(),
+            market=db.market_breadth(obs),
+            plan_cfg=cfg.raw.get("plan") or {},
+        )
+        out = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
+        dashboard.write(html, out)
+        print(f"\nDashboard -> {out}")
+
+        keep = [r for r in ranked if not r.get("disqualified")]
+        drop = [r for r in ranked if r.get("disqualified")]
+        if cfg.report.get("write_csv", True):
+            cp = out.with_suffix(".csv")
+            cols = ["invest_score", "name", "set_name", "number", "rarity", "printing",
+                    "market_price", "change_30d", "change_90d", "consistency_pct",
+                    "volatility_pct", "drawdown_pct", "avg_daily_sales", "days_traded_pct",
+                    "floor_low", "shelf_med", "copies", "tcgplayer_url"]
+            with cp.open("w", newline="", encoding="utf-8") as fh:
+                w = csv.writer(fh)
+                w.writerow(cols)
+                for r in keep:
+                    w.writerow([r.get(c) for c in cols])
+            print(f"CSV       -> {cp}")
+
+        print(f"\n{len(keep)} candidates, {len(drop)} screened out.")
+        print(f"{'':2}{'SCORE':>5}  {'CARD':<40} {'RARITY':<12} {'PRICE':>9} "
+              f"{'90D':>6} {'WKUP':>5} {'SALES':>6}  ENTRY")
+        for r in keep[: args.top]:
+            print(
+                f"  {r['invest_score']:5.1f}  {str(r.get('name'))[:40]:<40} "
+                f"{str(r.get('rarity') or '-')[:12]:<12} ${(r.get('market_price') or 0):8.2f} "
+                f"{(r.get('change_90d') or 0):+5.0f}% {(r.get('consistency_pct') or 0):4.0f}% "
+                f"{(r.get('avg_daily_sales') or 0):5.1f}  "
+                f"{('$%.2f' % r['floor_low']) if r.get('floor_low') else '-'}"
+            )
+        if drop:
+            from collections import Counter
+            for reason, n in Counter(r["disqualified"] for r in drop).most_common():
+                print(f"  screened out: {n:>3}  {reason}")
+        print(f"\n  {client.requests_made} API requests used.")
     finally:
         db.close()
-    print(f"\nEnriched {n} price rows with sales data using {client.requests_made} requests.")
     return 0
 
 
@@ -335,20 +338,11 @@ def cmd_snipe(cfg, args) -> int:
 
 
 def cmd_run(cfg, args) -> int:
+    """Daily pass: refresh prices, then rebuild the hold screen."""
     rc = cmd_sync(cfg, args)
     if rc != 0:
-        print("Sync did not complete cleanly; reporting on what we have.")
-    rc = cmd_report(cfg, args)
-    if getattr(args, "enrich", False):
-        cmd_enrich(cfg, args)
-        # Sales volume feeds the score, so re-report once it's in.
-        rc = cmd_report(cfg, args)
-    if getattr(args, "snipe", False):
-        args.targets = None
-        args.top = 15
-        cmd_snipe(cfg, args)
-        rc = cmd_report(cfg, args)
-    return rc
+        print("Sync did not complete cleanly; screening on what we have.")
+    return cmd_invest(cfg, args)
 
 
 def cmd_stats(cfg, args) -> int:
@@ -394,25 +388,22 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("--targets", type=int, default=None, help="how many movers to look up")
     n.add_argument("--top", type=int, default=20, help="rows to print")
 
-    e = sub.add_parser("enrich", help="pull real sales figures for flagged cards")
-    e.add_argument("--date", help="observation date (YYYY-MM-DD), default = latest")
-    e.add_argument("--limit", type=int, default=200, help="max flagged cards to enrich")
-
-    r = sub.add_parser("report", help="score the latest snapshot and build the dashboard")
+    r = sub.add_parser("invest", help="the hold screen: rank cards worth buying and sitting on")
     r.add_argument("--date", help="observation date (YYYY-MM-DD), default = latest")
     r.add_argument("--out", help="output html path")
     r.add_argument("--top", type=int, default=25, help="rows to print to the terminal")
+    r.add_argument("--entries", type=int, default=None,
+                   help="how many candidates to pull a live entry price for")
+    r.add_argument("--no-fetch", action="store_true",
+                   help="score from what's already in the database, no API calls")
 
-    a = sub.add_parser("run", help="sync then report (use this in cron)")
+    a = sub.add_parser("run", help="sync then rebuild the hold screen (use this in cron)")
     a.add_argument("--no-history", action="store_true")
-    a.add_argument("--enrich", action="store_true",
-                   help="also pull sales volume for flagged cards, then re-score")
-    a.add_argument("--snipe", action="store_true",
-                   help="also pull live listing floors for the movers")
-    a.add_argument("--limit", type=int, default=200)
     a.add_argument("--date")
     a.add_argument("--out")
     a.add_argument("--top", type=int, default=25)
+    a.add_argument("--entries", type=int, default=None)
+    a.add_argument("--no-fetch", action="store_true")
     return p
 
 
@@ -421,9 +412,8 @@ COMMANDS = {
     "games": cmd_games,
     "sync": cmd_sync,
     "backfill": cmd_backfill,
-    "enrich": cmd_enrich,
     "snipe": cmd_snipe,
-    "report": cmd_report,
+    "invest": cmd_invest,
     "run": cmd_run,
     "stats": cmd_stats,
 }

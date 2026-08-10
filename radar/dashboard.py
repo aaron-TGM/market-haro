@@ -1,12 +1,12 @@
-"""Render the radar as one self-contained HTML file.
+"""Render the hold screen as one self-contained HTML file.
 
-Everything (CSS, JS, data) is inlined so the file can be emailed, dropped in
-Dropbox, or opened from disk with no server. Card images are the only remote
-asset, loaded lazily from TCGplayer's CDN.
+One question, asked plainly: which cards already have value, are climbing
+steadily, and can be sold again? Everything on the page serves that. The
+flip-oriented machinery (24h spikes, listing undercuts as a headline) is gone --
+an undercut now appears only as *entry quality* on a card that already earned
+its place, and a 24h move is context, not a signal.
 
-Layout: stat tiles -> filters -> two breadth charts -> the ranked table.
-The charts and the table read from the same filtered set, so narrowing to a
-rarity or a price band re-draws everything together.
+Everything (CSS, JS, data) is inlined. Card images are the only remote asset.
 """
 
 from __future__ import annotations
@@ -15,23 +15,21 @@ import json
 from pathlib import Path
 from typing import Any, Sequence
 
-from .signals import explain
-from .snipe import explain as explain_snipe, risk as risk_snipe
+from .invest import CHECKLIST, thesis, watch_for
 
-# Palette: validated default categorical slots 1-3 (all-pairs, both modes).
-# sustained = blue, spike = orange, breakout = aqua. Every badge also carries a
-# text label, so identity never rests on color alone. Charts are single-series
-# and use the sequential blue, so they need no legend.
+# Palette: validated default categorical slots 1-3, both modes.
+# The five score components use one hue (sequential blue) because they are five
+# readings of the same thing, not five different things.
 CSS = """
 *,*::before,*::after{box-sizing:border-box}
 .viz-root{
   color-scheme:light;
   --surface-1:#fcfcfb; --plane:#f9f9f7;
   --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#898781;
-  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
+  --grid:#e1e0d9; --border:rgba(11,11,11,0.10);
   --series-1:#2a78d6; --series-2:#eb6834; --series-3:#1baf7a;
-  --bar:#2a78d6; --bar-soft:#9ec5f4;
-  --up:#006300; --down:#d03b3b;
+  --bar:#2a78d6; --bar-soft:#cde2fb;
+  --up:#006300; --down:#d03b3b; --warn:#eb6834;
   --tint-1:rgba(42,120,214,0.12); --tint-2:rgba(235,104,52,0.12); --tint-3:rgba(27,175,122,0.14);
 }
 @media (prefers-color-scheme:dark){
@@ -39,10 +37,10 @@ CSS = """
     color-scheme:dark;
     --surface-1:#1a1a19; --plane:#0d0d0d;
     --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#898781;
-    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+    --grid:#2c2c2a; --border:rgba(255,255,255,0.10);
     --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70;
-    --bar:#3987e5; --bar-soft:#256abf;
-    --up:#0ca30c; --down:#d03b3b;
+    --bar:#3987e5; --bar-soft:#184f95;
+    --up:#0ca30c; --down:#d03b3b; --warn:#d95926;
     --tint-1:rgba(57,135,229,0.18); --tint-2:rgba(217,89,38,0.18); --tint-3:rgba(25,158,112,0.20);
   }
 }
@@ -50,176 +48,69 @@ CSS = """
   color-scheme:dark;
   --surface-1:#1a1a19; --plane:#0d0d0d;
   --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#898781;
-  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+  --grid:#2c2c2a; --border:rgba(255,255,255,0.10);
   --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70;
-  --bar:#3987e5; --bar-soft:#256abf;
-  --up:#0ca30c; --down:#d03b3b;
+  --bar:#3987e5; --bar-soft:#184f95;
+  --up:#0ca30c; --down:#d03b3b; --warn:#d95926;
   --tint-1:rgba(57,135,229,0.18); --tint-2:rgba(217,89,38,0.18); --tint-3:rgba(25,158,112,0.20);
 }
 html,body{margin:0;padding:0}
 body{background:var(--plane);color:var(--text-primary);
   font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-.wrap{max-width:1420px;margin:0 auto;padding:28px 20px 72px}
-header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap}
-h1{font-size:22px;font-weight:650;letter-spacing:-.01em;margin:0}
-.sub{color:var(--text-secondary);font-size:13px;margin:3px 0 22px}
-.hbtns{display:flex;gap:8px}
+.wrap{max-width:1360px;margin:0 auto;padding:30px 20px 72px}
+header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+h1{font-size:23px;font-weight:650;letter-spacing:-.01em;margin:0}
+.mission{color:var(--text-secondary);font-size:14px;margin:6px 0 2px;max-width:70ch;line-height:1.55}
+.stamp{color:var(--text-muted);font-size:12.5px;margin:6px 0 22px}
+.hbtns{display:flex;gap:8px;flex:none}
 button.ghost{background:none;border:1px solid var(--border);border-radius:8px;
   color:var(--text-secondary);padding:5px 11px;cursor:pointer;font:inherit;font-size:12px}
 button.ghost:hover{background:var(--surface-1);color:var(--text-primary)}
 
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.panel{background:var(--surface-1);border:1px solid var(--border);border-radius:12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px;margin-bottom:16px}
 .tile{background:var(--surface-1);border:1px solid var(--border);border-radius:12px;padding:13px 15px}
 .tile .label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)}
 .tile .value{font-size:26px;font-weight:600;margin-top:4px;line-height:1.1}
 .tile .foot{font-size:12px;color:var(--text-secondary);margin-top:3px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.meter{height:4px;border-radius:2px;background:var(--grid);margin-top:8px;overflow:hidden}
-.meter i{display:block;height:100%;background:var(--bar);border-radius:2px}
 
-.panel{background:var(--surface-1);border:1px solid var(--border);border-radius:12px}
-.filters{padding:13px 15px;margin-bottom:16px}
-.frow{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
-.frow + .frow{margin-top:10px;padding-top:10px;border-top:1px solid var(--grid)}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 15px;margin-bottom:14px}
 .flabel{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);
-  margin-right:2px;white-space:nowrap}
+  white-space:nowrap}
 input[type=search],select,input[type=number]{background:var(--plane);color:var(--text-primary);
   border:1px solid var(--border);border-radius:8px;padding:6px 9px;font:inherit;font-size:13px}
-input[type=search]{min-width:220px}
-input[type=number]{width:82px}
-select{max-width:260px}
+input[type=search]{min-width:210px}
+input[type=number]{width:104px}
 .chip{border:1px solid var(--border);background:var(--plane);border-radius:999px;
   padding:5px 12px;font-size:12.5px;cursor:pointer;color:var(--text-secondary);user-select:none}
 .chip:hover{color:var(--text-primary)}
-.chip[aria-pressed="true"]{color:var(--text-primary);font-weight:600;border-color:currentColor}
-.chip[data-sig="sustained"][aria-pressed="true"]{background:var(--tint-1)}
-.chip[data-sig="spike"][aria-pressed="true"]{background:var(--tint-2)}
-.chip[data-sig="breakout"][aria-pressed="true"]{background:var(--tint-3)}
-.chip[data-band][aria-pressed="true"]{background:var(--tint-1)}
+.chip[aria-pressed="true"]{color:var(--text-primary);font-weight:600;border-color:currentColor;
+  background:var(--tint-1)}
 .count{color:var(--text-muted);font-size:12.5px;margin-left:auto;white-space:nowrap}
+.plan-sum{font-size:13px;color:var(--text-secondary)}
+.plan-sum b{color:var(--text-primary)}
+.disc{font-size:11.5px;color:var(--text-muted);margin-left:auto;max-width:44ch;text-align:right}
 
-.charts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
-@media (max-width:900px){.charts{grid-template-columns:1fr}}
-.chart{padding:14px 16px 16px}
-.chart h3{font-size:13px;font-weight:620;margin:0 0 2px}
-.chart .cap{font-size:11.5px;color:var(--text-muted);margin:0 0 12px}
-.bars{display:flex;flex-direction:column;gap:2px}
-.brow{display:grid;grid-template-columns:150px 1fr 42px;gap:8px;align-items:center}
-.brow .bl{font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;text-align:right}
-.brow .bt{height:16px;background:var(--bar);border-radius:0 4px 4px 0;min-width:2px}
-.brow .bv{font-size:12px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
-.brow.empty .bt{background:var(--grid)}
-.chart .none{color:var(--text-muted);font-size:12.5px;padding:12px 0}
-.board{margin-bottom:18px;overflow:hidden}
-.board .bhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
-  flex-wrap:wrap;padding:14px 16px 10px}
-.board h3{font-size:14px;font-weight:640;margin:0}
-.board .cap{font-size:11.5px;color:var(--text-muted);margin:2px 0 0;max-width:70ch}
-.board table td,.board table th{padding:7px 11px}
-.mode{font-size:11px;padding:2.5px 8px;border-radius:999px;border:1px solid;font-weight:560;
-  white-space:nowrap}
-.mode.undercut{color:var(--series-3);border-color:var(--series-3);background:var(--tint-3)}
-.mode.squeeze{color:var(--series-2);border-color:var(--series-2);background:var(--tint-2)}
-.thin{color:var(--series-2);font-weight:640}
-.buy{font-size:12px;color:var(--series-1);text-decoration:none;white-space:nowrap;font-weight:560}
-.buy:hover{text-decoration:underline}
-.budget{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 15px;margin-bottom:16px}
-.budget .flabel{margin-right:0}
-.budget input{width:120px}
-.budget .plan-sum{font-size:13px;color:var(--text-secondary)}
-.budget .plan-sum b{color:var(--text-primary)}
-.budget .disc{font-size:11.5px;color:var(--text-muted);margin-left:auto;max-width:42ch;text-align:right}
-tr.buy td{box-shadow:inset 3px 0 0 var(--series-3)}
-tr.row{cursor:pointer}
-tr.row .rank::before{content:"";display:inline-block;width:0;height:0;margin-right:6px;
-  border-left:4px solid var(--text-muted);border-top:3.5px solid transparent;
-  border-bottom:3.5px solid transparent;transition:transform .15s;transform-origin:35% 50%}
-tr.row[aria-expanded="true"] .rank::before{transform:rotate(90deg)}
-tr.detail > td{padding:0;background:var(--plane)}
-.det{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px 26px;
-  padding:16px 18px 18px;
-  /* The table can be wider than the screen; pin the detail so it stays readable
-     without scrolling sideways to find it. */
-  position:sticky;left:0;width:min(100%,calc(100vw - 56px))}
-.det h5{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);
-  margin:0 0 7px}
-.det p{margin:0 0 8px;font-size:13px;line-height:1.55}
-.det ul{margin:0;padding-left:17px;font-size:12.5px;line-height:1.55;color:var(--text-secondary)}
-.det li{margin-bottom:5px}
-.det .big{font-size:19px;font-weight:640;line-height:1.25;margin-bottom:4px}
-.det .sub2{font-size:12.5px;color:var(--text-secondary)}
-.det .kv{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;
-  padding:3px 0;border-bottom:1px solid var(--grid)}
-.det .kv:last-child{border-bottom:0}
-.det .kv span:last-child{font-variant-numeric:tabular-nums;color:var(--text-primary)}
-.det .kv span:first-child{color:var(--text-secondary)}
-.det .warn{color:var(--series-2)}
-.det .cta{display:inline-block;margin-top:8px;font-size:12.5px;font-weight:600;
-  color:var(--series-1);text-decoration:none}
-.det .cta:hover{text-decoration:underline}
-.pill{display:inline-block;font-size:11px;padding:2px 7px;border-radius:999px;
-  border:1px solid var(--series-3);color:var(--series-3);background:var(--tint-3);font-weight:600}
-.pill.none{border-color:var(--border);color:var(--text-muted);background:transparent}
-#tip{position:fixed;z-index:50;max-width:300px;background:var(--text-primary);
-  color:var(--surface-1);padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.45;
-  pointer-events:none;opacity:0;transition:opacity .12s;box-shadow:0 6px 20px rgba(0,0,0,.22)}
-#tip.on{opacity:1}
-#tip b{color:inherit}
-[data-tip]{cursor:help}
-.info{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;
-  border:1px solid currentColor;border-radius:50%;font-size:9px;line-height:1;margin-left:4px;
-  opacity:.55;vertical-align:1px;cursor:help;font-weight:600}
-.info:hover{opacity:1}
-thead th .info{margin-left:3px}
-details.gloss{margin-bottom:16px}
-details.gloss summary{cursor:pointer;padding:11px 15px;font-size:13px;font-weight:600;
-  list-style:none;display:flex;align-items:center;gap:8px}
-details.gloss summary::-webkit-details-marker{display:none}
-details.gloss summary::before{content:"";display:inline-block;width:0;height:0;
-  border-left:5px solid var(--text-muted);border-top:4px solid transparent;
-  border-bottom:4px solid transparent;transition:transform .15s}
-details.gloss[open] summary::before{transform:rotate(90deg)}
-details.gloss .gbody{padding:0 15px 15px;display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px 26px}
-details.gloss dl{margin:0}
-details.gloss dt{font-size:12.5px;font-weight:620;margin-top:9px}
-details.gloss dt:first-child{margin-top:0}
-details.gloss dd{margin:2px 0 0;font-size:12.5px;color:var(--text-secondary);line-height:1.5}
-details.gloss h4{font-size:11px;text-transform:uppercase;letter-spacing:.06em;
-  color:var(--text-muted);margin:0 0 6px}
-.win{display:flex;border:1px solid var(--border);border-radius:999px;overflow:hidden}
-.winb{background:var(--plane);border:0;border-right:1px solid var(--border);padding:5px 12px;
-  font:inherit;font-size:12.5px;color:var(--text-secondary);cursor:pointer}
-.winb:last-child{border-right:0}
-.winb:hover{color:var(--text-primary)}
-.winb[aria-pressed="true"]{background:var(--tint-1);color:var(--text-primary);font-weight:600}
-th.wincol{color:var(--text-primary)}
-td.wincol{background:var(--tint-1)}
-.chead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
-.seg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex:none}
-.segb{background:var(--plane);border:0;border-right:1px solid var(--border);padding:5px 10px;
-  font:inherit;font-size:12px;color:var(--text-secondary);cursor:pointer}
-.segb:last-child{border-right:0}
-.segb:hover{color:var(--text-primary)}
-.segb[aria-pressed="true"]{background:var(--tint-1);color:var(--text-primary);font-weight:600}
-
-h2{font-size:15px;font-weight:620;margin:28px 0 10px}
-h2 .hint{font-weight:400;color:var(--text-muted);font-size:12.5px;margin-left:8px}
 .tablewrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse}
-th,td{text-align:left;padding:8px 11px;border-bottom:1px solid var(--grid);vertical-align:middle}
+th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--grid);vertical-align:middle}
 thead th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);
   font-weight:600;white-space:nowrap;position:sticky;top:0;background:var(--surface-1);z-index:2}
 thead th[data-sort]{cursor:pointer}
 thead th[data-sort]:hover{color:var(--text-secondary)}
 thead th[aria-sort=descending]::after{content:"\\2193";margin-left:5px;opacity:.75}
 thead th[aria-sort=ascending]::after{content:"\\2191";margin-left:5px;opacity:.75}
-tbody tr:hover{background:var(--plane)}
-tbody tr:last-child td{border-bottom:none}
+tbody tr.row{cursor:pointer}
+tbody tr.row:hover{background:var(--plane)}
+tbody tr.row .rank::before{content:"";display:inline-block;width:0;height:0;margin-right:6px;
+  border-left:4px solid var(--text-muted);border-top:3.5px solid transparent;
+  border-bottom:3.5px solid transparent;transition:transform .15s;transform-origin:35% 50%}
+tbody tr.row[aria-expanded="true"] .rank::before{transform:rotate(90deg)}
+tr.buy td:first-child{box-shadow:inset 3px 0 0 var(--series-3)}
 .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.rank{color:var(--text-muted);font-variant-numeric:tabular-nums;width:36px}
-.who{display:flex;gap:10px;align-items:center;min-width:240px}
+.rank{color:var(--text-muted);font-variant-numeric:tabular-nums;width:44px}
+.who{display:flex;gap:10px;align-items:center;min-width:250px}
 .who img{width:32px;height:44px;object-fit:cover;border-radius:4px;background:var(--grid);flex:none}
 .who .nm{font-weight:560;line-height:1.3}
 .who a{color:inherit;text-decoration:none}
@@ -228,268 +119,98 @@ tbody tr:last-child td{border-bottom:none}
 .up{color:var(--up);font-weight:560}
 .down{color:var(--down)}
 .flat{color:var(--text-muted)}
-.badges{display:flex;gap:5px;flex-wrap:wrap}
-.badge{font-size:11px;padding:2.5px 8px;border-radius:999px;border:1px solid;white-space:nowrap;font-weight:560}
-.badge.sustained{color:var(--series-1);border-color:var(--series-1);background:var(--tint-1)}
-.badge.spike{color:var(--series-2);border-color:var(--series-2);background:var(--tint-2)}
-.badge.breakout{color:var(--series-3);border-color:var(--series-3);background:var(--tint-3)}
+.warnc{color:var(--warn);font-weight:600}
 .spark{display:block}
-.score{font-variant-numeric:tabular-nums;font-weight:600}
+.score{font-variant-numeric:tabular-nums;font-weight:640;font-size:15px}
 .scorebar{height:3px;border-radius:2px;background:var(--bar);margin-top:3px}
-.why{color:var(--text-secondary);font-size:12px;min-width:150px;max-width:220px}
+.pill{display:inline-block;font-size:11px;padding:2px 7px;border-radius:999px;
+  border:1px solid var(--series-3);color:var(--series-3);background:var(--tint-3);font-weight:600}
+.pill.none{border-color:var(--border);color:var(--text-muted);background:transparent}
+.rar{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:4px;
+  border:1px solid var(--border);color:var(--text-secondary);margin-left:5px}
 .empty{padding:36px;text-align:center;color:var(--text-muted)}
 .more{display:flex;gap:10px;align-items:center;justify-content:center;padding:14px}
+
+tr.detail > td{padding:0;background:var(--plane)}
+.det{display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:18px 26px;
+  padding:16px 18px 18px;position:sticky;left:0;width:min(100%,calc(100vw - 56px))}
+.det h5{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);
+  margin:0 0 8px}
+.det p{margin:0 0 9px;font-size:13px;line-height:1.55}
+.det ul{margin:0;padding-left:17px;font-size:12.5px;line-height:1.5;color:var(--text-secondary)}
+.det li{margin-bottom:5px}
+.det .big{font-size:19px;font-weight:640;line-height:1.25;margin-bottom:3px}
+.det .sub2{font-size:12.5px;color:var(--text-secondary)}
+.det .kv{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;padding:3px 0;
+  border-bottom:1px solid var(--grid)}
+.det .kv:last-child{border-bottom:0}
+.det .kv span:last-child{font-variant-numeric:tabular-nums;color:var(--text-primary)}
+.det .kv span:first-child{color:var(--text-secondary)}
+.det .warn{color:var(--warn)}
+.det .cta{display:inline-block;margin-top:8px;font-size:12.5px;font-weight:600;
+  color:var(--series-1);text-decoration:none}
+.det .cta:hover{text-decoration:underline}
+.crow{display:grid;grid-template-columns:78px 1fr 30px;gap:8px;align-items:center;margin-bottom:5px}
+.crow .cl{font-size:12px;color:var(--text-secondary);text-align:right}
+.crow .ct{height:14px;background:var(--bar-soft);border-radius:0 4px 4px 0;position:relative}
+.crow .ct i{display:block;height:100%;background:var(--bar);border-radius:0 4px 4px 0}
+.crow .cv{font-size:12px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
+
+details.gloss,details.rej{margin-bottom:16px}
+details summary{cursor:pointer;padding:11px 15px;font-size:13px;font-weight:600;
+  list-style:none;display:flex;align-items:center;gap:8px}
+details summary::-webkit-details-marker{display:none}
+details summary::before{content:"";display:inline-block;width:0;height:0;
+  border-left:5px solid var(--text-muted);border-top:4px solid transparent;
+  border-bottom:4px solid transparent;transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+details summary .sc{color:var(--text-muted);font-weight:400;margin-left:auto;font-size:12.5px}
+.gbody{padding:0 15px 15px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:14px 26px}
+.gbody dl{margin:0}
+.gbody dt{font-size:12.5px;font-weight:620;margin-top:9px}
+.gbody dt:first-child{margin-top:0}
+.gbody dd{margin:2px 0 0;font-size:12.5px;color:var(--text-secondary);line-height:1.5}
+.gbody h4{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);
+  margin:0 0 6px}
+.rejbody{padding:0 15px 14px}
+.rejbody table{font-size:12.5px}
+.rejbody td,.rejbody th{padding:6px 9px}
+
 footer{margin-top:34px;color:var(--text-muted);font-size:12px;line-height:1.7}
 footer code{background:var(--surface-1);border:1px solid var(--border);padding:1px 5px;border-radius:4px}
-@media (max-width:1000px){.why,.col-listings{display:none}}
-@media (max-width:820px){.wrap{padding:20px 12px 48px}.brow{grid-template-columns:110px 1fr 36px}}
+#tip{position:fixed;z-index:50;max-width:300px;background:var(--text-primary);
+  color:var(--surface-1);padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.45;
+  pointer-events:none;opacity:0;transition:opacity .12s;box-shadow:0 6px 20px rgba(0,0,0,.22)}
+#tip.on{opacity:1}
+[data-tip]{cursor:help}
+.info{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;
+  border:1px solid currentColor;border-radius:50%;font-size:9px;line-height:1;margin-left:4px;
+  opacity:.55;vertical-align:1px;cursor:help;font-weight:600}
+.info:hover{opacity:1}
+@media (max-width:1080px){.col-hide{display:none}}
+@media (max-width:820px){.wrap{padding:20px 12px 48px}}
 """
 
 JS = r"""
 const DATA = JSON.parse(document.getElementById('radar-data').textContent);
-const BANDS = [
-  {key:'u5',   label:'Under $5',   min:0,    max:5},
-  {key:'5-20', label:'$5-20',      min:5,    max:20},
-  {key:'20-100',label:'$20-100',   min:20,   max:100},
-  {key:'o100', label:'$100+',      min:100,  max:Infinity},
-];
-const state = {q:'', sigs:new Set(), bands:new Set(), set:'', rarity:'', type:'', printing:'',
-               min:null, max:null, sort:'score', dir:-1, limit:50, dim:'band',
-               maxCopies:null, gapDir:'', win:'7d', minMove:null, moveDir:'',
-               minScore:null, floorOnly:false, budget:null, inBudgetOnly:false,
-               open:new Set()};
-const WINKEY = {'24h':'change_24h', '7d':'change_7d', '30d':'change_30d'};
-const WINSORT = {'24h':'c24', '7d':'c7', '30d':'c30'};
+const state = {q:'', set:'', rarity:'', minPrice:null, maxPrice:null, minScore:null,
+               minSales:null, sort:'score', dir:-1, limit:40, budget:null,
+               inBudgetOnly:false, open:new Set()};
 
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const money = v => v==null ? '—' : '$' + (v>=1000 ? v.toLocaleString(undefined,{maximumFractionDigits:0}) : v.toFixed(2));
+const money = v => v==null ? '—'
+  : '$' + (v>=1000 ? v.toLocaleString(undefined,{maximumFractionDigits:0}) : v.toFixed(2));
 const pct = v => {
   if (v==null) return '<span class="flat">—</span>';
   const cls = v > 0.05 ? 'up' : (v < -0.05 ? 'down' : 'flat');
-  return `<span class="${cls}">${v>0?'+':''}${v.toFixed(1)}%</span>`;
-};
-
-const BADGE_TIP = {
-  sustained: "Up \u22658% over 7d <b>and</b> \u226515% over 30d \u2014 a trend, not a blip.",
-  spike: "Up \u226512% in 24h with the 7d change not already negative. Early, noisier.",
-  breakout: "Cleared its own highest price from 90\u21927 days ago by \u22653%. The recent week is excluded so a steady climb doesn't trip it every day.",
-};
-const tip = document.getElementById('tip');
-function showTip(el){
-  const t = el.getAttribute('data-tip'); if (!t) return;
-  tip.innerHTML = t;
-  tip.classList.add('on');
-  const r = el.getBoundingClientRect();
-  const w = tip.offsetWidth, h = tip.offsetHeight;
-  let x = r.left + r.width/2 - w/2;
-  x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
-  let y = r.top - h - 8;
-  if (y < 8) y = r.bottom + 8;
-  tip.style.left = x + 'px'; tip.style.top = y + 'px';
-}
-function hideTip(){ tip.classList.remove('on'); }
-// Track the anchor so moving across child nodes inside the same element
-// doesn't flicker the tooltip off and on again.
-let tipAnchor = null;
-document.addEventListener('mouseover', e=>{
-  const el = e.target.closest('[data-tip]');
-  if (el === tipAnchor) return;
-  tipAnchor = el;
-  if (el) showTip(el); else hideTip();
-});
-document.addEventListener('mouseout', e=>{
-  const from = e.target.closest('[data-tip]');
-  if (!from) return;
-  const to = e.relatedTarget && e.relatedTarget.closest
-    ? e.relatedTarget.closest('[data-tip]') : null;
-  if (to !== from){ tipAnchor = to; if (to) showTip(to); else hideTip(); }
-});
-document.addEventListener('focusin', e=>{
-  const el = e.target.closest('[data-tip]'); if (el) showTip(el);
-});
-document.addEventListener('focusout', hideTip);
-// The table header is sticky, so on scroll follow the anchor rather than
-// dropping the tooltip out from under the cursor.
-window.addEventListener('scroll', ()=>{ if (tipAnchor) showTip(tipAnchor); }, {passive:true});
-window.addEventListener('resize', ()=>{ if (tipAnchor) showTip(tipAnchor); });
-
-
-// ---------------------------------------------------------------------------
-// JavaScript twin of radar/plan.py::allocate(). Keep the two in step --
-// tests/test_pipeline.py pins them to the same fixture.
-// ---------------------------------------------------------------------------
-const unitCost = r => {
-  for (const k of ['floor_ship','floor_low']){
-    const v = r[k];
-    if (typeof v === 'number' && v > 0) return v;
-  }
-  return null;
-};
-
-function allocate(rows, budget){
-  const cfg = DATA.plan || {};
-  const maxPct = cfg.max_position_pct ?? 0.25;
-  const haircut = cfg.squeeze_haircut ?? 0.5;
-  const fee = cfg.fee_pct ?? 0;
-  let remaining = budget;
-  const out = new Map();
-
-  for (const r of rows){
-    const key = r.card_id + '|' + r.printing;
-    const unit = unitCost(r);
-    const copies = (typeof r.copies === 'number') ? r.copies : null;
-    const plan = {unit, qty:0, cost:0, affordable:false, clears:false, reason:'', pct:0,
-                  breakeven:null};
-
-    if (unit == null){
-      plan.reason = 'No live floor yet — run <code>radar snipe</code> to price it.';
-      out.set(key, plan); continue;
-    }
-    let cap = budget * maxPct;
-    if (r.snipe_mode === 'squeeze') cap *= haircut;
-
-    const byCap = Math.floor(cap / unit);
-    const byRem = Math.floor(remaining / unit);
-    const bySupply = copies == null ? byCap : copies;
-    const qty = Math.max(0, Math.min(byCap, byRem, bySupply));
-
-    if (qty < 1){
-      if (byCap < 1) plan.reason =
-        `One copy is ${(unit/budget*100).toFixed(0)}% of the budget, over the ${(maxPct*100).toFixed(0)}% per-position cap.`;
-      else if (byRem < 1) plan.reason = `$${remaining.toFixed(2)} left — one copy costs $${unit.toFixed(2)}.`;
-      else plan.reason = 'No copies listed.';
-      out.set(key, plan); continue;
-    }
-    const cost = qty * unit;
-    remaining -= cost;
-    plan.qty = qty; plan.cost = cost; plan.affordable = true;
-    plan.clears = copies != null && qty >= copies;
-    plan.pct = cost / budget * 100;
-    plan.remaining = remaining;
-    plan.limitedBy = (bySupply <= byCap && bySupply <= byRem) ? 'the number of copies listed'
-                   : (byRem < byCap ? "what's left of the budget" : 'the per-position cap');
-    // Only meaningful once you've told it your selling fee rate; with fee 0 it
-    // would just restate the unit cost.
-    plan.breakeven = (fee > 0 && fee < 1) ? unit / (1 - fee) : null;
-    plan.feePct = fee;
-    out.set(key, plan);
-  }
-  return out;
-}
-
-const READ = r => {
-  const {snipe_mode:m, market_price:mkt, floor_low:low, shelf_med:shelf,
-         copies:c, undercut_pct:u, floor_multiple:mult} = r;
-  if (m === 'undercut' && low && shelf)
-    return `The cheapest Near Mint copy is <b>$${low.toFixed(2)}</b> shipped, while the median copy `
-      + `on the same shelf is <b>$${shelf.toFixed(2)}</b> — ${u.toFixed(0)}% below its neighbours. `
-      + `Both numbers came from the same live call, so this is not the two-day-old batch price talking.`
-      + (c != null ? ` ${c} copies listed.` : '');
-  if (m === 'squeeze' && mkt && low)
-    return `The whole shelf starts at <b>$${low.toFixed(2)}</b> shipped`
-      + (mult ? ` — ${mult.toFixed(1)}× the $${mkt.toFixed(2)} the batch still records` : '')
-      + `. The cheap copies are gone and the recorded price hasn't caught up.`
-      + (c != null ? ` Only ${c} listed.` : '');
-  if (low && shelf)
-    return `Cheapest copy $${low.toFixed(2)}, shelf median $${shelf.toFixed(2)} — nothing out of line here.`;
-  return 'No live shelf has been pulled for this row. Run <code>radar snipe</code> to price it.';
-};
-
-const RISK = r => r.snipe_mode === 'undercut'
-  ? 'A copy priced far below its neighbours is usually priced that way for a reason: wrong '
-    + 'printing or language, a condition mismatch, a seller with bad feedback, or a listing that '
-    + 'is already sold and not yet removed. Check the listing itself before assuming free money.'
-  : r.snipe_mode === 'squeeze'
-  ? 'You would be paying above the last recorded trade on the assumption the batch price catches '
-    + 'up. If those listings are one optimistic seller rather than real scarcity, nothing catches '
-    + 'up and you own the top.'
-  : 'No setup here — the cheapest copy is in line with the rest of the shelf.';
-
-const CHECKLIST = [
-  'Open the listing and confirm <b>printing, language and condition</b> match this row — an outlier price usually has an outlier reason.',
-  'Check the <b>seller\u2019s feedback</b> and how long the listing has been up.',
-  'Compare against the <b>second-cheapest</b> copy, not the market price. If the gap to number two is small, there is no snipe.',
-  'Look for a <b>cause</b>. Nothing here knows about bans, reprints or tournament results.',
-  'Remember the market price is up to <b>two days old</b>; the shelf is from your last <code>radar snipe</code> and is cached after the first call.',
-];
-
-function detailHTML(r, plan){
-  const url = r.tcgplayer_url || (r.tcgplayer_id ? 'https://www.tcgplayer.com/product/'+r.tcgplayer_id : null);
-  const c = r.components || {};
-  const sig = (r.signals||[]).length ? r.signals.join(', ') : 'none';
-
-  let pos;
-  if (!state.budget){
-    pos = `<p class="sub2">Enter a budget at the top of the page and this becomes a number of copies and a cost.</p>`;
-  } else if (plan && plan.affordable){
-    pos = `<div class="big">${plan.qty} ${plan.qty===1?'copy':'copies'} · $${plan.cost.toFixed(2)}</div>
-      <div class="sub2">at $${plan.unit.toFixed(2)} shipped each · ${plan.pct.toFixed(0)}% of your budget</div>
-      <div class="kv"><span>Limited by</span><span>${plan.limitedBy}</span></div>
-      <div class="kv"><span>Copies listed</span><span>${r.copies ?? '—'}</span></div>
-      <div class="kv"><span>Shelf</span><span>${plan.clears ? 'this clears it' : 'leaves '+((r.copies??0)-plan.qty)+' behind'}</span></div>
-      ${plan.breakeven!=null
-        ? `<div class="kv"><span>Break-even resale (after ${(plan.feePct*100).toFixed(0)}% fees)</span><span>$${plan.breakeven.toFixed(2)}</span></div>`
-        : `<div class="kv"><span>Break-even resale</span><span>set <code>fee_pct</code> in config</span></div>`}
-      <div class="kv"><span>Budget left after</span><span>$${(plan.remaining??0).toFixed(2)}</span></div>`;
-  } else {
-    pos = `<div class="big">No position</div><p class="sub2">${plan ? plan.reason : 'No live floor.'}</p>`
-        + `<p class="sub2">The snipe board is filled first. Raise the budget, or narrow the filters so fewer rows compete for it.</p>`;
-  }
-
-  return `<tr class="detail"><td colspan="14"><div class="det">
-    <div>
-      <h5>What this row says</h5>
-      <p>${READ(r)}</p>
-      <div class="kv"><span>Market (batch, up to 2d old)</span><span>${r.market_price!=null?'$'+r.market_price.toFixed(2):'—'}</span></div>
-      <div class="kv"><span>Cheapest / median copy (live, shipped)</span><span>${r.floor_low!=null?'$'+r.floor_low.toFixed(2):'—'} / ${r.shelf_med!=null?'$'+r.shelf_med.toFixed(2):'—'}</span></div>
-      <div class="kv"><span>Copies listed (Near Mint)</span><span>${r.copies ?? '—'}</span></div>
-      <div class="kv"><span>Listings (batch, all conditions)</span><span>${r.total_listings ?? '—'}</span></div>
-      <div class="kv"><span>24h / 7d / 30d</span><span>${[r.change_24h,r.change_7d,r.change_30d].map(v=>v==null?'—':(v>0?'+':'')+v.toFixed(0)+'%').join(' / ')}</span></div>
-      ${url?`<a class="cta" href="${esc(url)}" target="_blank" rel="noopener">Open the TCGplayer listing &rarr;</a>`:''}
-    </div>
-    <div>
-      <h5>Position at your budget</h5>
-      ${pos}
-    </div>
-    <div>
-      <h5>Why it ranked here</h5>
-      <div class="kv"><span>Detectors fired</span><span>${sig}</span></div>
-      <div class="kv"><span>Radar score</span><span>${r.score.toFixed(0)}</span></div>
-      ${c.sustained!=null?`<div class="kv"><span>· sustained strength</span><span>${c.sustained.toFixed(0)}</span></div>`:''}
-      ${c.spike!=null?`<div class="kv"><span>· spike strength</span><span>${c.spike.toFixed(0)}</span></div>`:''}
-      ${c.breakout!=null?`<div class="kv"><span>· breakout strength</span><span>${c.breakout.toFixed(0)}</span></div>`:''}
-      ${r.trailing_high!=null?`<div class="kv"><span>90-day ceiling before this run</span><span>$${r.trailing_high.toFixed(2)}</span></div>`:''}
-      ${r.snipe_score?`<div class="kv"><span>Snipe score</span><span>${r.snipe_score.toFixed(0)}${r.snipe_mode?' ('+r.snipe_mode+')':''}</span></div>`:''}
-    </div>
-    <div>
-      <h5>Before you buy</h5>
-      <p class="warn">${RISK(r)}</p>
-      <ul>${CHECKLIST.map(x=>`<li>${x}</li>`).join('')}</ul>
-    </div>
-  </div></td></tr>`;
-}
-
-const underCell = r => {
-  if (r.undercut_pct == null) return '<span class="flat">—</span>';
-  const v = r.undercut_pct;
-  const cls = v >= (DATA.minUndercut ?? 40) ? 'up' : (v < 0 ? 'down' : 'flat');
-  return `<span class="${cls}">${v > 0 ? '+' : ''}${v.toFixed(0)}%</span>`;
-};
-
-const gapCell = r => {
-  if (r.gap_pct == null) return '<span class="flat">—</span>';
-  if (r.gap_pct > 0) return `<span class="up">+${r.gap_pct.toFixed(0)}%</span>`;
-  const m = r.floor_multiple;
-  // The multiple only says something once the floor is meaningfully above market;
-  // "1.0x" on a rounding difference is just noise.
-  if (m && m >= 1.2) return `<span class="down">${m.toFixed(1)}\u00d7</span>`;
-  return `<span class="flat">${r.gap_pct.toFixed(0)}%</span>`;
+  return `<span class="${cls}">${v>0?'+':''}${v.toFixed(0)}%</span>`;
 };
 
 function sparkline(series){
   if (!series || series.length < 2) return '<span class="flat">—</span>';
-  const w=88,h=26,p=3;
+  const w=90,h=26,p=3;
   const ys = series.map(d=>d[1]);
   const lo = Math.min(...ys), hi = Math.max(...ys);
   const span = (hi-lo) || (hi || 1);
@@ -499,64 +220,159 @@ function sparkline(series){
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
   const lx = w-p, ly = h-p - ((ys[ys.length-1]-lo)/span)*(h-2*p);
-  const dir = ys[ys.length-1] >= ys[0] ? 'rising' : 'falling';
   return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img"
-    aria-label="${series.length} points, ${dir}, latest $${ys[ys.length-1].toFixed(2)}">
+    aria-label="90-day price, ${ys[ys.length-1]>=ys[0]?'up':'down'} to $${ys[ys.length-1].toFixed(2)}">
     <polyline points="${pts}" fill="none" stroke="var(--series-1)" stroke-width="2"
       stroke-linejoin="round" stroke-linecap="round"/>
     <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.5" fill="var(--series-1)"
       stroke="var(--surface-1)" stroke-width="2"/></svg>`;
 }
 
-function rowHTML(r, i, plan){
-  const badges = (r.signals||[]).map(s=>
-    `<span class="badge ${s}" data-tip="${esc(BADGE_TIP[s]||'')}">${s}</span>`).join('');
+// ---------------------------------------------------------------------------
+// Position sizing -- JS twin of radar/plan.py::allocate(). Keep in step.
+// ---------------------------------------------------------------------------
+function allocate(rows, budget){
+  const cfg = DATA.plan || {};
+  const maxPct = cfg.max_position_pct ?? 0.25;
+  let remaining = budget;
+  const out = new Map();
+  for (const r of rows){
+    const key = r.card_id + '|' + r.printing;
+    const unit = (typeof r.floor_low === 'number' && r.floor_low > 0) ? r.floor_low : null;
+    const copies = (typeof r.copies === 'number') ? r.copies : null;
+    const plan = {unit, qty:0, cost:0, affordable:false, clears:false, reason:'', pct:0};
+    if (unit == null){
+      plan.reason = 'No live entry price yet — run <code>radar invest</code>.';
+      out.set(key, plan); continue;
+    }
+    const cap = budget * maxPct;
+    const byCap = Math.floor(cap / unit);
+    const byRem = Math.floor(remaining / unit);
+    const bySupply = copies == null ? byCap : copies;
+    const qty = Math.max(0, Math.min(byCap, byRem, bySupply));
+    if (qty < 1){
+      plan.reason = byCap < 1
+        ? `One copy is ${(unit/budget*100).toFixed(0)}% of the budget, over the ${(maxPct*100).toFixed(0)}% per-position cap.`
+        : `$${remaining.toFixed(2)} left — one copy costs $${unit.toFixed(2)}.`;
+      out.set(key, plan); continue;
+    }
+    const cost = qty * unit;
+    remaining -= cost;
+    Object.assign(plan, {qty, cost, affordable:true, clears: copies!=null && qty>=copies,
+      pct: cost/budget*100, remaining,
+      limitedBy: (bySupply<=byCap && bySupply<=byRem) ? 'the number of copies listed'
+               : (byRem<byCap ? "what's left of the budget" : 'the per-position cap')});
+    out.set(key, plan);
+  }
+  return out;
+}
+
+const COMPONENTS = [
+  ['value','Value','Log-scaled price. $10 scores 0, $200 scores 100.'],
+  ['liquidity','Liquidity','Average daily sales and the share of days that saw any sale.'],
+  ['trend','Trend','Share of weeks closing above the previous week, plus the 90-day change.'],
+  ['stability','Stability','Daily volatility and how far it sits below its 90-day high.'],
+  ['scarcity','Scarcity','Rarity tier and how many copies are listed.'],
+];
+
+function componentBars(c){
+  if (!c) return '';
+  return COMPONENTS.map(([k,label,tip])=>{
+    const v = c[k] ?? 0;
+    return `<div class="crow" data-tip="${esc(tip)}">
+      <span class="cl">${label}</span>
+      <span class="ct"><i style="width:${Math.max(2,v)}%"></i></span>
+      <span class="cv">${v.toFixed(0)}</span></div>`;
+  }).join('');
+}
+
+function detailHTML(r, plan){
   const url = r.tcgplayer_url || (r.tcgplayer_id ? 'https://www.tcgplayer.com/product/'+r.tcgplayer_id : null);
-  const nm = url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(r.name)}</a>` : esc(r.name);
-  const img = r.image_url ? `<img src="${esc(r.image_url)}" alt="" loading="lazy" decoding="async">` : '<img alt="">';
-  const meta = [r.set_name, r.number, r.rarity, r.printing!=='Normal'?r.printing:null]
-    .filter(Boolean).map(esc).join(' · ');
+  let pos;
+  if (!state.budget){
+    pos = '<p class="sub2">Enter a budget above and this becomes a number of copies and a cost.</p>';
+  } else if (plan && plan.affordable){
+    pos = `<div class="big">${plan.qty} ${plan.qty===1?'copy':'copies'} · $${plan.cost.toFixed(2)}</div>
+      <div class="sub2">at $${plan.unit.toFixed(2)} shipped each · ${plan.pct.toFixed(0)}% of your budget</div>
+      <div class="kv"><span>Limited by</span><span>${plan.limitedBy}</span></div>
+      <div class="kv"><span>Copies listed</span><span>${r.copies ?? '—'}</span></div>
+      <div class="kv"><span>Budget left after</span><span>$${(plan.remaining??0).toFixed(2)}</span></div>
+      ${r.avg_daily_sales ? `<div class="kv"><span>Days to sell that many</span><span>~${Math.ceil(plan.qty/r.avg_daily_sales)}</span></div>` : ''}`;
+  } else {
+    pos = `<div class="big">No position</div><p class="sub2">${plan ? plan.reason : 'No live entry price.'}</p>`;
+  }
+
+  const entry = (r.floor_low != null)
+    ? `<div class="kv"><span>Cheapest listing now</span><span>$${r.floor_low.toFixed(2)}</span></div>
+       <div class="kv"><span>Median listing</span><span>${r.shelf_med!=null?'$'+r.shelf_med.toFixed(2):'—'}</span></div>
+       <div class="kv"><span>Entry vs the shelf</span><span>${r.entry_vs_shelf_pct==null?'—'
+         : (r.entry_vs_shelf_pct>0
+            ? Math.abs(r.entry_vs_shelf_pct).toFixed(0)+'% below median'
+            : Math.abs(r.entry_vs_shelf_pct).toFixed(0)+'% above median')}</span></div>
+       <div class="kv"><span>Copies at Near Mint</span><span>${r.copies ?? '—'}</span></div>`
+    : '<p class="sub2">No live entry price pulled for this card yet.</p>';
+
+  return `<tr class="detail"><td colspan="11"><div class="det">
+    <div>
+      <h5>The case</h5>
+      <p>${esc(r.thesis||'')}</p>
+      <p class="warn">${esc(r.watch||'')}</p>
+      ${url?`<a class="cta" href="${esc(url)}" target="_blank" rel="noopener">Open on TCGplayer &rarr;</a>`:''}
+    </div>
+    <div>
+      <h5>Score, broken down</h5>
+      ${componentBars(r.components)}
+      <div class="kv" style="margin-top:8px"><span>Weighted total</span><span>${r.invest_score.toFixed(0)} / 100</span></div>
+      <div class="kv"><span>90-day change</span><span>${r.change_90d!=null?(r.change_90d>0?'+':'')+r.change_90d+'%':'—'}</span></div>
+      <div class="kv"><span>Weeks closing up</span><span>${r.consistency_pct ?? '—'}%</span></div>
+      <div class="kv"><span>Daily volatility</span><span>${r.volatility_pct ?? '—'}%</span></div>
+      <div class="kv"><span>Off its 90-day high</span><span>${r.drawdown_pct ?? '—'}%</span></div>
+    </div>
+    <div>
+      <h5>Entry today</h5>
+      ${entry}
+      <h5 style="margin-top:14px">Position at your budget</h5>
+      ${pos}
+    </div>
+    <div>
+      <h5>Before you buy</h5>
+      <ul>${DATA.checklist.map(x=>`<li>${x}</li>`).join('')}</ul>
+    </div>
+  </div></td></tr>`;
+}
+
+function rowHTML(r, i, plan){
   const key = r.card_id + '|' + r.printing;
   const openNow = state.open.has(key);
   const buy = plan && plan.affordable;
+  const url = r.tcgplayer_url || (r.tcgplayer_id ? 'https://www.tcgplayer.com/product/'+r.tcgplayer_id : null);
+  const nm = url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(r.name)}</a>` : esc(r.name);
+  const img = r.image_url ? `<img src="${esc(r.image_url)}" alt="" loading="lazy" decoding="async">` : '<img alt="">';
+  const meta = [r.set_name, r.number, r.printing!=='Normal'?r.printing:null].filter(Boolean).map(esc).join(' · ');
+  const sales = r.avg_daily_sales;
+  const salesCls = sales==null ? 'flat' : (sales < 1 ? 'warnc' : '');
   return `<tr class="row${buy?' buy':''}" data-key="${esc(key)}" aria-expanded="${openNow}">
     <td class="rank">${i+1}</td>
-    <td><div class="who">${img}<div><div class="nm">${nm}</div>
+    <td><div class="who">${img}<div><div class="nm">${nm}<span class="rar">${esc(r.rarity||'—')}</span></div>
       <div class="meta">${meta}</div></div></div></td>
     <td class="num">${money(r.market_price)}</td>
-    <td class="num">${pct(r.change_24h)}</td>
-    <td class="num">${pct(r.change_7d)}</td>
-    <td class="num">${pct(r.change_30d)}</td>
+    <td class="num col-hide">${pct(r.change_30d)}</td>
+    <td class="num">${pct(r.change_90d)}</td>
     <td>${sparkline(r.series)}</td>
-    <td class="num">${r.floor_low==null?'<span class="flat">—</span>':money(r.floor_low)}</td>
-    <td class="num">${r.shelf_med==null?'<span class="flat">—</span>':money(r.shelf_med)}</td>
-    <td class="num">${r.copies==null?'<span class="flat">—</span>'
-      :`<span class="${r.copies<=DATA.thin?'thin':''}">${r.copies}</span>`}</td>
-    <td class="num">${underCell(r)}</td>
-    <td><div class="badges">${badges}</div></td>
-    <td class="num"><div class="score">${r.score.toFixed(0)}</div>
-      <div class="scorebar" style="width:${Math.max(4, r.score)}%"></div></td>
-    <td class="why">${buy
-      ? `<span class="pill">buy ${plan.qty} · $${plan.cost.toFixed(0)}</span> ${esc(r.why||'')}`
-      : esc(r.why||'')}</td>
+    <td class="num">${r.consistency_pct==null?'<span class="flat">—</span>':r.consistency_pct+'%'}</td>
+    <td class="num"><span class="${salesCls}">${sales==null?'—':sales.toFixed(1)}</span></td>
+    <td class="num col-hide">${r.floor_low==null?'<span class="flat">—</span>':money(r.floor_low)}</td>
+    <td class="num"><div class="score">${r.invest_score.toFixed(0)}</div>
+      <div class="scorebar" style="width:${Math.max(4, r.invest_score)}%"></div></td>
+    <td class="num">${buy?`<span class="pill">${plan.qty} · $${plan.cost.toFixed(0)}</span>`:'<span class="pill none">—</span>'}</td>
   </tr>` + (openNow ? detailHTML(r, plan) : '');
 }
 
 const SORTERS = {
-  score:r=>r.score, price:r=>r.market_price ?? -1, c24:r=>r.change_24h ?? -1e9,
-  c7:r=>r.change_7d ?? -1e9, c30:r=>r.change_30d ?? -1e9,
-  listings:r=>r.total_listings ?? -1, name:r=>(r.name||'').toLowerCase(),
-  floor:r=>r.floor_low ?? -1, shelf:r=>r.shelf_med ?? -1, copies:r=>r.copies ?? 1e9,
-  under:r=>r.undercut_pct ?? -1e9, gap:r=>r.gap_pct ?? -1e9,
-  snipe:r=>r.snipe_score ?? -1,
+  score:r=>r.invest_score, price:r=>r.market_price ?? -1, c30:r=>r.change_30d ?? -1e9,
+  c90:r=>r.change_90d ?? -1e9, cons:r=>r.consistency_pct ?? -1, sales:r=>r.avg_daily_sales ?? -1,
+  entry:r=>r.floor_low ?? -1, name:r=>(r.name||'').toLowerCase(),
 };
-
-function inBands(r){
-  if (!state.bands.size) return true;
-  const p = r.market_price;
-  if (p == null) return false;
-  return [...state.bands].some(k=>{ const b = BANDS.find(x=>x.key===k); return p>=b.min && p<b.max; });
-}
 
 function filtered(){
   const q = state.q.trim().toLowerCase();
@@ -565,269 +381,135 @@ function filtered(){
                || (r.number||'').toLowerCase().includes(q))) return false;
     if (state.set && r.set_name !== state.set) return false;
     if (state.rarity && (r.rarity||'—') !== state.rarity) return false;
-    if (state.type && r.product_type !== state.type) return false;
-    if (state.printing && r.printing !== state.printing) return false;
-    if (state.min != null && !(r.market_price >= state.min)) return false;
-    if (state.max != null && !(r.market_price <= state.max)) return false;
-    if (!inBands(r)) return false;
-    if (state.sigs.size && !(r.signals||[]).some(s=>state.sigs.has(s))) return false;
-    if (state.maxCopies != null && !(r.copies != null && r.copies <= state.maxCopies)) return false;
-    if (state.gapDir === 'under' && r.snipe_mode !== 'undercut') return false;
-    if (state.gapDir === 'over'  && r.snipe_mode !== 'squeeze') return false;
-    if (state.floorOnly && r.floor_low == null) return false;
-    if (state.minScore != null && !(r.score >= state.minScore)) return false;
-    const mv = r[WINKEY[state.win]];
-    if (state.moveDir === 'up'   && !(mv > 0)) return false;
-    if (state.moveDir === 'down' && !(mv < 0)) return false;
-    if (state.minMove != null){
-      if (mv == null) return false;
-      if (Math.abs(mv) < state.minMove) return false;
-    }
+    if (state.minPrice != null && !(r.market_price >= state.minPrice)) return false;
+    if (state.maxPrice != null && !(r.market_price <= state.maxPrice)) return false;
+    if (state.minScore != null && !(r.invest_score >= state.minScore)) return false;
+    if (state.minSales != null && !((r.avg_daily_sales ?? 0) >= state.minSales)) return false;
     return true;
   });
 }
 
-function barChart(el, entries, caption){
-  if (!entries.length){ el.innerHTML = '<p class="none">Nothing in view.</p>'; return; }
-  const max = Math.max(...entries.map(e=>e[1])) || 1;
-  el.innerHTML = entries.map(([label, v])=>`
-    <div class="brow${v?'':' empty'}">
-      <span class="bl" title="${esc(label)}">${esc(label)}</span>
-      <span class="bt" style="width:${Math.max(2,(v/max)*100)}%"></span>
-      <span class="bv">${v}</span>
-    </div>`).join('');
-}
-
-function drawCharts(rows){
-  const bySet = {};
-  rows.forEach(r=>{ const k=r.set_name||'—'; bySet[k]=(bySet[k]||0)+1; });
-  const setEntries = Object.entries(bySet).sort((a,b)=>b[1]-a[1]).slice(0,10);
-  barChart(document.getElementById('chart-sets'), setEntries);
-
-  let entries;
-  if (state.dim === 'band'){
-    entries = BANDS.map(b=>[b.label, rows.filter(r=>r.market_price>=b.min && r.market_price<b.max).length]);
-  } else {
-    const key = state.dim === 'rarity' ? 'rarity' : 'printing';
-    const g = {};
-    rows.forEach(r=>{ const k=r[key]||'—'; g[k]=(g[k]||0)+1; });
-    entries = Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,10);
-  }
-  barChart(document.getElementById('chart-bands'), entries);
+function renderPlanSummary(plans){
+  const el = document.getElementById('plan-sum');
+  if (!state.budget){ el.innerHTML = 'Enter a budget to size positions down the ranking.'; return; }
+  let n=0, spend=0;
+  for (const p of plans.values()) if (p.affordable){ n++; spend += p.cost; }
+  el.innerHTML = n
+    ? `<b>${n}</b> ${n===1?'card':'cards'} · <b>$${spend.toFixed(2)}</b> of $${state.budget.toFixed(2)} placed · $${(state.budget-spend).toFixed(2)} left`
+    : `Nothing here fits — one copy of everything costs more than the ${((DATA.plan?.max_position_pct??0.25)*100).toFixed(0)}% per-position cap.`;
 }
 
 function apply(){
   let rows = filtered();
   const key = SORTERS[state.sort] || SORTERS.score;
-  rows.sort((a,b)=>{ const av=key(a), bv=key(b); return av===bv ? 0 : (av>bv?1:-1)*state.dir; });
+  rows.sort((a,b)=>{ const av=key(a), bv=key(b); return av===bv?0:(av>bv?1:-1)*state.dir; });
 
-  drawCharts(rows);
-
-  // Make it obvious which window everything is being judged on.
-  const wc = WINSORT[state.win];
-  document.querySelectorAll('thead th[data-sort]').forEach(th=>
-    th.classList.toggle('wincol', th.dataset.sort === wc));
-  document.getElementById('win-label').textContent = state.win;
-
-  // One allocation, in buy order: the snipe board gets first claim on the budget
-  // (it is the buy list), then whatever else is in view. A card therefore shows
-  // the same suggested position wherever it appears.
-  let plans = new Map();
-  if (state.budget){
-    const seen = new Set();
-    const order = [];
-    for (const r of (DATA.board || [])){
-      const k = r.card_id+'|'+r.printing;
-      if (!seen.has(k)){ seen.add(k); order.push(r); }
-    }
-    for (const r of rows){
-      const k = r.card_id+'|'+r.printing;
-      if (!seen.has(k)){ seen.add(k); order.push(r); }
-    }
-    plans = allocate(order, state.budget);
-  }
-  if (state.budget && state.inBudgetOnly){
+  const plans = state.budget ? allocate(rows, state.budget) : new Map();
+  if (state.budget && state.inBudgetOnly)
     rows = rows.filter(r => (plans.get(r.card_id+'|'+r.printing)||{}).affordable);
-  }
-  renderPlanSummary(rows, plans);
-  updateBoardPlans(plans);
+  renderPlanSummary(plans);
 
   const shown = rows.slice(0, state.limit);
   document.getElementById('tbody').innerHTML = shown.length
     ? shown.map((r,i)=>rowHTML(r, i, plans.get(r.card_id+'|'+r.printing))).join('')
-    : '<tr><td colspan="14" class="empty">Nothing matches those filters.</td></tr>';
-
+    : '<tr><td colspan="11" class="empty">Nothing matches those filters.</td></tr>';
   document.getElementById('count').textContent =
-    `${shown.length ? '1–'+shown.length : '0'} of ${rows.length} matching · ${DATA.rows.length} tracked`;
+    `${shown.length?'1–'+shown.length:'0'} of ${rows.length} candidates`;
 
   const more = document.getElementById('more');
-  if (rows.length > shown.length){
-    more.style.display = 'flex';
-    document.getElementById('more-n').textContent = Math.min(50, rows.length - shown.length);
-    document.getElementById('more-all').textContent = `Show all ${rows.length}`;
-  } else { more.style.display = 'none'; }
+  if (rows.length > shown.length){ more.style.display='flex';
+    document.getElementById('more-all').textContent = `Show all ${rows.length}`; }
+  else more.style.display='none';
 
-  document.querySelectorAll('thead th[data-sort]').forEach(th=>{
+  document.querySelectorAll('thead th[data-sort]').forEach(th=>
     th.setAttribute('aria-sort', th.dataset.sort===state.sort
-      ? (state.dir===-1?'descending':'ascending') : 'none');
-  });
+      ? (state.dir===-1?'descending':'ascending') : 'none'));
   window.__view = rows;
 }
 
-function renderPlanSummary(rows, plans){
-  const el = document.getElementById('plan-sum');
-  if (!state.budget){
-    el.innerHTML = 'Enter a budget to size positions — the snipe board is filled first.';
-    return;
-  }
-  let n = 0, spend = 0;
-  for (const p of plans.values()){
-    if (p && p.affordable){ n++; spend += p.cost; }
-  }
-  const left = state.budget - spend;
-  el.innerHTML = n
-    ? `<b>${n}</b> ${n===1?'card':'cards'} · <b>$${spend.toFixed(2)}</b> of $${state.budget.toFixed(2)} allocated · $${left.toFixed(2)} left`
-    : `Nothing in view fits — one copy of everything here costs more than the ${((DATA.plan?.max_position_pct??0.25)*100).toFixed(0)}% per-position cap.`;
-}
-
-function updateBoardPlans(plans){
-  document.querySelectorAll('.plan-cell[data-plankey]').forEach(td=>{
-    const p = plans.get(td.dataset.plankey);
-    if (!state.budget){ td.innerHTML = '<span class="flat">—</span>'; return; }
-    td.innerHTML = (p && p.affordable)
-      ? `<span class="pill">${p.qty} · $${p.cost.toFixed(0)}</span>`
-      : '<span class="pill none">—</span>';
-  });
-}
-
 function reset(){
-  Object.assign(state, {q:'', sigs:new Set(), bands:new Set(), set:'', rarity:'', type:'',
-                        printing:'', min:null, max:null, limit:50, maxCopies:null, gapDir:'',
-                        win:'7d', minMove:null, moveDir:'', minScore:null, floorOnly:false,
-                        inBudgetOnly:false, sort:'score', dir:-1});
-  ['maxcopies','minmove','minscore'].forEach(id=>{
-    const el = document.getElementById(id); if (el) el.value = '';
-  });
-  const fo = document.getElementById('flooronly'); if (fo) fo.checked = false;
-  const ib = document.getElementById('inbudget'); if (ib) ib.checked = false;
+  Object.assign(state, {q:'', set:'', rarity:'', minPrice:null, maxPrice:null, minScore:null,
+                        minSales:null, sort:'score', dir:-1, limit:40, inBudgetOnly:false});
+  document.getElementById('q').value='';
+  ['setfilter','rarityfilter'].forEach(id=>document.getElementById(id).value='');
+  ['minprice','maxprice','minscore','minsales'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
+  const ib=document.getElementById('inbudget'); if(ib) ib.checked=false;
   state.open.clear();
-  document.querySelectorAll('.winb').forEach(b=>
-    b.setAttribute('aria-pressed', b.dataset.win === '7d'));
-  document.getElementById('q').value = '';
-  ['setfilter','rarityfilter','typefilter','printfilter'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('minp').value = '';
-  document.getElementById('maxp').value = '';
-  document.querySelectorAll('.chip').forEach(c=>c.setAttribute('aria-pressed','false'));
   apply();
 }
 
 function exportCSV(){
-  const cols = ['score','snipe_score','snipe_mode','name','set_name','number','rarity','printing',
-                'product_type','market_price','floor_low','floor_ship','copies','gap_pct',
-                'change_24h','change_7d','change_30d','total_listings','signals','tcgplayer_url'];
-  const esc2 = v => {
-    const s = Array.isArray(v) ? v.join('|') : (v==null?'':String(v));
-    return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
-  };
-  const body = [cols.join(',')].concat((window.__view||[]).map(r=>cols.map(c=>esc2(r[c])).join(','))).join('\n');
+  const cols = ['invest_score','name','set_name','number','rarity','printing','market_price',
+                'change_30d','change_90d','consistency_pct','volatility_pct','drawdown_pct',
+                'avg_daily_sales','days_traded_pct','floor_low','shelf_med','copies','tcgplayer_url'];
+  const e2 = v => { const s = v==null?'':String(v); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  const body = [cols.join(',')].concat((window.__view||[]).map(r=>cols.map(c=>e2(r[c])).join(','))).join('\n');
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([body], {type:'text/csv'}));
-  a.download = `gundam-radar-${DATA.obs_date}.csv`;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  a.href = URL.createObjectURL(new Blob([body],{type:'text/csv'}));
+  a.download = `gundam-hold-screen-${DATA.obs_date}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
 }
 
-document.getElementById('q').addEventListener('input', e=>{state.q=e.target.value; state.limit=50; apply();});
-[['setfilter','set'],['rarityfilter','rarity'],['typefilter','type'],['printfilter','printing']]
-  .forEach(([id,k])=>document.getElementById(id)
-    .addEventListener('change', e=>{state[k]=e.target.value; state.limit=50; apply();}));
-['minp','maxp'].forEach((id,i)=>document.getElementById(id).addEventListener('input', e=>{
-  const v = e.target.value === '' ? null : Number(e.target.value);
-  state[i===0?'min':'max'] = (v==null || Number.isNaN(v)) ? null : v;
-  state.limit=50; apply();
-}));
-document.querySelectorAll('.chip[data-sig]').forEach(c=>c.addEventListener('click', ()=>{
-  const s=c.dataset.sig;
-  state.sigs.has(s) ? state.sigs.delete(s) : state.sigs.add(s);
-  c.setAttribute('aria-pressed', state.sigs.has(s)); state.limit=50; apply();
-}));
-document.querySelectorAll('.chip[data-band]').forEach(c=>c.addEventListener('click', ()=>{
-  const b=c.dataset.band;
-  state.bands.has(b) ? state.bands.delete(b) : state.bands.add(b);
-  c.setAttribute('aria-pressed', state.bands.has(b)); state.limit=50; apply();
-}));
-document.querySelectorAll('thead th[data-sort]').forEach(th=>th.addEventListener('click', ()=>{
-  const k=th.dataset.sort;
-  if (state.sort===k) state.dir*=-1; else {state.sort=k; state.dir = k==='name' ? 1 : -1;}
-  apply();
-}));
-const budgetEl = document.getElementById('budget');
-budgetEl.addEventListener('input', e=>{
-  const v = e.target.value === '' ? null : Number(e.target.value);
-  state.budget = (v==null || Number.isNaN(v) || v <= 0) ? null : v;
-  state.limit = 50; apply();
+// tooltips
+const tip = document.getElementById('tip');
+let tipAnchor = null;
+function showTip(el){
+  const t = el.getAttribute('data-tip'); if (!t) return;
+  tip.innerHTML = t; tip.classList.add('on');
+  const r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = Math.max(8, Math.min(r.left + r.width/2 - w/2, window.innerWidth - w - 8));
+  let y = r.top - h - 8; if (y < 8) y = r.bottom + 8;
+  tip.style.left = x+'px'; tip.style.top = y+'px';
+}
+const hideTip = () => tip.classList.remove('on');
+document.addEventListener('mouseover', e=>{
+  const el = e.target.closest('[data-tip]');
+  if (el === tipAnchor) return;
+  tipAnchor = el; el ? showTip(el) : hideTip();
+});
+document.addEventListener('mouseout', e=>{
+  const from = e.target.closest('[data-tip]'); if (!from) return;
+  const to = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('[data-tip]') : null;
+  if (to !== from){ tipAnchor = to; to ? showTip(to) : hideTip(); }
+});
+window.addEventListener('scroll', ()=>{ if (tipAnchor) showTip(tipAnchor); }, {passive:true});
+
+// listeners
+document.getElementById('q').addEventListener('input', e=>{state.q=e.target.value; state.limit=40; apply();});
+[['setfilter','set'],['rarityfilter','rarity']].forEach(([id,k])=>
+  document.getElementById(id).addEventListener('change', e=>{state[k]=e.target.value; state.limit=40; apply();}));
+[['minprice','minPrice'],['maxprice','maxPrice'],['minscore','minScore'],['minsales','minSales']]
+  .forEach(([id,k])=>{
+    const el = document.getElementById(id); if (!el) return;
+    el.addEventListener('input', e=>{
+      const v = e.target.value===''?null:Number(e.target.value);
+      state[k] = (v==null||Number.isNaN(v))?null:v; state.limit=40; apply();
+    });
+  });
+document.getElementById('budget').addEventListener('input', e=>{
+  const v = e.target.value===''?null:Number(e.target.value);
+  state.budget = (v==null||Number.isNaN(v)||v<=0)?null:v; state.limit=40; apply();
 });
 const ib = document.getElementById('inbudget');
-if (ib) ib.addEventListener('change', e=>{state.inBudgetOnly=e.target.checked; state.limit=50; apply();});
-
+if (ib) ib.addEventListener('change', e=>{state.inBudgetOnly=e.target.checked; state.limit=40; apply();});
 document.getElementById('tbody').addEventListener('click', e=>{
-  if (e.target.closest('a')) return;          // let card links through
-  const tr = e.target.closest('tr.row');
-  if (!tr) return;
-  const key = tr.dataset.key;
-  state.open.has(key) ? state.open.delete(key) : state.open.add(key);
+  if (e.target.closest('a')) return;
+  const tr = e.target.closest('tr.row'); if (!tr) return;
+  const k = tr.dataset.key;
+  state.open.has(k) ? state.open.delete(k) : state.open.add(k);
   apply();
 });
-
-document.querySelectorAll('.winb').forEach(b=>b.addEventListener('click', ()=>{
-  state.win = b.dataset.win;
-  document.querySelectorAll('.winb').forEach(x=>x.setAttribute('aria-pressed', x===b));
-  // Selecting a window is also a statement about what you want ranked.
-  state.sort = WINSORT[state.win]; state.dir = -1; state.limit = 50;
+document.querySelectorAll('thead th[data-sort]').forEach(th=>th.addEventListener('click', ()=>{
+  const k = th.dataset.sort;
+  if (state.sort===k) state.dir*=-1; else {state.sort=k; state.dir = k==='name'?1:-1;}
   apply();
 }));
-document.querySelectorAll('.chip[data-move]').forEach(c=>c.addEventListener('click', ()=>{
-  const m = c.dataset.move;
-  state.moveDir = state.moveDir === m ? '' : m;
-  document.querySelectorAll('.chip[data-move]').forEach(x=>
-    x.setAttribute('aria-pressed', x.dataset.move === state.moveDir));
-  state.limit=50; apply();
-}));
-[['minmove','minMove'],['minscore','minScore']].forEach(([id,key])=>{
-  const el = document.getElementById(id);
-  if (el) el.addEventListener('input', e=>{
-    const v = e.target.value === '' ? null : Number(e.target.value);
-    state[key] = (v==null || Number.isNaN(v)) ? null : v; state.limit=50; apply();
-  });
-});
-const fo = document.getElementById('flooronly');
-if (fo) fo.addEventListener('change', e=>{state.floorOnly=e.target.checked; state.limit=50; apply();});
-const mc = document.getElementById('maxcopies');
-if (mc) mc.addEventListener('input', e=>{
-  const v = e.target.value === '' ? null : Number(e.target.value);
-  state.maxCopies = (v==null || Number.isNaN(v)) ? null : v; state.limit=50; apply();
-});
-document.querySelectorAll('.chip[data-gap]').forEach(c=>c.addEventListener('click', ()=>{
-  const g = c.dataset.gap;
-  state.gapDir = state.gapDir === g ? '' : g;
-  document.querySelectorAll('.chip[data-gap]').forEach(x=>
-    x.setAttribute('aria-pressed', x.dataset.gap === state.gapDir));
-  state.limit=50; apply();
-}));
-document.querySelectorAll('.segb').forEach(b=>b.addEventListener('click', ()=>{
-  state.dim = b.dataset.dim;
-  document.querySelectorAll('.segb').forEach(x=>x.setAttribute('aria-pressed', x===b));
-  apply();
-}));
-document.getElementById('more-btn').addEventListener('click', ()=>{state.limit+=50; apply();});
 document.getElementById('more-all').addEventListener('click', ()=>{state.limit=1e9; apply();});
 document.getElementById('reset').addEventListener('click', reset);
 document.getElementById('csv').addEventListener('click', exportCSV);
-
 const themeBtn = document.getElementById('theme');
-const osDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-if (!document.documentElement.getAttribute('data-theme'))
-  themeBtn.textContent = osDark ? 'Light mode' : 'Dark mode';
+if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  themeBtn.textContent = 'Light mode';
 themeBtn.addEventListener('click', ()=>{
   const next = document.documentElement.getAttribute('data-theme')==='dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
@@ -837,132 +519,67 @@ themeBtn.addEventListener('click', ()=>{
 apply();
 """
 
-
 GLOSSARY = """
 <details class="panel gloss">
-  <summary>How to read this</summary>
+  <summary>How the screen works<span class="sc">what each number means, and what it can't tell you</span></summary>
   <div class="gbody">
     <div>
-      <h4>The two price sources</h4>
+      <h4>The five components</h4>
       <dl>
-        <dt>Market</dt><dd>TCGplayer's market price, from a <strong>daily batch</strong> feed.
-          Checked live on 2026-08-09 it was stamped two days earlier. Good for spotting what's
-          moving; not the price anything is currently listed at.</dd>
-        <dt>Floor / Shelf / Copies</dt><dd>The cheapest listing, the median listing and the number
-          of Near&nbsp;Mint copies, all fetched <strong>on demand</strong> by
-          <code>radar snipe</code> in one call. Floor includes shipping and matches the
-          &ldquo;As low as&rdquo; figure on the TCGplayer page.</dd>
-        <dt>Why we compare Floor to Shelf, not to Market</dt><dd>Floor and Shelf come from the same
-          live call, so the comparison is real. Anything measured against Market is measuring the
-          two feeds being out of step as much as anything about the card.</dd>
+        <dt>Value</dt><dd>Log-scaled price: $10 scores 0, $200 scores 100. A 50% move on a $3
+          card isn't an investment outcome.</dd>
+        <dt>Liquidity</dt><dd>Average daily sales and the share of days with any sale, from 90
+          days of history. This is the component that decides whether you can get out.</dd>
+        <dt>Trend</dt><dd>Share of weeks closing above the previous week, plus the 90-day change.
+          Weekly closes, so one bad day doesn't read as a reversal.</dd>
+        <dt>Stability</dt><dd>Daily volatility and distance below the 90-day high. A card that
+          triples then halves is not a hold.</dd>
+        <dt>Scarcity</dt><dd>Rarity tier and copies listed. The +/++ parallels are printed at a
+          fraction of the base rate.</dd>
       </dl>
     </div>
     <div>
-      <h4>The three detectors</h4>
+      <h4>Where the thresholds came from</h4>
       <dl>
-        <dt>sustained</dt><dd>Up &ge;8% over 7d <em>and</em> &ge;15% over 30d. A trend, not a blip.
-          Slow but honest.</dd>
-        <dt>spike</dt><dd>Up &ge;12% in 24h with 7d not already negative. Catches news early,
-          costs you false positives.</dd>
-        <dt>breakout</dt><dd>Price cleared its own highest level from 90&rarr;7 days ago by &ge;3%.
-          The recent week is excluded deliberately &mdash; otherwise every day of a climb beats
-          yesterday and the signal fires constantly.</dd>
+        <dt>Measured, not chosen</dt><dd>Across 212 Gundam singles at $10+ that were up over 30
+          days, each with 90 days of daily history.</dd>
+        <dt>Weeks closing up</dt><dd>Q1 50% &middot; median 67% &middot; Q3 92%</dd>
+        <dt>Daily volatility</dt><dd>Q1 1.1% &middot; median 1.9% &middot; Q3 3.1%</dd>
+        <dt>Average daily sales</dt><dd>Q1 0.6 &middot; median 1.3 &middot; Q3 1.8</dd>
+        <dt>Days with a sale</dt><dd>Q1 29% &middot; median 47% &middot; Q3 57%</dd>
+        <dt>So</dt><dd>A high component score means "top quarter of this actual market", not
+          "above a number that sounded good".</dd>
       </dl>
     </div>
     <div>
-      <h4>The two snipe setups</h4>
+      <h4>What gets a card thrown out</h4>
       <dl>
-        <dt>undercut</dt><dd>The cheapest copy sits at least 40% below the <em>median</em> copy on
-          the same shelf, right now. One listing is out of line with its neighbours. Median
-          undercut across the game is about 20% and a quarter of cards clear 25%, so 40% is
-          well out in the tail.</dd>
-        <dt>squeeze</dt><dd>The whole shelf — cheapest copy included — sits above the recorded
-          batch price on thin supply. The cheap copies are gone and the batch hasn't printed the
-          move yet.</dd>
-        <dt>Neither is a forecast</dt><dd>An undercut says a listing is mispriced relative to its
-          neighbours. A squeeze says the recorded price is behind the shelf. Neither says the card
-          will be worth more tomorrow, and neither knows why anything is moving.</dd>
-      </dl>
-    </div>
-    <div>
-      <h4>The two scores</h4>
-      <dl>
-        <dt>Score</dt><dd>0&ndash;100 attention rank: 45% sustained + 25% spike + 30% breakout,
-          plus small bonuses for higher price and recorded sales. Ranks <em>attention</em>, not
-          conviction. Rows with no detector firing are halved so they sink.</dd>
-        <dt>Snipe</dt><dd>0&ndash;100 buy rank: 55% gap + 25% scarcity + 20% momentum.</dd>
-        <dt>Both are tunable</dt><dd>Every threshold and weight lives in <code>config.yaml</code>
-          under <code>signals:</code> and <code>snipe:</code>.</dd>
-      </dl>
-    </div>
-    <div>
-      <h4>Using the filters</h4>
-      <dl>
-        <dt>Window</dt><dd>Picks which of 24h / 7d / 30d the movement filter and the ranking use.
-          The matching column is highlighted so you can see what's driving the order.</dd>
-        <dt>Min move</dt><dd>Absolute %, so it catches falls as well as rises. Pair it with
-          Risers or Fallers to pick a direction.</dd>
-        <dt>Supply</dt><dd>Max copies plus floor-under / floor-over-market. "Floor over market"
-          with max copies of 10 is the squeeze screen.</dd>
-        <dt>Everything composes</dt><dd>Filters stack, the charts redraw from the same set, and
-          Export CSV writes exactly what's on screen.</dd>
+        <dt>No sales in 90 days</dt><dd>No exit. The most expensive card in the pool &mdash;
+          $4,798 &mdash; has not sold once.</dd>
+        <dt>Down over 90 days</dt><dd>Not on the rise, whatever the 24-hour number says.</dd>
+        <dt>Too erratic</dt><dd>Daily volatility above 8%. One rejected card was up 338% in 30
+          days; that is a different game from holding.</dd>
+        <dt>Too new</dt><dd>Under 45 days of history is not a trend, it's a release.</dd>
+        <dt>All of them are listed</dt><dd>Open the rejected panel &mdash; nothing is silently
+          dropped.</dd>
       </dl>
     </div>
     <div>
       <h4>What this can't tell you</h4>
       <dl>
-        <dt>Freshness</dt><dd>Market prices lag by up to two days. Floors are live at the moment
-          you ran <code>radar snipe</code> and are cached after the first call, so re-running
-          inside the cache window returns the same numbers.</dd>
-        <dt>Why</dt><dd>Nothing here knows about bans, reprints, or tournament results. A card can
-          be up 400% because of an announcement you haven't seen yet &mdash; or because one
-          person bought the shelf.</dd>
-        <dt>Depth</dt><dd>Copies counts Near&nbsp;Mint only. Played copies are separate supply and
-          a separate market, and the count can disagree with what the TCGplayer page shows if the
-          page is filtered differently.</dd>
-        <dt>Direction</dt><dd>Nothing on this page predicts a price. Every number here describes
-          the shelf as it is right now, or as it was up to two days ago.</dd>
+        <dt>Why</dt><dd>Nothing here knows about bans, reprints, rotation or tournament results.
+          Those are what actually end a run.</dd>
+        <dt>The future</dt><dd>Every number describes what a card has already done. None of it
+          is a forecast, and a steady 90-day climb is not a promise of a 91st day.</dd>
+        <dt>Freshness</dt><dd>Market price and history come from a daily batch that runs up to
+          two days behind. The entry price is live as of your last <code>radar invest</code>.</dd>
+        <dt>Condition depth</dt><dd>Entry prices and copy counts are Near&nbsp;Mint only. Played
+          copies are a separate market.</dd>
       </dl>
     </div>
   </div>
 </details>
 """
-
-
-def _row_payload(r: dict) -> dict:
-    return {
-        "card_id": r.get("card_id"),
-        "name": r.get("name"),
-        "set_name": r.get("set_name"),
-        "number": r.get("number"),
-        "rarity": r.get("rarity") or "—",
-        "printing": r.get("printing") or "Normal",
-        "product_type": r.get("product_type") or "Cards",
-        "image_url": r.get("image_url"),
-        "tcgplayer_id": r.get("tcgplayer_id"),
-        "tcgplayer_url": r.get("tcgplayer_url"),
-        "market_price": r.get("market_price"),
-        "change_24h": r.get("change_24h"),
-        "change_7d": r.get("change_7d"),
-        "change_30d": r.get("change_30d"),
-        "total_listings": r.get("total_listings"),
-        "sales_volume": r.get("sales_volume"),
-        "floor_low": r.get("floor_low"),
-        "shelf_med": r.get("shelf_med"),
-        "undercut_pct": r.get("undercut_pct"),
-        "copies": r.get("copies"),
-        "gap_pct": r.get("gap_pct"),
-        "snipe_score": r.get("snipe_score"),
-        "snipe_mode": r.get("snipe_mode"),
-        "floor_multiple": r.get("floor_multiple"),
-        "components": r.get("components"),
-        "trailing_high": r.get("trailing_high"),
-        "history_points": r.get("history_points"),
-        "score": r.get("score", 0.0),
-        "signals": r.get("signals", []),
-        "why": explain(r) if r.get("signals") else "",
-        "series": [[d, round(v, 2)] for d, v in (r.get("series") or [])],
-    }
 
 
 def _esc(s: Any) -> str:
@@ -980,55 +597,116 @@ def _options(values: Sequence[str], label: str) -> str:
     return f'<option value="">{_esc(label)}</option>{opts}'
 
 
+def _row_payload(r: dict) -> dict:
+    return {
+        "card_id": r.get("card_id"),
+        "name": r.get("name"),
+        "set_name": r.get("set_name"),
+        "number": r.get("number"),
+        "rarity": r.get("rarity") or "—",
+        "printing": r.get("printing") or "Normal",
+        "image_url": r.get("image_url"),
+        "tcgplayer_id": r.get("tcgplayer_id"),
+        "tcgplayer_url": r.get("tcgplayer_url"),
+        "market_price": r.get("market_price"),
+        "change_30d": r.get("change_30d"),
+        "change_90d": r.get("change_90d"),
+        "consistency_pct": r.get("consistency_pct"),
+        "volatility_pct": r.get("volatility_pct"),
+        "drawdown_pct": r.get("drawdown_pct"),
+        "avg_daily_sales": r.get("avg_daily_sales"),
+        "days_traded_pct": r.get("days_traded_pct"),
+        "floor_low": r.get("floor_low"),
+        "shelf_med": r.get("shelf_med"),
+        "copies": r.get("copies"),
+        "entry_vs_shelf_pct": r.get("entry_vs_shelf_pct"),
+        "invest_score": r.get("invest_score", 0.0),
+        "components": r.get("components"),
+        "thesis": thesis(r),
+        "watch": watch_for(r),
+        "series": [[d, round(v, 2)] for d, v in (r.get("series") or [])],
+    }
+
+
+def _rejected_table(rejected: Sequence[dict]) -> str:
+    if not rejected:
+        return ""
+    rows = "".join(
+        f"""<tr>
+      <td><strong>{_esc(r.get('name'))}</strong>
+        <span class="rar">{_esc(r.get('rarity') or '—')}</span><br>
+        <span class="flat">{_esc(r.get('set_name'))}</span></td>
+      <td class="num">{'—' if r.get('market_price') is None else f"${r['market_price']:,.2f}"}</td>
+      <td class="num">{'—' if r.get('change_30d') is None else f"{r['change_30d']:+.0f}%"}</td>
+      <td class="num">{'—' if r.get('change_90d') is None else f"{r['change_90d']:+.0f}%"}</td>
+      <td class="num">{'—' if r.get('avg_daily_sales') is None else f"{r['avg_daily_sales']:.1f}"}</td>
+      <td class="num">{'—' if r.get('volatility_pct') is None else f"{r['volatility_pct']:.1f}%"}</td>
+      <td>{_esc(r.get('disqualified'))}</td>
+    </tr>"""
+        for r in rejected
+    )
+    return f"""
+<details class="panel rej">
+  <summary>Screened out<span class="sc">{len(rejected)} cards, and exactly why</span></summary>
+  <div class="rejbody tablewrap"><table><thead><tr>
+    <th>Card</th><th class="num">Price</th><th class="num">30d</th><th class="num">90d</th>
+    <th class="num">Sales/day</th><th class="num">Volatility</th><th>Reason</th>
+  </tr></thead><tbody>{rows}</tbody></table></div>
+</details>"""
+
+
+TIPS = {
+    "price": "Market price from the daily batch feed &mdash; up to two days behind. Used for the "
+             "Value component and as a reference, not as the price you pay.",
+    "c30": "Change over 30 days. Context only; the screen ranks on the 90-day picture.",
+    "c90": "Change over 90 days. One of the two inputs to the Trend component.",
+    "trend90": "90 days of daily market price. This is the shape you are buying into.",
+    "cons": "Share of the last 13 weeks that closed above the week before. Median across the "
+            "market is 67%; the top quarter is above 92%.",
+    "sales": "Average copies sold per day over 90 days. Below 1.0 is shown in orange &mdash; at "
+             "that rate, exiting a stack takes weeks. Median across the market is 1.3.",
+    "entry": "Cheapest Near Mint listing right now, shipping included &mdash; this is what you "
+             "would actually pay. Matches the &quot;As low as&quot; figure on TCGplayer.",
+    "score": "Weighted blend of value, liquidity, trend, stability and scarcity. Click any row "
+             "for the breakdown. It ranks how well a card fits a buy-and-hold thesis; it is not "
+             "a prediction.",
+    "buy": "Copies and cost at your budget, sized down the ranking with a per-position cap.",
+    "card": "Click the name for the TCGplayer page. Click anywhere else on the row to open the "
+            "full case.",
+}
+
+
 def render(
     ranked: Sequence[dict],
     *,
     obs_date: str,
-    stats: dict[str, Any],
-    top_n: int = 400,
-    fallers: Sequence[dict] = (),
-    watchlist: Sequence[dict] = (),
+    stats: dict[str, Any] | None = None,
+    top_n: int = 200,
     market: dict[str, Any] | None = None,
-    scope_note: str = "",
-    snipe_board: Sequence[dict] = (),
-    thin_supply: int = 12,
     plan_cfg: dict[str, Any] | None = None,
+    scope_note: str = "",
 ) -> str:
-    """`top_n` caps how many rows are embedded; the page itself pages through them."""
+    stats = stats or {}
     market = market or {}
-    scored = [r for r in ranked if not r.get("filtered")]
-    flagged = [r for r in scored if r.get("signals")]
+    candidates = [r for r in ranked if not r.get("disqualified")]
+    rejected = [r for r in ranked if r.get("disqualified")]
 
-    # Embed flagged first, then the rest of the scored rows up to the cap, so the
-    # table can be browsed past the calls without a second file.
-    ordered = flagged + [r for r in scored if not r.get("signals")]
-    rows = [_row_payload(r) for r in ordered[:top_n]]
-
-    n_sus = sum(1 for r in flagged if "sustained" in r["signals"])
-    n_spk = sum(1 for r in flagged if "spike" in r["signals"])
-    n_brk = sum(1 for r in flagged if "breakout" in r["signals"])
-    top = flagged[0] if flagged else None
-
+    rows = [_row_payload(r) for r in candidates[:top_n]]
     sets = sorted({r["set_name"] for r in rows if r.get("set_name")})
     rarities = sorted({r["rarity"] for r in rows if r.get("rarity")})
-    printings = sorted({r["printing"] for r in rows if r.get("printing")})
-    types = sorted({r["product_type"] for r in rows if r.get("product_type")})
 
-    breadth_up = market.get("up_7d")
-    breadth_total = market.get("priced")
-    breadth_pct = (
-        round(100 * breadth_up / breadth_total) if breadth_up and breadth_total else None
-    )
+    scores = [r["invest_score"] for r in rows]
+    median_score = sorted(scores)[len(scores) // 2] if scores else 0
+    top = rows[0] if rows else None
+    liquid = sum(1 for r in rows if (r.get("avg_daily_sales") or 0) >= 1.0)
 
     payload = (
         json.dumps(
             {
                 "rows": rows,
-                "board": [_row_payload(r) for r in snipe_board],
                 "obs_date": obs_date,
-                "thin": thin_supply,
-                "plan": plan_cfg
-                or {"max_position_pct": 0.25, "squeeze_haircut": 0.5, "fee_pct": 0.0},
+                "checklist": CHECKLIST,
+                "plan": plan_cfg or {"max_position_pct": 0.25},
             },
             separators=(",", ":"),
         )
@@ -1037,44 +715,32 @@ def render(
         .replace(">", "\\u003e")
     )
 
-    def static_table(title: str, hint: str, data: Sequence[dict]) -> str:
-        if not data:
-            return ""
-        body = "".join(_static_row(r, i) for i, r in enumerate(data))
-        return f"""
-  <h2>{_esc(title)}<span class="hint">{_esc(hint)}</span></h2>
-  <div class="panel tablewrap"><table><thead><tr>
-    <th class="rank">#</th><th>Card</th><th class="num">Market</th>
-    <th class="num">24h</th><th class="num">7d</th><th class="num">30d</th>
-    <th>Trend</th><th class="num">Floor</th><th class="num">Copies</th>
-    <th class="num col-listings">Listings</th><th>Signals</th>
-    <th class="num">Score</th><th class="why">Note</th>
-  </tr></thead><tbody>{body}</tbody></table></div>"""
-
-    breadth_tile = ""
-    if breadth_pct is not None:
-        breadth_tile = f"""
-  <div class="tile"><div class="label" data-tip="Share of every priced product in the game that is up over 7 days. Above 50% means the whole market is rising, not just your picks.">Market breadth<span class="info">?</span></div>
-    <div class="value">{breadth_pct}%</div>
-    <div class="foot">{breadth_up:,} of {breadth_total:,} up over 7d</div>
-    <div class="meter"><i style="width:{breadth_pct}%"></i></div></div>"""
+    breadth = ""
+    if market.get("priced") and market.get("up_7d"):
+        pct = round(100 * market["up_7d"] / market["priced"])
+        breadth = f"""
+  <div class="tile"><div class="label" data-tip="Share of every priced product in the game that is up over 7 days. Context for whether your candidates are rising with the market or against it.">Market breadth<span class="info">?</span></div>
+    <div class="value">{pct}%</div>
+    <div class="foot">{market['up_7d']:,} of {market['priced']:,} up over 7d</div></div>"""
 
     return f"""<!doctype html>
 <html lang="en" class="viz-root">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gundam Price Radar — {_esc(obs_date)}</title>
+<title>Gundam Hold Screen — {_esc(obs_date)}</title>
 <style>{CSS}</style>
 </head>
 <body class="viz-root">
 <div class="wrap">
 <header>
   <div>
-    <h1>Gundam Price Radar</h1>
-    <p class="sub">Market snapshot {_esc(obs_date)} · {len(rows):,} products in view ·
-      {stats.get('snapshot_dates', 0)} day{'' if stats.get('snapshot_dates', 0) == 1 else 's'}
-      of own snapshots · source: tcgapi.dev{(' · ' + _esc(scope_note)) if scope_note else ''}</p>
+    <h1>Gundam Hold Screen</h1>
+    <p class="mission">Cards that already have value, have been climbing for months rather than
+      days, and sell often enough to get out of. Ranked for buying and sitting on &mdash; not for
+      flipping.</p>
+    <p class="stamp">{_esc(obs_date)} · {len(candidates)} candidates from {len(ranked)} screened ·
+      source: tcgapi.dev{(' · ' + _esc(scope_note)) if scope_note else ''}</p>
   </div>
   <div class="hbtns">
     <button class="ghost" id="csv">Export CSV</button>
@@ -1082,313 +748,84 @@ def render(
   </div>
 </header>
 
-<div class="panel budget">
-  <span class="flabel" data-tip="Total you're willing to spend across everything in view. Positions are sized in rank order until it runs out.">Budget<span class="info">?</span></span>
-  <input type="number" id="budget" placeholder="$" min="0" step="25" aria-label="Budget">
+<div class="tiles">
+  <div class="tile"><div class="label" data-tip="Cards that cleared every gate: real price, enough history, recorded sales, up over 90 days, and not too volatile.">Candidates<span class="info">?</span></div>
+    <div class="value">{len(candidates)}</div>
+    <div class="foot">of {len(ranked)} screened</div></div>
+  <div class="tile"><div class="label" data-tip="Half the candidates score above this. Useful as a bar: anything well under it is in the list but not compelling.">Median score<span class="info">?</span></div>
+    <div class="value">{median_score:.0f}</div>
+    <div class="foot">weighted, out of 100</div></div>
+  <div class="tile"><div class="label" data-tip="Candidates selling at least one copy a day. Below that, exiting a stack takes weeks.">Liquid enough<span class="info">?</span></div>
+    <div class="value">{liquid}</div>
+    <div class="foot">1+ sales a day</div></div>
+  <div class="tile"><div class="label" data-tip="Cards excluded and why. Open the Screened out panel to see every one.">Screened out<span class="info">?</span></div>
+    <div class="value">{len(rejected)}</div>
+    <div class="foot">all listed with reasons</div></div>
+  <div class="tile"><div class="label" data-tip="Highest-scoring candidate right now.">Top of the list<span class="info">?</span></div>
+    <div class="value">{top['invest_score']:.0f}</div>
+    <div class="foot">{_esc(top['name']) if top else '—'}</div></div>{breadth}
+</div>
+
+<div class="panel bar">
+  <span class="flabel" data-tip="Total you're willing to put to work. Positions are sized down the ranking, capped per card.">Budget<span class="info">?</span></span>
+  <input type="number" id="budget" placeholder="$" min="0" step="50" aria-label="Budget">
   <label class="chip" style="display:inline-flex;gap:6px;align-items:center"
-         data-tip="Hide rows the budget can't take a position in.">
+         data-tip="Hide candidates the budget can't take a position in.">
     <input type="checkbox" id="inbudget"> Only what fits</label>
   <span class="plan-sum" id="plan-sum"></span>
-  <span class="disc">Sizing is arithmetic on your inputs and the live floor —
-    it has no view on whether a card is worth owning. Click any row for the full read.</span>
+  <span class="disc">Sizing is arithmetic on your budget and the live entry price. Nothing here
+    forecasts a price.</span>
 </div>
 
 {GLOSSARY}
 
-<div class="tiles">
-  <div class="tile"><div class="label" data-tip="Products where at least one detector fired, out of everything that cleared the price and listings floors.">Cards flagged<span class="info">?</span></div>
-    <div class="value">{len(flagged)}</div>
-    <div class="foot">of {len(scored):,} that cleared the filters</div></div>
-  <div class="tile"><div class="label" data-tip="Up at least 8% over 7d <b>and</b> 15% over 30d. A trend, not a blip.">Sustained climb<span class="info">?</span></div>
-    <div class="value">{n_sus}</div><div class="foot">up over 7d and 30d</div></div>
-  <div class="tile"><div class="label" data-tip="Up at least 12% in 24h, with the 7d change not already negative.">24h spike<span class="info">?</span></div>
-    <div class="value">{n_spk}</div><div class="foot">sudden jump today</div></div>
-  <div class="tile"><div class="label" data-tip="Price cleared its own highest level from 90&rarr;7 days ago by at least 3%. The last 7 days are excluded on purpose &mdash; otherwise every day of a climb beats yesterday.">Breakout<span class="info">?</span></div>
-    <div class="value">{n_brk}</div><div class="foot">above its own prior range</div></div>
-  <div class="tile"><div class="label" data-tip="Largest 7-day gain among flagged cards.">Top mover<span class="info">?</span></div>
-    <div class="value">{(f"{top['change_7d']:+.0f}%" if top and top.get('change_7d') is not None else '—')}</div>
-    <div class="foot">{_esc(top['name']) if top else 'nothing flagged today'}</div></div>{breadth_tile}
-</div>
-
-{_snipe_board(snipe_board, thin_supply)}
-
-<div class="panel filters">
-  <div class="frow">
-    <input type="search" id="q" placeholder="Search card, set or number…" aria-label="Search"
-           data-tip="Matches card name, set name, or collector number.">
-    <select id="setfilter" aria-label="Set">{_options(sets, 'All sets')}</select>
-    <select id="rarityfilter" aria-label="Rarity">{_options(rarities, 'All rarities')}</select>
-    <select id="printfilter" aria-label="Printing">{_options(printings, 'All printings')}</select>
-    <select id="typefilter" aria-label="Product type">{_options(types, 'Cards + sealed')}</select>
-    <button class="ghost" id="reset">Reset</button>
-  </div>
-  <div class="frow">
-    <span class="flabel" data-tip="Filter by price. Bands stack (pick more than one); the min/max boxes take any range you type.">Value<span class="info">?</span></span>
-    <button class="chip" data-band="u5" aria-pressed="false">Under $5</button>
-    <button class="chip" data-band="5-20" aria-pressed="false">$5–20</button>
-    <button class="chip" data-band="20-100" aria-pressed="false">$20–100</button>
-    <button class="chip" data-band="o100" aria-pressed="false">$100+</button>
-    <input type="number" id="minp" placeholder="min $" min="0" step="0.5" aria-label="Minimum price">
-    <input type="number" id="maxp" placeholder="max $" min="0" step="0.5" aria-label="Maximum price">
-    <span class="flabel" style="margin-left:12px" data-tip="Copy counts only exist on rows where a live floor has been pulled. Run <code>radar snipe</code> to populate them.">Supply<span class="info">?</span></span>
-    <input type="number" id="maxcopies" placeholder="max copies" min="1" step="1"
-           aria-label="Maximum copies listed" style="width:110px">
-    <button class="chip" data-gap="under" aria-pressed="false"
-            data-tip="Only rows where the cheapest copy is meaningfully below the rest of the shelf.">Undercut only</button>
-    <button class="chip" data-gap="over" aria-pressed="false"
-            data-tip="Only rows where the whole shelf sits above the recorded batch price.">Squeeze only</button>
-    <label class="chip" style="display:inline-flex;gap:6px;align-items:center"
-           data-tip="Only show rows where a live listing floor has been pulled.">
-      <input type="checkbox" id="flooronly"> Live floor only</label>
-  </div>
-  <div class="frow">
-    <span class="flabel" data-tip="Which time window the movement filter, the ranking and the highlighted column all use.">Window<span class="info">?</span></span>
-    <div class="win" role="group" aria-label="Time window">
-      <button class="winb" data-win="24h" aria-pressed="false">24h</button>
-      <button class="winb" data-win="7d" aria-pressed="true">7d</button>
-      <button class="winb" data-win="30d" aria-pressed="false">30d</button>
-    </div>
-    <input type="number" id="minmove" placeholder="min move %" min="0" step="5"
-           aria-label="Minimum move percent" style="width:118px"
-           data-tip="Minimum absolute % move on the selected window. 20 means &quot;moved at least 20% either way&quot;.">
-    <button class="chip" data-move="up" aria-pressed="false"
-            data-tip="Only cards that rose over the selected window.">Risers</button>
-    <button class="chip" data-move="down" aria-pressed="false"
-            data-tip="Only cards that fell over the selected window &mdash; where the dips are.">Fallers</button>
-    <span class="flabel" style="margin-left:12px" data-tip="Hide anything below this Radar Score.">Score<span class="info">?</span></span>
-    <input type="number" id="minscore" placeholder="min" min="0" max="100" step="5"
-           aria-label="Minimum score" style="width:78px">
-    <span class="flabel" style="margin-left:12px" data-tip="Show only cards where these detectors fired. Multiple selections are OR'd together.">Signal<span class="info">?</span></span>
-    <button class="chip" data-sig="sustained" aria-pressed="false">Sustained</button>
-    <button class="chip" data-sig="spike" aria-pressed="false">Spike</button>
-    <button class="chip" data-sig="breakout" aria-pressed="false">Breakout</button>
-    <span class="count" id="count"></span>
-  </div>
-</div>
-
-<div class="charts">
-  <div class="panel chart">
-    <h3>Where the movement is</h3>
-    <p class="cap">Products in view, by set — top 10. Updates with the filters.
-      Window: <strong id="win-label">7d</strong>.</p>
-    <div class="bars" id="chart-sets"></div>
-  </div>
-  <div class="panel chart">
-    <div class="chead">
-      <div><h3>Breakdown</h3>
-      <p class="cap">Where in the market the action sits.</p></div>
-      <div class="seg" role="group" aria-label="Breakdown dimension">
-        <button class="segb" data-dim="band" aria-pressed="true">Price band</button>
-        <button class="segb" data-dim="rarity" aria-pressed="false">Rarity</button>
-        <button class="segb" data-dim="printing" aria-pressed="false">Printing</button>
-      </div>
-    </div>
-    <div class="bars" id="chart-bands"></div>
-  </div>
+<div class="panel bar">
+  <input type="search" id="q" placeholder="Search card, set or number…" aria-label="Search"
+         data-tip="Matches card name, set name or collector number.">
+  <select id="setfilter" aria-label="Set">{_options(sets, 'All sets')}</select>
+  <select id="rarityfilter" aria-label="Rarity">{_options(rarities, 'All rarities')}</select>
+  <span class="flabel" data-tip="Price band you want to buy in.">Price</span>
+  <input type="number" id="minprice" placeholder="min $" min="0" step="10" aria-label="Minimum price">
+  <input type="number" id="maxprice" placeholder="max $" min="0" step="10" aria-label="Maximum price">
+  <span class="flabel" data-tip="Hide anything below this score.">Score</span>
+  <input type="number" id="minscore" placeholder="min" min="0" max="100" step="5" aria-label="Minimum score" style="width:74px">
+  <span class="flabel" data-tip="Minimum average sales per day. Set 1.0 to keep only what you can exit reasonably quickly.">Sales/day</span>
+  <input type="number" id="minsales" placeholder="min" min="0" step="0.5" aria-label="Minimum sales per day" style="width:74px">
+  <button class="ghost" id="reset">Reset</button>
+  <span class="count" id="count"></span>
 </div>
 
 <div class="panel tablewrap"><table><thead><tr>
   <th class="rank">#</th>
-  <th data-sort="name" data-tip="Click the name to open the TCGplayer page. Sub-line is set &middot; number &middot; rarity &middot; printing.">Card</th>
-  <th class="num" data-sort="price" data-tip="TCGplayer <b>market price</b> from the daily batch feed. Measured live on 2026-08-09 it was stamped two days earlier &mdash; treat it as a lagging reference, not the current price.">Market</th>
-  <th class="num" data-sort="c24" data-tip="Change in market price over <b>24 hours</b>, straight from the API. Earliest signal, noisiest.">24h</th>
-  <th class="num" data-sort="c7" data-tip="Change over <b>7 days</b>. The best single read on whether a move is real.">7d</th>
-  <th class="num" data-sort="c30" data-tip="Change over <b>30 days</b>. Context: is this a new move or the tail of an old one?">30d</th>
-  <th data-tip="Price history for this printing &mdash; API history plus every daily snapshot you've taken. Denser the longer you run it.">Trend</th>
-  <th class="num" data-sort="floor" data-tip="<b>Cheapest Near Mint listing right now, shipping included</b> &mdash; this matches the &quot;As low as&quot; figure on the TCGplayer page. Pulled live by <code>radar snipe</code>. Blank means no live look yet.">Floor</th>
-  <th class="num" data-sort="shelf" data-tip="<b>Median</b> Near Mint listing, shipping included &mdash; what the rest of the shelf costs. Same live call as the floor.">Shelf</th>
-  <th class="num" data-sort="copies" data-tip="How many <b>Near Mint copies are listed</b>. Live. Orange means few enough that one buyer can clear the shelf.">Copies</th>
-  <th class="num" data-sort="under" data-tip="How far the <b>cheapest</b> copy sits below the <b>median</b> copy. Both live, same call &mdash; so this is a real comparison, unlike anything measured against the two-day-old batch price. Median across the game is about 20%.">Undercut</th>
-  <th data-tip="Which detectors fired. Hover a badge for what each one means.">Signals</th>
-  <th class="num" data-sort="score" aria-sort="descending" data-tip="0&ndash;100 attention rank: 45% sustained + 25% spike + 30% breakout, plus small bonuses for higher price and recorded sales. Ranks attention, not conviction.">Score</th>
-  <th class="why" data-tip="The one thing the numbers in this row don't already say.">Note</th>
+  <th data-sort="name" data-tip="{TIPS['card']}">Card</th>
+  <th class="num" data-sort="price" data-tip="{TIPS['price']}">Price</th>
+  <th class="num col-hide" data-sort="c30" data-tip="{TIPS['c30']}">30d</th>
+  <th class="num" data-sort="c90" data-tip="{TIPS['c90']}">90d</th>
+  <th data-tip="{TIPS['trend90']}">90-day trend</th>
+  <th class="num" data-sort="cons" data-tip="{TIPS['cons']}">Weeks up</th>
+  <th class="num" data-sort="sales" data-tip="{TIPS['sales']}">Sales/day</th>
+  <th class="num col-hide" data-sort="entry" data-tip="{TIPS['entry']}">Entry</th>
+  <th class="num" data-sort="score" aria-sort="descending" data-tip="{TIPS['score']}">Score</th>
+  <th class="num" data-tip="{TIPS['buy']}">Buy</th>
 </tr></thead><tbody id="tbody"></tbody></table>
 <div class="more" id="more" style="display:none">
-  <button class="ghost" id="more-btn">Show <span id="more-n">50</span> more</button>
   <button class="ghost" id="more-all">Show all</button>
 </div></div>
 
-{static_table("Watchlist", "tracked regardless of score", [_row_payload(r) for r in watchlist])}
-{static_table("Biggest fallers", "context — and where dips show up", [_row_payload(r) for r in fallers])}
+{_rejected_table(rejected)}
 
 <footer>
-  <p><strong>Reading this:</strong> Score is a 0–100 blend of the three detectors, nudged up for
-  higher-priced cards and cards with recorded sales. It ranks attention, not conviction.
-  Trend sparklines mix API history with your own daily snapshots, so they get denser the longer
-  you run it. Export CSV writes exactly what the current filters show.</p>
-  <p>Tune thresholds in <code>config.yaml</code> · regenerate with
-  <code>python -m radar run</code></p>
+  <p>Every number here describes what a card has already done. Nothing on this page is a
+  forecast, and nothing knows <em>why</em> a price is moving &mdash; bans, reprints, rotation and
+  tournament results are the things that end a run, and none of them are visible in price data.</p>
+  <p>Thresholds and weights live in <code>config.yaml</code> under <code>invest:</code> ·
+  regenerate with <code>python -m radar invest</code></p>
 </footer>
 </div>
 <div id="tip" role="tooltip"></div>
 <script type="application/json" id="radar-data">{payload}</script>
 <script>{JS}</script>
 </body></html>"""
-
-
-_MODE_TIP = {
-    "undercut": "The <b>cheapest</b> copy sits well below the <b>median</b> copy on the same "
-                "shelf, right now. One listing is out of line with its neighbours. It does not "
-                "mean the card is going up.",
-    "squeeze": "The whole shelf, cheapest copy included, sits <b>above</b> the recorded batch "
-               "price on thin supply. The cheap copies are gone and the batch hasn't caught up.",
-}
-
-
-def _under_cell(r: dict) -> str:
-    """How far the cheapest copy is below the median copy."""
-    v = r.get("undercut_pct")
-    if v is None:
-        return '<span class="flat">&mdash;</span>'
-    cls = "up" if v >= 40 else ("down" if v < 0 else "flat")
-    return f'<span class="{cls}">{v:+.0f}%</span>'
-
-
-def _gap_cell(r: dict) -> str:
-    """Discount reads as a percentage off; a squeeze reads as a multiple."""
-    gap = r.get("gap_pct")
-    if gap is None:
-        return '<span class="flat">—</span>'
-    if gap > 0:
-        return f'<span class="up">+{gap:.0f}%</span>'
-    mult = r.get("floor_multiple")
-    body = f"{mult:.1f}&times;" if mult else f"{gap:.0f}%"
-    return f'<span class="down">{body}</span>'
-
-
-def _snipe_board(board: Sequence[dict], thin: int) -> str:
-    """The buy list: live listing floor vs the daily batch price, and how many copies."""
-    if not board:
-        return ""
-    rows = []
-    for i, r in enumerate(board):
-        mode = r.get("snipe_mode") or ""
-        copies = r.get("copies")
-        low, shelf = r.get("floor_low"), r.get("shelf_med")
-        url = r.get("tcgplayer_url") or (
-            f"https://www.tcgplayer.com/product/{r['tcgplayer_id']}" if r.get("tcgplayer_id") else None
-        )
-        copies_cell = (
-            "—" if copies is None
-            else (f'<span class="thin">{copies}</span>' if copies <= thin else str(copies))
-        )
-        meta = " · ".join(
-            _esc(x) for x in [r.get("set_name"), r.get("number"),
-                              r.get("printing") if r.get("printing") != "Normal" else None] if x
-        )
-        rows.append(f"""<tr>
-      <td class="rank">{i + 1}</td>
-      <td><div class="who"><div><div class="nm">{_esc(r.get('name'))}</div>
-        <div class="meta">{meta}</div></div></div></td>
-      <td class="num">{'—' if r.get('market_price') is None else f"${r['market_price']:,.2f}"}</td>
-      <td class="num">{'—' if low is None else f"${low:,.2f}"}</td>
-      <td class="num">{'—' if shelf is None else f"${shelf:,.2f}"}</td>
-      <td class="num">{copies_cell}</td>
-      <td class="num">{_under_cell(r)}</td>
-      <td><span class="mode {mode}" data-tip="{_MODE_TIP.get(mode, '')}">{mode}</span></td>
-      <td class="num score">{r.get('snipe_score', 0):.0f}</td>
-      <td class="num plan-cell" data-plankey="{_esc(r.get('card_id'))}|{_esc(r.get('printing') or 'Normal')}"><span class="flat">&mdash;</span></td>
-      <td class="why">{_esc(explain_snipe(r))}</td>
-      <td>{f'<a class="buy" href="{_esc(url)}" target="_blank" rel="noopener">Open &rarr;</a>' if url else ''}</td>
-    </tr>""")
-
-    return f"""
-<div class="panel board">
-  <div class="bhead">
-    <div><h3>Snipe board</h3>
-    <p class="cap">The live Near&nbsp;Mint shelf: cheapest listing, median listing and how
-    many copies. <strong>undercut</strong> = the cheapest copy sits well below its neighbours
-    right now, both figures from the same live call. <strong>squeeze</strong> = the whole shelf
-    sits above the recorded batch price on thin supply. Orange copy counts are {thin} or fewer.
-    Neither setup predicts the price will rise.</p></div>
-  </div>
-  <div class="tablewrap"><table><thead><tr>
-    <th class="rank">#</th><th data-tip="Click the name to open the TCGplayer page. Sub-line is set &middot; number &middot; rarity &middot; printing.">Card</th>
-    <th class="num" data-tip="TCGplayer <b>market price</b> from the daily batch feed. Measured live on 2026-08-09 it was stamped two days earlier &mdash; treat it as a lagging reference, not the current price.">Market</th>
-    <th class="num" data-tip="<b>Cheapest Near Mint listing right now, shipping included</b> &mdash; this matches the &quot;As low as&quot; figure on the TCGplayer page. Pulled live by <code>radar snipe</code>. Blank means no live look yet.">Floor</th>
-    <th class="num" data-tip="<b>Median</b> Near Mint listing, shipping included &mdash; what the rest of the shelf costs. Same live call as the floor.">Shelf</th>
-    <th class="num" data-tip="How many <b>Near Mint copies are actually listed</b>. Live. Orange means few enough that one buyer can clear the shelf.">Copies</th>
-    <th class="num" data-tip="How far the cheapest copy sits below the median copy. Both live, same call.">Undercut</th>
-    <th data-tip="<b>undercut</b>: one listing is out of line with its neighbours. <b>squeeze</b>: the whole shelf is above the recorded batch price on thin supply.">Setup</th>
-    <th class="num" data-tip="0&ndash;100 buy rank: 55% gap + 25% scarcity + 20% momentum. Tunable under <code>snipe:</code> in config.yaml.">Snipe</th>
-    <th class="num" data-tip="Suggested position at your budget: copies and total cost. Set a budget at the top of the page.">Buy</th>
-    <th class="why" data-tip="Plain-English version of the row.">Read</th><th></th>
-  </tr></thead><tbody>{''.join(rows)}</tbody></table></div>
-</div>"""
-
-
-def _spark_svg(series: Sequence[Sequence[Any]]) -> str:
-    """Same sparkline as the JS one, rendered server-side for static tables."""
-    pts = [(d, float(v)) for d, v in (series or []) if v is not None]
-    if len(pts) < 2:
-        return '<span class="flat">—</span>'
-    w, h, p = 88, 26, 3
-    ys = [v for _, v in pts]
-    lo, hi = min(ys), max(ys)
-    span = (hi - lo) or (hi or 1.0)
-    coords = []
-    for i, (_, v) in enumerate(pts):
-        x = p + i * (w - 2 * p) / (len(pts) - 1)
-        y = h - p - ((v - lo) / span) * (h - 2 * p)
-        coords.append(f"{x:.1f},{y:.1f}")
-    lx = w - p
-    ly = h - p - ((ys[-1] - lo) / span) * (h - 2 * p)
-    direction = "rising" if ys[-1] >= ys[0] else "falling"
-    return (
-        f'<svg class="spark" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" '
-        f'aria-label="{len(pts)} points, {direction}, latest ${ys[-1]:.2f}">'
-        f'<polyline points="{" ".join(coords)}" fill="none" stroke="var(--series-1)" '
-        f'stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
-        f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="2.5" fill="var(--series-1)" '
-        f'stroke="var(--surface-1)" stroke-width="2"/></svg>'
-    )
-
-
-def _static_row(r: dict, i: int) -> str:
-    def pct(v: Any) -> str:
-        if v is None:
-            return '<span class="flat">—</span>'
-        cls = "up" if v > 0.05 else ("down" if v < -0.05 else "flat")
-        return f'<span class="{cls}">{v:+.1f}%</span>'
-
-    url = r.get("tcgplayer_url") or (
-        f"https://www.tcgplayer.com/product/{r['tcgplayer_id']}" if r.get("tcgplayer_id") else None
-    )
-    name = (
-        f'<a href="{_esc(url)}" target="_blank" rel="noopener">{_esc(r.get("name"))}</a>'
-        if url
-        else _esc(r.get("name"))
-    )
-    img = (
-        f'<img src="{_esc(r.get("image_url"))}" alt="" loading="lazy" decoding="async">'
-        if r.get("image_url")
-        else '<img alt="">'
-    )
-    badges = "".join(f'<span class="badge {s}">{s}</span>' for s in r.get("signals", []))
-    mp = r.get("market_price")
-    printing = r.get("printing")
-    meta = " · ".join(
-        _esc(x)
-        for x in [r.get("set_name"), r.get("number"), r.get("rarity"),
-                  printing if printing not in (None, "Normal") else None]
-        if x
-    )
-    return f"""<tr>
-  <td class="rank">{i + 1}</td>
-  <td><div class="who">{img}<div><div class="nm">{name}</div>
-    <div class="meta">{meta}</div></div></div></td>
-  <td class="num">{'—' if mp is None else f'${mp:,.2f}'}</td>
-  <td class="num">{pct(r.get('change_24h'))}</td>
-  <td class="num">{pct(r.get('change_7d'))}</td>
-  <td class="num">{pct(r.get('change_30d'))}</td>
-  <td>{_spark_svg(r.get('series'))}</td>
-  <td class="num">{'—' if r.get('floor_low') is None else f"${r['floor_low']:,.2f}"}</td>
-  <td class="num">{'—' if r.get('copies') is None else r['copies']}</td>
-  <td class="num col-listings">{r.get('total_listings') if r.get('total_listings') is not None else '—'}</td>
-  <td><div class="badges">{badges}</div></td>
-  <td class="num"><div class="score">{r.get('score', 0):.0f}</div></td>
-  <td class="why">{_esc(r.get('why'))}</td>
-</tr>"""
 
 
 def write(html: str, path: str | Path) -> Path:

@@ -452,6 +452,20 @@ class Database:
             )
         return out
 
+    def all_series_with_volume(self) -> dict[tuple[str, str], list[tuple[str, float, float]]]:
+        """Every price series with its daily sales volume -- the input to the hold screen."""
+        out: dict[tuple[str, str], list[tuple[str, float, float]]] = {}
+        for row in self.conn.execute(
+            """SELECT card_id, printing, obs_date, market_price, sales_volume
+               FROM price_points
+               WHERE market_price IS NOT NULL
+               ORDER BY card_id, printing, obs_date ASC"""
+        ):
+            out.setdefault((row["card_id"], row["printing"]), []).append(
+                (row["obs_date"], float(row["market_price"]), float(row["sales_volume"] or 0))
+            )
+        return out
+
     def cards_needing_history(self, min_price: float, limit: int) -> list[sqlite3.Row]:
         """Cards above a price floor with the least history -- backfill these first."""
         return self.conn.execute(

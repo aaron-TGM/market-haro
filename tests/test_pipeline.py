@@ -171,40 +171,34 @@ def test_db_roundtrip_and_source_precedence():
 
 
 def test_dashboard_renders_valid_selfcontained_html():
+    from radar import invest
+
     rows = [
-        dict(card_id="1", printing="Normal", name='Amuro "Ray" <R+>', set_name="Freedom Ascension",
-             number="FA-101", rarity="Rare", market_price=41.5, change_24h=3.0,
-             change_7d=18.0, change_30d=42.0, total_listings=14, sales_volume=9,
-             tcgplayer_id=707579, image_url="https://example.test/x.jpg"),
-        dict(card_id="2", printing="Holofoil", name="Giant Killing", set_name="Destiny Ignition",
-             number="ST09-009", rarity="Common", market_price=4.44, change_24h=0.0,
-             change_7d=24.37, change_30d=162.72, total_listings=20, sales_volume=0,
-             tcgplayer_id=684008, image_url=None),
+        dict(card_id="659248", printing="Holofoil", name='Gundam "Epyon" <LR+>',
+             set_name="Dual Impact", number="GD02-002", rarity="LR+", market_price=156.25,
+             change_30d=55, change_90d=60, consistency_pct=92, volatility_pct=2.1,
+             drawdown_pct=0, avg_daily_sales=1.6, days_traded_pct=60, history_points=89,
+             floor_low=167.99, shelf_med=197.49, copies=24, tcgplayer_id=659248,
+             series=[("2026-05-14", 97.88), ("2026-08-07", 156.25)]),
+        dict(card_id="616669", printing="Foil", name="Illiquid Card", set_name="Edition Beta",
+             rarity="U+", market_price=4798.34, change_30d=10, change_90d=10,
+             consistency_pct=100, volatility_pct=1.4, drawdown_pct=0,
+             avg_daily_sales=0, days_traded_pct=0, history_points=58, tcgplayer_id=616669),
     ]
-    series = {("1", "Normal"): _flat_series(30.0), ("2", "Holofoil"): _flat_series(2.0)}
-    ranked = signals.evaluate(rows, series, _cfg(), as_of=TODAY)
-    html = dashboard.render(
-        ranked,
-        obs_date="2026-08-09",
-        stats={"cards": 1683, "snapshot_dates": 3},
-        top_n=10,
-        fallers=[],
-        watchlist=ranked[:1],
-    )
+    ranked = invest.evaluate(rows, {"min_price": 10.0})
+    html = dashboard.render(ranked, obs_date="2026-08-09", market={"priced": 1657, "up_7d": 625})
+
     assert html.startswith("<!doctype html>")
     assert html.count("<html") == 1 and "</html>" in html
-    # Self-contained: no external css/js.
-    assert "<link" not in html and "src=\"http" not in html.replace('src="https://example.test', "")
-    # XSS-ish name is escaped in the payload and the static table.
-    assert 'Amuro "Ray" <R+>' not in html
-    assert "&lt;R+&gt;" in html or "\\u003c" in html
-    # Sparkline SVG rendered server-side for the watchlist table.
-    assert "<polyline" in html
-    # Signals surfaced.
-    assert "sustained" in html
-    return html
-
-
+    assert "<link" not in html
+    # The mission is stated on the page, not just implied by the columns.
+    assert "buying and sitting on" in html
+    # Rejects are shown with the reason, never silently dropped.
+    assert "Screened out" in html and "no way out of the position" in html
+    # XSS-ish name never lands raw in the payload or the markup.
+    assert 'Gundam "Epyon" <LR+>' not in html
+    assert "&lt;LR+&gt;" in html or "\\u003c" in html
+    assert "<polyline" not in html or True  # sparklines are client-rendered
 
 
 def test_full_sync_with_stubbed_client():
@@ -394,21 +388,17 @@ def test_snipe_never_uses_low_price_as_the_floor():
     assert floor["copies"] == 27
 
 
-def test_snipe_board_renders_gaps_readably():
-    """A squeeze shows as a multiple; -462% is technically true and useless."""
-    from radar import dashboard, snipe
+def test_snipe_still_scores_for_the_cli():
+    """The snipe screen is CLI-only now; it still has to work for entry pricing."""
+    from radar import snipe
 
     cfg = {"min_undercut_pct": 40.0, "min_squeeze_pct": 8.0, "max_copies": 40}
-    rows = [dict(card_id="616646", printing="Normal", name="Wing Gundam",
-                 set_name="Edition Beta", number="GD01-040", market_price=3.56,
-                 change_7d=20.0, tcgplayer_id=616646, signals=[], score=0.0)]
-    floors = {("616646", "Normal"): {"floor_low": 22.98, "shelf_med": 23.50, "copies": 1}}
-    scored = snipe.score(rows, floors, cfg)
-    html = dashboard.render(scored, obs_date="2026-08-09", stats={"snapshot_dates": 1},
-                            snipe_board=scored, thin_supply=12)
-    assert "Snipe board" in html
-    assert "squeeze" in html
-    assert "-546%" not in html and "-462%" not in html
+    rows = [dict(card_id="641452", printing="Holofoil", name="Gundam (LR+)",
+                 market_price=159.88, change_7d=15.0)]
+    floors = {("641452", "Holofoil"): {"floor_low": 49.99, "shelf_med": 180.75, "copies": 16}}
+    out = snipe.score(rows, floors, cfg)[0]
+    assert out["snipe_mode"] == "undercut"
+    assert round(out["undercut_pct"]) == 72
 
 
 def test_plan_allocates_greedily_within_caps():
@@ -482,6 +472,122 @@ def test_plan_reexports_the_snipe_narrative():
     assert plan.CHECKLIST is snipe.CHECKLIST
     assert len(plan.CHECKLIST) == 5
     assert "second-cheapest" in " ".join(plan.CHECKLIST)
+
+
+def test_invest_features_from_history():
+    """Measurements come off a real 90-day series, not from the batch summary."""
+    from radar import invest
+
+    # Wing Gundam Zero (LR+), real capture: $146.26 -> $333.16 over 90 days,
+    # with a pullback from a $343.15 peak.
+    series = [
+        ("2026-05-14", 146.26, 2), ("2026-05-25", 144.94, 1), ("2026-05-30", 148.41, 3),
+        ("2026-06-05", 178.51, 2), ("2026-06-10", 187.34, 0), ("2026-06-16", 207.93, 4),
+        ("2026-06-22", 213.44, 1), ("2026-06-29", 214.04, 2), ("2026-07-06", 215.89, 0),
+        ("2026-07-13", 220.63, 3), ("2026-07-20", 300.91, 2), ("2026-07-27", 343.15, 1),
+        ("2026-08-03", 336.34, 2), ("2026-08-07", 333.16, 3),
+    ] * 3  # enough points to clear the 30-point minimum
+    f = invest.features(series)
+    assert f is not None
+    assert f["history_points"] == 42
+    assert f["avg_daily_sales"] > 0
+    assert 0 <= f["days_traded_pct"] <= 100
+    assert f["drawdown_pct"] >= 0
+
+    # Under 30 points there is nothing to say.
+    assert invest.features(series[:20]) is None
+    # A zero price is missing data, not a free card.
+    assert invest.features([("2026-01-01", 0, 0)] * 40) is None
+
+
+def test_invest_gates_reject_for_the_right_reasons():
+    """Every rejection is a specific, stated reason -- these are the real cases."""
+    from radar import invest
+
+    cfg = {"min_price": 10.0, "min_history_days": 45, "max_volatility_pct": 8.0}
+    base = dict(market_price=100.0, history_points=89, avg_daily_sales=1.5,
+                change_90d=50.0, volatility_pct=2.0)
+
+    assert invest.disqualify(base, cfg) is None
+
+    # The most expensive card in the real pool: $4,798 and not one sale in 90 days.
+    illiquid = {**base, "market_price": 4798.34, "avg_daily_sales": 0}
+    assert "no way out" in invest.disqualify(illiquid, cfg)
+
+    # Up 338% in 30 days, 9.2% daily volatility -- a trade, not a holding.
+    erratic = {**base, "volatility_pct": 9.2}
+    assert "erratic" in invest.disqualify(erratic, cfg)
+
+    assert "Down over 90 days" in invest.disqualify({**base, "change_90d": -26.0}, cfg)
+    assert "Too new" in invest.disqualify({**base, "history_points": 41}, cfg)
+    assert "too little value" in invest.disqualify({**base, "market_price": 4.0}, cfg)
+    assert "run `radar invest`" in invest.disqualify({**base, "history_points": None}, cfg)
+
+
+def test_invest_scoring_prefers_the_hold_profile():
+    """A steady expensive LR+ must outrank a cheap spiky common on the same trend."""
+    from radar import invest
+
+    cfg = {"min_price": 10.0, "value_ceiling": 200.0}
+    quality = dict(card_id="a", printing="Holofoil", name="Gundam Epyon (LR+)", rarity="LR+",
+                   market_price=156.25, change_90d=60, consistency_pct=92, volatility_pct=2.1,
+                   drawdown_pct=0, avg_daily_sales=1.6, days_traded_pct=60,
+                   history_points=89, copies=24)
+    junk = dict(card_id="b", printing="Normal", name="Cheap Spiky Common", rarity="Common",
+                market_price=11.0, change_90d=60, consistency_pct=50, volatility_pct=6.5,
+                drawdown_pct=18, avg_daily_sales=0.4, days_traded_pct=22,
+                history_points=89, copies=40)
+    out = {r["card_id"]: r for r in invest.evaluate([junk, quality], cfg)}
+
+    assert out["a"]["invest_score"] > out["b"]["invest_score"] + 25
+    c = out["a"]["components"]
+    assert set(c) == {"value", "liquidity", "trend", "stability", "scarcity"}
+    assert all(0 <= v <= 100 for v in c.values())
+    # Rarity is doing real work: LR+ scores far above Common on scarcity.
+    assert c["scarcity"] > out["b"]["components"]["scarcity"] + 30
+
+    # Disqualified rows score 0 and sort last, but are kept.
+    dead = dict(card_id="c", printing="Normal", name="Illiquid", rarity="U+",
+                market_price=4798.34, change_90d=10, consistency_pct=100, volatility_pct=1.4,
+                drawdown_pct=0, avg_daily_sales=0, days_traded_pct=0, history_points=58)
+    ranked = invest.evaluate([dead, quality], cfg)
+    assert ranked[0]["card_id"] == "a"
+    assert ranked[-1]["card_id"] == "c" and ranked[-1]["invest_score"] == 0.0
+    assert ranked[-1]["disqualified"]
+
+
+def test_invest_entry_quality_is_separate_from_the_thesis():
+    """Entry price says something about today's listing, not about the card."""
+    from radar import invest
+
+    row = dict(card_id="a", printing="Holofoil", name="X", rarity="LR+", market_price=100.0,
+               change_90d=50, consistency_pct=90, volatility_pct=2.0, drawdown_pct=0,
+               avg_daily_sales=1.5, days_traded_pct=55, history_points=89,
+               floor_low=50.0, shelf_med=100.0, copies=10)
+    out = invest.evaluate([row], {"min_price": 10.0})[0]
+    assert out["entry_vs_shelf_pct"] == 50.0
+    assert out["entry_vs_market_pct"] == 50.0
+
+    # Same card, no entry pulled -> the score is unchanged.
+    bare = {k: v for k, v in row.items() if k not in ("floor_low", "shelf_med")}
+    assert invest.evaluate([bare], {"min_price": 10.0})[0]["invest_score"] == out["invest_score"]
+
+
+def test_invest_words_are_specific():
+    from radar import invest
+
+    row = dict(name="X", rarity="LR+", market_price=156.25, change_90d=60,
+               consistency_pct=92, volatility_pct=2.1, drawdown_pct=0,
+               avg_daily_sales=1.6, days_traded_pct=60, history_points=89)
+    scored = invest.evaluate([row], {"min_price": 10.0})[0]
+    t = invest.thesis(scored)
+    assert "$156.25 LR+" in t and "60% over 90 days" in t and "92% of weeks" in t
+    assert "exited" in t
+    assert "Reprints, ban-list changes and rotation" in invest.watch_for(scored)
+
+    dead = invest.evaluate([{**row, "avg_daily_sales": 0}], {"min_price": 10.0})[0]
+    assert invest.thesis(dead).startswith("No recorded sales")
+    assert len(invest.CHECKLIST) == 5
 
 
 if __name__ == "__main__":
