@@ -550,6 +550,210 @@ def pytest_approx(frac):
     return round(frac * 100, 1)
 
 
+def test_heat_reads_attention_against_its_own_history():
+    """Trends indexes are self-scaled, so every reading is versus its own past.
+
+    The failure this guards against is comparing two Trends series to each
+    other. Querying "gundam card game" alongside "pokemon cards" crushes every
+    Gundam week to 1 because Trends scales to the largest term in the request --
+    which is how you would conclude the game is dead when it is not.
+    """
+    from radar import heat
+
+    spec = {"start": "2025-01-05", "values": [10] * 12 + [100] + [20] * 12 + [40] * 5}
+    s = heat.summarise_series("t", spec)
+    assert s["enough"]
+    assert s["peak"] == 100
+    assert s["latest"] == 40
+    assert s["pct_of_peak"] == 40
+    assert s["trough"] == 20            # the low AFTER the peak, not the run-up
+    assert s["vs_trough_pct"] == 100
+
+    # Nulls are gaps in the source, not zeros -- interpolating them would invent
+    # weeks that Trends declined to report.
+    gappy = {"start": "2025-01-05", "values": [10, None, 30] + [20] * 30}
+    assert heat.summarise_series("g", gappy)["points"] == 32
+
+    # Too little history says so instead of guessing.
+    assert not heat.summarise_series("tiny", {"start": "2025-01-05", "values": [1, 2, 3]})["enough"]
+
+    # A capture past the staleness window is flagged, not silently shown as now.
+    raw = {"captured_at": "2026-01-01", "trends": {"web": {"t": spec}}}
+    assert heat.evaluate(raw, "2026-08-10")["stale"] is True
+    assert heat.evaluate(raw, "2026-01-15")["stale"] is False
+
+    # No capture at all is not an error -- the panel just doesn't render.
+    assert heat.evaluate(None) is None
+    assert heat.load("does/not/exist.json") is None
+
+
+def test_demand_momentum_refuses_windows_the_data_cannot_support():
+    """Same windows as the price columns, and blank where Google has no data.
+
+    This is the 1d lesson again in a different costume. Google only publishes
+    daily resolution above a volume threshold, and the buy-intent terms are
+    precisely the ones below it -- "gundam booster box" had 17 of 151 days
+    present at capture. A 1d change computed from two observations three weeks
+    apart would be a fabricated number wearing a real label, so those cells
+    come back None and the row falls back to weekly for 7d and longer.
+    """
+    from radar import heat
+
+    dense = [100 + (i % 3) for i in range(120)]
+    m = heat.momentum(dense, "2026-04-01")
+    assert m["usable_daily"] is True
+    assert m["coverage_pct"] == 100
+    assert m["windows"]["1d"] is not None
+    assert m["windows"]["90d"] is not None
+
+    # A rising series must read positive over the long window.
+    rising = list(range(50, 170))
+    assert heat.momentum(rising, "2026-04-01")["windows"]["90d"] > 0
+
+    # 11% coverage: short windows are refused outright, not approximated.
+    sparse = [None] * 134 + [30, None, 25, 22, 21, 17, 17, 18, 16, 14, 12, 12, 12, 11, 14, 12, 12]
+    sp = heat.momentum(sparse, "2026-03-12")
+    assert sp["usable_daily"] is False
+    assert sp["windows"]["1d"] is None
+    assert sp["windows"]["3d"] is None
+
+    # Weekly fallback fills 7d and up for exactly those rows, and never 1d/3d.
+    wk = heat.momentum_weekly([10] * 20 + [20] * 6)
+    assert wk["windows"]["1d"] is None
+    assert wk["windows"]["3d"] is None
+    assert wk["windows"]["90d"] is not None and wk["windows"]["90d"] > 0
+
+    out = {d["name"]: d for d in heat.summarise_daily(
+        {"start": "2026-03-12", "series": {
+            "tiny": {"values": sparse, "intent": "transactional"},
+            "big": {"values": dense},
+        }},
+        {"tiny": [10] * 20 + [20] * 6},
+    )}
+    assert out["tiny"]["resolution"] == "weekly"
+    assert out["tiny"]["windows"]["1d"] is None
+    assert out["tiny"]["windows"]["90d"] is not None
+    assert out["big"]["resolution"] == "daily"
+    # Buy-intent rows sort first -- they are the leading ones.
+    assert heat.summarise_daily(
+        {"start": "2026-03-12", "series": {
+            "tiny": {"values": sparse, "intent": "transactional"},
+            "big": {"values": dense},
+        }}, {})[0]["name"] == "tiny"
+
+
+def test_set_curves_measure_release_decay():
+    """Per-set series are queried together, so unlike the headline index they
+    ARE comparable to each other -- that is the whole reason they exist.
+
+    Captured 2026-08-10: Newtype Rising sits at 4% of its peak 54 weeks on,
+    Steel Requiem at 7% after 28 weeks, and GD05 Freedom Ascension at 43% just
+    three weeks past its own peak. Every set so far spikes at launch and gives
+    most of it back inside two quarters, and knowing where the newest one sits
+    on that curve is the difference between buying rising attention and buying
+    the decay.
+    """
+    from radar import heat
+
+    spec = {
+        "start": "2026-01-04",
+        "series": {
+            "fresh": {"set_code": "GD05", "values": [None] * 20 + [10, 40, 100, 60]},
+            "old":   {"set_code": "GD01", "values": [100, 50] + [4] * 22},
+            "box":   {"evergreen": True, "values": [50] * 12 + [25] * 12},
+        },
+    }
+    out = {s["name"]: s for s in heat.summarise_sets(spec)}
+
+    assert out["fresh"]["pct_of_peak"] == 60
+    assert out["fresh"]["weeks_since_peak"] == 1
+    assert out["fresh"]["phase"] == "peaking"
+    assert out["old"]["pct_of_peak"] == 4
+    assert out["old"]["phase"] == "faded"
+    assert out["box"]["phase"] == "evergreen"
+
+    # Newest peak first -- the set you are most likely to be buying into.
+    assert heat.summarise_sets(spec)[0]["name"] == "fresh"
+
+    # The verdict names the newest NON-evergreen set and says which way it is
+    # going. A set past its peak has to read as a warning, not as neutral colour.
+    sets = heat.summarise_sets({
+        "start": "2026-01-04",
+        "series": {"fresh": {"set_code": "GD05", "values": [None] * 16 + [100, 80, 60, 43]}},
+    })
+    v = heat.verdict({"name": "t", "pct_of_peak": 50, "quarter_change_pct": 0}, None, None, sets)
+    assert "Fresh (GD05)" in v
+    assert "43% of that peak" in v
+    assert "falling attention" in v
+
+
+def test_heat_verdict_says_the_uncomfortable_thing():
+    """When attention is under its peak, the verdict must say so plainly."""
+    from radar import heat
+
+    lead = {"name": "t", "pct_of_peak": 50, "quarter_change_pct": 2}
+    v = heat.verdict(lead, {"period": "Q2 2026", "rank": 8}, {"period": "Q1 2026", "rank": 7})
+    assert "50% of its launch peak" in v
+    assert "well below it" in v
+    assert "slipped to #8" in v
+    assert "smaller pool of buyers" in v
+
+    # At a genuine high it must not manufacture a warning.
+    hot = heat.verdict({"name": "t", "pct_of_peak": 98, "quarter_change_pct": 30}, None, None)
+    assert "all-time high" in hot
+    assert "smaller pool of buyers" not in hot
+
+
+def test_validate_detects_a_score_that_has_stopped_working():
+    """The whole point is catching decay, so the failure cases are the test."""
+    from radar import validate
+
+    # Perfectly ordered: rho = 1.
+    rho, t = validate.spearman([1, 2, 3, 4, 5, 6, 7, 8], [10, 20, 30, 40, 50, 60, 70, 80])
+    assert rho == 1.0
+    # Exactly inverted: rho = -1.
+    rho, _ = validate.spearman([1, 2, 3, 4, 5, 6, 7, 8], [80, 70, 60, 50, 40, 30, 20, 10])
+    assert rho == -1.0
+    # Under 8 points it declines to answer rather than reporting noise.
+    assert validate.spearman([1, 2, 3], [3, 2, 1]) == (None, None)
+
+    alive = [{"forward_pct": v} for v in [50, 40, 30, 20, 10, 0, -10, -20, -30, -40]]
+    assert "HOLDING UP" in validate.verdict(0.35, alive, 2)
+    assert "WEAK" in validate.verdict(0.15, alive, 2)
+    assert "NOT SEPARATING" in validate.verdict(0.03, alive, 2)
+    assert "INVERTED" in validate.verdict(-0.25, alive, 2)
+    assert "Not enough" in validate.verdict(None, alive, 2)
+
+
+def test_validate_scores_only_on_data_before_the_split():
+    """Lookahead is the one bug that would make this test useless.
+
+    The scored row must carry the price AS OF the split, never today's price --
+    otherwise the input contains the answer and every rho comes back beautiful.
+    """
+    from radar import validate
+
+    # 122 daily points: a long flat stretch, then a clean climb.
+    pts = [(f"2026-01-{d:02d}", 100.0, 2.0, 100.0) for d in range(1, 32)]
+    pts += [(f"2026-02-{d:02d}", 100.0, 2.0, 100.0) for d in range(1, 29)]
+    pts += [(f"2026-03-{d:02d}", 100.0, 2.0, 100.0) for d in range(1, 32)]
+    pts += [(f"2026-04-{d:02d}", 100.0 + d * 5, 2.0, 100.0 + d * 5) for d in range(1, 31)]
+    key = ("c1", "Normal")
+    out = validate.run({key: pts}, {key: {"name": "Test", "rarity": "LR+"}},
+                       {"min_price": 10.0, "min_history_days": 45,
+                        "max_volatility_pct": 8.0}, horizon=45, today="2026-08-10")
+    assert out["eligible"] + out["disqualified"] == 1
+    # 45 rows back from the end lands inside the flat stretch, so the price used
+    # for scoring is 100 -- not the 250 the series ends at. If it ever scored on
+    # today's price this forward return would be ~0 instead of strongly positive.
+    assert out["universe"] == 1
+    assert out["skipped"]["too_short"] == 0
+
+    # A series with no room on both sides of the split is skipped, not scored.
+    short = {("c2", "Normal"): pts[:60]}
+    assert validate.run(short, {}, {}, horizon=45)["skipped"]["too_short"] == 1
+
+
 def test_settled_price_is_measured_not_forecast():
     """`settled` reports where copies traded; it never extrapolates.
 

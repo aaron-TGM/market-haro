@@ -227,12 +227,16 @@ def cmd_invest(cfg, args) -> int:
 
         # 4. Score for real (scarcity uses copies) and render.
         ranked = invest_mod.evaluate(preliminary, icfg)
+        from . import heat as heat_mod
+
+        heat = heat_mod.evaluate(heat_mod.load(cfg.path("data/market_heat.json")))
         html = dashboard.render(
             ranked,
             obs_date=obs,
             stats=db.stats(),
             market=db.market_breadth(obs),
             plan_cfg=cfg.raw.get("plan") or {},
+            heat=heat,
         )
         out = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
         dashboard.write(html, out)
@@ -361,6 +365,156 @@ def cmd_stats(cfg, args) -> int:
     return 0
 
 
+def cmd_validate(cfg, args) -> int:
+    """Re-run the walk-forward test and record the result.
+
+    Worth running monthly. The number to watch is not this run's rho, it is the
+    difference between this run's rho and the last one's.
+    """
+    from . import validate as validate_mod
+
+    db = Database(cfg.db_path)
+    try:
+        series = db.all_series_with_volume()
+        cards = {}
+        for r in db.latest_prices(db.latest_obs_date() or ""):
+            cards[(r["card_id"], r["printing"])] = {
+                "name": r["name"], "set_name": r["set_name"],
+                "number": r["number"], "rarity": r["rarity"],
+            }
+        result = validate_mod.run(
+            series, cards, cfg.raw.get("invest") or {},
+            horizon=args.horizon,
+        )
+    finally:
+        db.close()
+
+    print(f"Walk-forward test, {result['horizon_days']}-day horizon, run {result['ran_at']}")
+    print(f"  {result.get('universe', 0)} series in the database, "
+          f"{result.get('eligible', 0)} eligible, {result.get('disqualified', 0)} screened out")
+    sk = result.get("skipped") or {}
+    if sk:
+        print(f"  skipped: {sk.get('too_short', 0)} too short, "
+              f"{sk.get('no_features', 0)} no features, {sk.get('no_forward', 0)} no forward window")
+    if not result.get("eligible"):
+        print(f"\n  {result.get('note') or 'Nothing to measure.'}")
+        return 1
+
+    sv = result["score_vs_forward"]
+    pv = result["premium_vs_forward"]
+    print(f"\n  score vs forward return   rho = {sv['spearman']}  (t = {sv['t']})")
+    if pv["spearman"] is not None:
+        print(f"  vs-sold vs forward return rho = {pv['spearman']}  (t = {pv['t']}, "
+              f"n = {pv['n']})   negative is the expected direction")
+    print(f"\n  {'':16} {'n':>4} {'mean':>8} {'median':>8} {'win':>5} {'worst':>8} {'best':>8}")
+    for label, key in [("top quintile", "top_quintile"), ("all eligible", "all_eligible"),
+                       ("bottom quintile", "bottom_quintile"), ("screened out", "screened_out")]:
+        b = result[key]
+        if not b.get("n"):
+            continue
+        print(f"  {label:16} {b['n']:>4} {b['mean_pct']:>7.1f}% {b['median_pct']:>7.1f}% "
+              f"{b['win_rate_pct']:>4}% {b['worst_pct']:>7.1f}% {b['best_pct']:>7.1f}%")
+    print(f"\n  {result['verdict']}")
+
+    out = cfg.path(args.out or "data/validation_history.json")
+    hist = validate_mod.append_history(out, result)
+    print(f"\nRecorded -> {out}  ({len(hist)} run{'s' if len(hist) != 1 else ''} on file)")
+    if len(hist) > 1:
+        print("  history:")
+        for h in hist[-6:]:
+            r = (h.get("score_vs_forward") or {}).get("spearman")
+            print(f"    {h.get('ran_at')}  rho = {r if r is not None else '--':>6}  "
+                  f"n = {h.get('eligible', 0)}")
+    return 0
+
+
+def cmd_heat(cfg, args) -> int:
+    """Show the attention capture, or print how to refresh it."""
+    from . import heat as heat_mod
+
+    if args.template:
+        print(heat_mod.TEMPLATE)
+        return 0
+
+    raw = heat_mod.load(cfg.path(args.file or "data/market_heat.json"))
+    h = heat_mod.evaluate(raw)
+    if not h:
+        print("No attention data. Run `radar heat --template` for how to capture it.")
+        return 1
+
+    age = f"{h['age_days']} day{'s' if h['age_days'] != 1 else ''} old"
+    warn = "  <-- STALE, refresh it" if h["stale"] else ""
+    print(f"Attention, captured {h['captured_at']} ({age}){warn}\n")
+
+    for label, group in [("web search", h["web"]), ("youtube", h["youtube"])]:
+        for name, s in group.items():
+            if not s.get("enough"):
+                print(f"  {label:11} {name:20} not enough history captured")
+                continue
+            print(f"  {label:11} {name:20} now {s['latest']:>3}  "
+                  f"{s['pct_of_peak']:>3}% of peak ({s['peak_date']})  "
+                  f"{s['vs_trough_pct']:+}% off the trough  "
+                  f"quarter {s['quarter_change_pct']:+}%")
+
+    if h.get("daily"):
+        from . import heat as _h
+
+        wins = _h.MOMENTUM_WINDOWS
+        print("\n  demand momentum, same windows as the price columns:")
+        print(f"    {'term':28}{'res':8}{'cov':>5}  " + "".join(f"{str(w) + 'd':>8}" for w in wins))
+        for dser in h["daily"]:
+            cells = "".join(
+                f"{dser['windows'][f'{w}d']:+7.0f}%" if dser["windows"].get(f"{w}d") is not None
+                else f"{'--':>8}"
+                for w in wins
+            )
+            tag = "buy" if dser.get("intent") == "transactional" else "aware"
+            print(f"    {dser['name'] + ' (' + tag + ')':28}"
+                  f"{dser.get('resolution', ''):8}{dser['coverage_pct']:>4}%  {cells}")
+        print("    blank = Google publishes no data at that resolution for that term")
+
+    if h.get("sets"):
+        print("\n  set attention (one query, so these ARE comparable to each other):")
+        for st in h["sets"]:
+            age = "evergreen" if st["evergreen"] else f"{st['weeks_since_peak']}w past peak"
+            code = f" [{st['set_code']}]" if st.get("set_code") else ""
+            print(f"    {st['name'] + code:34} {st['pct_of_peak']:>3}% of peak   "
+                  f"{age:16} {st['phase']}")
+
+    if h.get("intent"):
+        print("\n  buying intent (monthly US searches):")
+        for k in h["intent"]:
+            if k.get("intent") == "transactional":
+                print(f"    {k['keyword']:32} {k['volume']:>9,}")
+        for k in h["intent"]:
+            if str(k.get("intent", "")).startswith("set"):
+                print(f"    {k['keyword']:32} {k['volume']:>9,}  ({k['intent']})")
+        if h.get("zero_volume"):
+            print(f"    no measurable volume: {', '.join(h['zero_volume'])}")
+
+    if h["semrush"]:
+        print("\n  monthly US search volume (absolute, comparable):")
+        for k in h["semrush"]:
+            print(f"    {k['keyword']:28} {k['volume']:>9,}")
+
+    if h["rank_series"]:
+        print("\n  TCGplayer sales rank: " +
+              "  ".join(f"{r['period']} #{r['rank']}" for r in h["rank_series"]))
+
+    if h["rising_queries"]:
+        print("\n  rising searches:")
+        for q, v in h["rising_queries"][:5]:
+            print(f"    {v:>7.1f}  {q}")
+
+    if h["catalysts"]:
+        print("\n  catalysts the price screen cannot see:")
+        for c in h["catalysts"]:
+            print(f"    {c['date']}  {c['kind']:8} {c['label']}")
+
+    print(f"\n  {h['verdict']}")
+    return 0
+
+
 # --- entrypoint ----------------------------------------------------------------
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -402,6 +556,19 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--no-fetch", action="store_true",
                    help="score from what's already in the database, no API calls")
 
+    v = sub.add_parser(
+        "validate",
+        help="re-run the walk-forward test -- does the score still separate winners?",
+    )
+    v.add_argument("--horizon", type=int, default=45,
+                   help="rows of history to measure forward (default 45)")
+    v.add_argument("--out", help="where to append the run record")
+
+    hh = sub.add_parser("heat", help="attention outside the price data: search, YouTube, rank")
+    hh.add_argument("--template", action="store_true",
+                    help="print how to refresh the capture instead of showing it")
+    hh.add_argument("--file", help="path to market_heat.json")
+
     a = sub.add_parser("run", help="sync then rebuild the hold screen (use this in cron)")
     a.add_argument("--no-history", action="store_true")
     a.add_argument("--date")
@@ -421,6 +588,8 @@ COMMANDS = {
     "invest": cmd_invest,
     "run": cmd_run,
     "stats": cmd_stats,
+    "validate": cmd_validate,
+    "heat": cmd_heat,
 }
 
 

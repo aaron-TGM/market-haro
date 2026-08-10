@@ -288,6 +288,126 @@ tests/
 mapping, the floor-field regression, every disqualifier, the score ordering, position
 sizing, and HTML escaping.
 
+## Market heat: is anyone outside this dashboard paying attention?
+
+Price is a lagging, circular signal — a card is "rising" because people already
+bought it. `radar heat` holds the part of the picture tcgapi.dev cannot see, and it
+is placed above the table on purpose: it is the panel most likely to disagree with
+the ranking, and a disagreement you have to go looking for is one you will not find.
+
+**What it said on 2026-08-10, which is not what the price screen says:**
+
+| | |
+|---|---|
+| Search interest, `gundam tcg` | **50 / 100** — half its launch peak (2025-07-27), +138% off the Nov-2025 low, +14% over the quarter |
+| YouTube interest | **47 / 100** — 47% of peak, **−15%** over the quarter |
+| TCGplayer sales rank | #8 in Q4 2025 → **#7** in Q1 2026 → **#8** in Q2 2026 |
+| Newest set, GD05 Freedom Ascension | peaked **2026-07-19** (the week *before* release) and is at **43%** of that peak three weeks later |
+
+Prices are climbing while attention sits at half its launch high and marketplace rank
+has slipped back. That is not a contradiction to explain away — it is a smaller pool
+of buyers bidding against each other, and it unwinds faster than it built.
+
+### Demand momentum — the same windows as the price columns
+
+The one genuinely *leading* number here. Price tells you a card already moved;
+buying-intent search is people forming an intention before they transact. Measured on
+1/3/7/14/30/60/90d so it sits alongside the price columns without mental arithmetic:
+
+| Term | | 1d | 3d | 7d | 14d | 30d | 60d | 90d |
+|---|---|---|---|---|---|---|---|---|
+| `gundam booster box` | buy intent | — | — | −38% | −40% | **+83%** | **+116%** | **+121%** |
+| `gundam card game` | awareness | +0% | +3% | −36% | −27% | +27% | +44% | +51% |
+
+Buying intent is up 121% over 90 days and down 38% over 7 — that is the GD05 release
+spike rolling out of the short windows, not demand leaving. Both readings are true and
+they mean different things, which is why every window is shown rather than one summary.
+
+**The blanks are the honest part.** Google only publishes daily resolution for terms
+above a volume threshold, and the buy-intent terms are exactly the ones below it —
+`gundam booster box` had **17 of 151 days** present at capture. Those rows fall back to
+the weekly series for 7d and up, and 1d/3d stay empty because at weekly resolution they
+do not exist. This is the same lesson as the price `1d` column in a different costume:
+the timeframe exists, the data underneath it often does not.
+
+### Set attention — the release-decay curve
+
+These four terms are queried *together*, so unlike the headline index they **are**
+comparable to each other:
+
+| Set | | Now vs its own peak | Weeks past peak |
+|---|---|---|---|
+| Freedom Ascension | GD05 | **43%** | 3 |
+| Steel Requiem | GD03 | 7% | 28 |
+| Newtype Rising | GD01 | 4% | 54 |
+| `gundam booster box` | evergreen | 29% | — |
+
+Every set so far spikes the week of launch and gives most of it back inside two
+quarters. Where the newest set sits on that curve is the difference between buying into
+rising attention and buying the decay.
+
+### Catalysts the screen cannot see
+
+Set releases and banlist updates are what actually start and end runs, and no amount of
+price history anticipates them. The GD05 launch and the banlist landed on the same day,
+**2026-07-24**. What the banlist did in two weeks, from the same daily history:
+
+| Card | Before | After | |
+|---|---|---|---|
+| Amuro Ray (C+) Holofoil | $45.90 | $39.56 | **−14%** |
+| Mikazuki Augus (Event Promo) | $17.27 | $13.08 | **−24%** |
+| Guntank (Championship Pack 01) | $101.87 | $121.32 | **+19%** |
+
+Not uniform, not predictable from price, and Amuro Ray is exactly the kind of card the
+hold screen would have had you in.
+
+### Where the data comes from, and why it is a file
+
+Google Trends, Semrush and the TCGplayer seller blog are not one API with one key, and
+none of them are on tcgapi.dev. Rather than pretend the CLI can fetch them,
+`data/market_heat.json` is a **dated capture with the source recorded next to every
+number**, and the panel greys itself out once it is more than 30 days old. Run
+`radar heat --template` for the exact queries to re-run.
+
+One trap worth repeating, because it will silently ruin the data: **query the Gundam
+terms alone.** Google Trends scales to the largest term in a request, so putting
+`pokemon cards` in the same query crushes every Gundam week to `1` — which is how you
+would conclude the game is dead when it is at half its launch peak.
+
+## Does the score still work? `radar validate`
+
+The invest score was calibrated once, on one 90-day window, in a market that rose the
+whole way through. If Gundam turns, those numbers quietly stop describing reality — and
+a screen that was right last year and is wrong now looks exactly like a screen that is
+right.
+
+`radar validate` re-runs the walk-forward test on demand and appends a dated record to
+`data/validation_history.json`, so drift is visible without digging:
+
+```
+radar validate                 # 45-day horizon, the calibration default
+radar validate --horizon 30    # shorter window, more observations
+```
+
+It scores every card using **only** data up to the split point — the same
+`invest.features` and `invest.evaluate` the live screen uses, no special path — then
+measures what each card actually did afterwards. Reported three ways because one number
+hides too much: Spearman ρ, the top-versus-bottom quintile spread, and the same test on
+the `vs sold` premium. Every run also reports what the *screened-out* pile did; if the
+rejects beat the candidates, the gates are the problem.
+
+Reading it:
+
+| | |
+|---|---|
+| ρ > 0.20, top quintile beats the pool | working |
+| ρ near 0, quintiles overlapping | the score has stopped separating |
+| ρ < 0 | inverted — stop acting on the ranking |
+
+The seeded baseline is the original calibration run: **ρ = 0.238** (t = 2.62, n = 117),
+top quintile +37.8% mean against +28.5% for all eligible. One run is one window; two
+runs three months apart is a trend. Run it monthly.
+
 ## Notes and gotchas
 
 - **`market_price` lags by up to two days** — it comes from a daily batch. The screen uses
@@ -315,4 +435,17 @@ sizing, and HTML escaping.
   sync). Sealed is a different thesis with different mechanics.
 - **Copy counts are Near Mint only** and can disagree with what the TCGplayer page shows if
   the page is filtered differently.
-- **Never commit `.env`.** It's gitignored, along with `data/` and `out/`.
+- **Google Trends indexes are self-scaled.** A series is comparable to its own history
+  and to terms queried *in the same request*, never to a term queried separately.
+  Semrush volumes are absolute and comparable; that is what the peer rows are for.
+- **Semrush volume is a trailing 12-month average**, so it badly understates anything
+  newly released. GD05 read 10-20/mo there while Google Trends had it at an all-time
+  high in the same week. Use Semrush for evergreen terms and Trends for new sets.
+- **`data/market_heat.json` is a manual capture, not a fetch.** It carries `captured_at`
+  and a source string per block, and the dashboard greys the panel out past 30 days.
+- **`radar validate` needs history on both sides of the split** — 45 points before and
+  45 after by default. On a fresh database it will say so rather than report a number
+  built on three cards.
+- **Never commit `.env`.** It's gitignored, along with `out/`. `data/` keeps the two
+  captured JSON files (`market_heat.json`, `validation_history.json`) and ignores the
+  SQLite database.

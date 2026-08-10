@@ -175,6 +175,32 @@ tr.buy td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 .up{color:var(--up);font-weight:700}
 .down{color:var(--down);font-weight:700}
 .flat{color:var(--text-muted)}
+/* Market heat: attention data from outside the price feed. Greyed when stale --
+   a two-month-old search reading describes a market that has moved on. */
+.heat{margin:14px 0}
+.heat.stale{opacity:.55}
+.heat .hgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:18px;padding:4px 2px}
+.heat h4{margin:0 0 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.heat .big{font-size:26px;font-weight:700;line-height:1.1}
+.heat .sub2{color:var(--text-muted);font-size:11px;margin:4px 0 0;line-height:1.5}
+.heat .kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;
+  border-bottom:1px dotted var(--border);font-size:12px}
+.heat .kv:last-child{border-bottom:0}
+.heat .verdict{padding:10px 12px;margin:2px 2px 8px;border-left:2px solid var(--accent);
+  background:var(--surface);font-size:13px;line-height:1.65}
+.heat .cat{display:flex;gap:8px;font-size:11px;padding:3px 0;color:var(--text-muted)}
+.heat .cat b{color:var(--text);font-weight:400}
+.heat table.mom{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
+.heat table.mom th{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);
+  text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);font-weight:400}
+.heat table.mom th.num,.heat table.mom td.num{text-align:right}
+.heat table.mom td{padding:6px;border-bottom:1px dotted var(--border);vertical-align:top}
+.heat .chip-sm{font-size:9px;letter-spacing:.08em;padding:0 4px;border:1px solid var(--border);border-radius:2px;color:var(--text-muted)}
+.heat .tag{font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:1px 5px;
+  border:1px solid var(--border);border-radius:2px;white-space:nowrap}
+.heat .stalebar{background:var(--surface);border-left:2px solid var(--down);
+  padding:8px 12px;margin:2px;font-size:12px;color:var(--down)}
+.spark{display:block;width:100%;height:36px;margin:6px 0 2px}
 /* Listed above what copies have been selling for / listed below it. */
 .hot{color:var(--down);font-weight:700}
 .cool{color:var(--up);font-weight:700}
@@ -836,6 +862,222 @@ TIPS = {
 }
 
 
+def _spark(values: Sequence[float], *, w: int = 240, h: int = 36) -> str:
+    """Inline sparkline. Same shape as the price sparkline so the two read alike."""
+    vals = [v for v in values if isinstance(v, (int, float))]
+    if len(vals) < 3:
+        return ""
+    lo, hi = min(vals), max(vals)
+    rng = (hi - lo) or 1
+    step = w / (len(vals) - 1)
+    pts = " ".join(
+        f"{i * step:.1f},{h - 2 - (v - lo) / rng * (h - 4):.1f}" for i, v in enumerate(vals)
+    )
+    return (
+        f'<svg class="spark" viewBox="0 0 {w} {h}" preserveAspectRatio="none" aria-hidden="true">'
+        f'<polyline points="{pts}" fill="none" stroke="var(--cyan)" stroke-width="1.5"/></svg>'
+    )
+
+
+def _heat_panel(h: dict[str, Any] | None) -> str:
+    """Attention outside the price feed.
+
+    Deliberately placed above the table rather than tucked in a footer: it is the
+    number most likely to disagree with the ranking, and a disagreement you have
+    to go looking for is one you will not find.
+    """
+    if not h:
+        return ""
+
+    lead = h.get("lead")
+    stale = h.get("stale")
+    banner = ""
+    if stale:
+        banner = (
+            f'<div class="stalebar">Captured {_esc(h["captured_at"])} — '
+            f'{h["age_days"]} days ago. Search interest moves weekly; treat this as history, '
+            f'not as the current state. Run <code>radar heat --template</code> to refresh.</div>'
+        )
+
+    cols = []
+
+    if lead:
+        arrow = {"rising": "up", "falling": "down", "flat": "flat"}[h["direction"]]
+        cls = {"up": "cool", "down": "hot", "flat": "flat"}[arrow]
+        cols.append(f'''<div>
+      <h4 data-tip="Google Trends relative search interest for &quot;{_esc(lead["name"])}&quot;, US, weekly. Scaled 0-100 against this term&#39;s own peak in the captured window &mdash; NOT comparable to the other series. Source: {_esc(h.get("trends_source") or "Google Trends")}.">Search interest<span class="info">?</span></h4>
+      <div class="big">{lead["latest"]}<span class="sub2" style="font-size:12px"> / 100</span></div>
+      {_spark(lead["series"])}
+      <div class="kv"><span>Share of launch peak</span><span>{lead["pct_of_peak"]}%</span></div>
+      <div class="kv"><span>Peak was</span><span>{_esc(lead["peak_date"])}</span></div>
+      <div class="kv"><span>Off the low since</span><span>{lead["vs_trough_pct"]:+}%</span></div>
+      <div class="kv"><span>Last 12 weeks</span><span class="{cls}">{lead["quarter_change_pct"]:+}%</span></div>
+      <p class="sub2">{_esc(lead["name"])} · weekly, US</p>
+    </div>''')
+
+    yt = next((v for v in (h.get("youtube") or {}).values() if v.get("enough")), None)
+    if yt:
+        ycls = "cool" if (yt["quarter_change_pct"] or 0) >= 15 else (
+            "hot" if (yt["quarter_change_pct"] or 0) <= -15 else "flat")
+        cols.append(f'''<div>
+      <h4 data-tip="The same Google Trends measurement restricted to YouTube search. Video interest is where a TCG&#39;s casual audience shows up first &mdash; openings, deck techs, pull videos &mdash; so it tends to lead web search on the way in and on the way out.">YouTube interest<span class="info">?</span></h4>
+      <div class="big">{yt["latest"]}<span class="sub2" style="font-size:12px"> / 100</span></div>
+      {_spark(yt["series"])}
+      <div class="kv"><span>Share of launch peak</span><span>{yt["pct_of_peak"]}%</span></div>
+      <div class="kv"><span>Last 12 weeks</span><span class="{ycls}">{yt["quarter_change_pct"]:+}%</span></div>
+      <p class="sub2">{_esc(yt["name"])} · YouTube search, US</p>
+    </div>''')
+
+    sem = h.get("semrush") or []
+    if sem:
+        rows = "".join(
+            f'<div class="kv"><span>{_esc(k["keyword"])}</span>'
+            f'<span>{k["volume"]:,}</span></div>'
+            for k in sem[:7]
+        )
+        cols.append(f'''<div>
+      <h4 data-tip="Estimated monthly US search volume. Unlike the Trends indexes these ARE absolute and comparable across rows &mdash; the peer terms are here as the scale check. Source: {_esc(h.get("semrush_source") or "Semrush")}.">Monthly searches<span class="info">?</span></h4>
+      {rows}
+      <p class="sub2">Absolute volume, US. Peer rows are the scale check.</p>
+    </div>''')
+
+    ranks = h.get("rank_series") or []
+    rq = h.get("rising_queries") or []
+    if ranks or rq:
+        rank_rows = "".join(
+            f'<div class="kv"><span>{_esc(r["period"])}</span><span>#{r["rank"]}</span></div>'
+            for r in ranks[-4:]
+        )
+        q_rows = "".join(
+            f'<div class="kv"><span>{_esc(q)}</span><span>{v:,.0f}</span></div>'
+            for q, v in rq[:3]
+        )
+        cols.append(f'''<div>
+      <h4 data-tip="Where the game ranks by gross merchandise value among all TCGs on TCGplayer, from the quarterly seller report. This is dollars actually spent on the largest marketplace &mdash; the closest thing to a share-of-wallet number. Rising related searches are from Google Trends and are the earliest warning available: a set code or &quot;ban list&quot; climbing here moves before price does.">Marketplace &amp; rising<span class="info">?</span></h4>
+      {rank_rows}
+      <p class="sub2" style="margin:8px 0 2px">Rising searches</p>
+      {q_rows}
+    </div>''')
+
+    sets = h.get("sets") or []
+    if sets:
+        PHASE = {
+            "peaking": ("hot", "at its peak"),
+            "cooling": ("hot", "cooling"),
+            "faded": ("flat", "faded"),
+            "evergreen": ("", "evergreen"),
+        }
+        parts = []
+        for st in sets:
+            cls = PHASE[st["phase"]][0]
+            code = (
+                f' <span class="chip-sm">{_esc(st["set_code"])}</span>'
+                if st.get("set_code") else ""
+            )
+            age = "" if st["evergreen"] else f' &middot; {st["weeks_since_peak"]}w'
+            parts.append(
+                f'<div class="kv"><span>{_esc(st["name"].title())}{code}</span>'
+                f'<span class="{cls}">{st["pct_of_peak"]}% of peak{age}</span></div>'
+            )
+        rows = "".join(parts)
+        newest = next((x for x in sets if not x["evergreen"]), None)
+        spark = _spark(newest["series"]) if newest else ""
+        cols.append(f'''<div>
+      <h4 data-tip="Search interest per expansion, all queried together so these ARE comparable to each other (unlike the headline index). The pattern is the point: every set so far spikes the week of launch and gives most of it back within two quarters. Newtype Rising is at 4% of its peak; Steel Requiem at 7%. Where the newest set sits on that curve is the difference between buying into rising attention and buying the decay.">Set attention<span class="info">?</span></h4>
+      {rows}
+      {spark}
+      <p class="sub2">{_esc(newest["name"].title()) if newest else ""} · newest set, weekly</p>
+    </div>''')
+
+    daily = h.get("daily") or []
+    if daily:
+        WIN = ("1d", "3d", "7d", "14d", "30d", "60d", "90d")
+        head = "".join(f'<th class="num">{w}</th>' for w in WIN)
+        body = []
+        for dser in daily:
+            cells = []
+            for w in WIN:
+                v = (dser.get("windows") or {}).get(w)
+                if v is None:
+                    cells.append('<td class="num"><span class="flat">&mdash;</span></td>')
+                else:
+                    cls = "cool" if v > 0 else ("hot" if v < 0 else "")
+                    cells.append(f'<td class="num"><span class="{cls}">{v:+.0f}%</span></td>')
+            tag = "buy intent" if dser.get("intent") == "transactional" else "awareness"
+            body.append(
+                f'<tr><td>{_esc(dser["name"])}<br>'
+                f'<span class="chip-sm">{tag}</span> '
+                f'<span class="chip-sm">{_esc(dser.get("resolution", ""))}</span></td>'
+                + "".join(cells) + "</tr>"
+            )
+        cols.append(f'''<div style="grid-column:1/-1">
+      <h4 data-tip="Search demand measured on the same windows as the price columns, so the two can be read side by side. This is the only leading number in the project &mdash; price tells you a card already moved, whereas buying-intent search is people forming an intention before they transact. Blank cells are honest: Google only publishes daily resolution for terms above a volume threshold, and the buy-intent terms are exactly the ones too small to clear it, so their short windows come from weekly data and 1d/3d do not exist at all.">Demand momentum<span class="info">?</span></h4>
+      <table class="mom"><thead><tr><th>Term</th>{head}</tr></thead><tbody>{"".join(body)}</tbody></table>
+      <p class="sub2">Trailing means, not point readings &mdash; a single day of Trends is noise.
+        A negative short window with a positive long one is a release spike unwinding, not demand
+        leaving.</p>
+    </div>''')
+
+    intent = h.get("intent") or []
+    if intent:
+        buy = [k for k in intent if k.get("intent") == "transactional"][:6]
+        rows = "".join(
+            f'<div class="kv"><span>{_esc(k["keyword"])}</span><span>{k["volume"]:,}</span></div>'
+            for k in buy
+        )
+        zero = h.get("zero_volume") or []
+        zline = (
+            f'<p class="sub2">No measurable volume: {_esc(", ".join(zero))}.</p>' if zero else ""
+        )
+        cols.append(f'''<div>
+      <h4 data-tip="Terms with buying intent rather than curiosity &mdash; booster box, starter deck, pre order, where to buy. Someone searching &quot;gundam booster box&quot; is closer to a transaction than someone searching &quot;gundam tcg&quot;, so this is the demand number with the least noise in it. Semrush volume is a trailing 12-month average, which is why a set released three weeks ago barely registers here even while Google Trends has it at an all-time high.">Buying intent<span class="info">?</span></h4>
+      {rows}
+      <p class="sub2">Monthly US searches, absolute.</p>
+      {zline}
+    </div>''')
+
+    cats = h.get("catalysts") or []
+    cat_html = ""
+    if cats:
+        items = "".join(
+            f'<div class="cat"><span class="tag">{_esc(c.get("kind", ""))}</span>'
+            f'<b>{_esc(c.get("date", ""))}</b> {_esc(c.get("label", ""))}</div>'
+            for c in cats[-6:]
+        )
+        ban = h.get("banlist") or {}
+        proof = ""
+        if ban.get("cards"):
+            # Prefer cards the hold screen would actually have shown you. A 94%
+            # drop on a $2 common is true and irrelevant; a 14% drop on a $46
+            # card is the one that would have been in your positions.
+            pool = [c for c in ban["cards"] if (c.get("before") or 0) >= 10] or ban["cards"]
+            moves = sorted(pool, key=lambda c: abs(c.get("pct") or 0), reverse=True)[:3]
+            proof = (
+                '<p class="sub2" style="margin-top:8px">What the last banlist did to price, '
+                f'{_esc(ban.get("effective", ""))} onward: '
+                + ", ".join(
+                    f'{_esc(m["name"])} ${m["before"]:,.2f} &rarr; ${m["after"]:,.2f} '
+                    f'({m["pct"]:+.0f}%)' for m in moves
+                )
+                + '. None of it was visible in the price data beforehand.</p>'
+            )
+        cat_html = f'''<div style="grid-column:1/-1">
+      <h4 data-tip="Set releases and banlist updates. These are the events that actually start and end runs, and nothing in the price data anticipates them &mdash; the screen can only show you the aftermath.">Catalysts the screen cannot see<span class="info">?</span></h4>
+      {items}{proof}
+    </div>'''
+
+    return f'''<details class="panel heat{" stale" if stale else ""}" open>
+  <summary>Market heat<span class="sc">is anyone outside this dashboard paying attention?</span></summary>
+  {banner}
+  <div class="verdict">{_esc(h.get("verdict") or "")}</div>
+  <div class="hgrid">{"".join(cols)}{cat_html}</div>
+  <p class="sub2" style="padding:0 2px 4px">Captured {_esc(h.get("captured_at"))}. Trends indexes
+    are relative to each term&#39;s own peak and are not comparable to each other; Semrush volumes
+    are absolute. None of this is a forecast &mdash; it is how much attention the game has now
+    versus its own past.</p>
+</details>'''
+
+
 def render(
     ranked: Sequence[dict],
     *,
@@ -845,6 +1087,7 @@ def render(
     market: dict[str, Any] | None = None,
     plan_cfg: dict[str, Any] | None = None,
     scope_note: str = "",
+    heat: dict[str, Any] | None = None,
 ) -> str:
     stats = stats or {}
     market = market or {}
@@ -928,6 +1171,8 @@ def render(
     <div class="value">{top['invest_score']:.0f}</div>
     <div class="foot">{_esc(top['name']) if top else '—'}</div></div>{breadth}
 </div>
+
+{_heat_panel(heat)}
 
 <div class="panel bar">
   <span class="flabel" data-tip="Total you're willing to put to work. Positions are sized down the ranking, capped per card.">Budget<span class="info">?</span></span>

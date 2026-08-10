@@ -3,7 +3,10 @@
 *.key
 
 # data + generated output
-data/
+# data/ is tracked for the two captured JSON files; the SQLite DB is not.
+data/*
+!data/market_heat.json
+!data/validation_history.json
 out/
 *.db
 *.sqlite3
