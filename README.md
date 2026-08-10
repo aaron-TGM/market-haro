@@ -103,6 +103,27 @@ sales rate*.
 Filters: search, set, rarity, price band, minimum score, and **minimum sales/day** (set it
 to 1.0 to keep only what you can exit reasonably quickly).
 
+## Styling
+
+The dashboard matches **gundeck.ai**. The palette is lifted straight from the live site's
+`:root` tokens (oklch, unchanged), along with the type treatment — TRT Terminal Mono with a
+JetBrains Mono fallback, uppercase letter-spaced labels, 2px radii — and the corner-bracket
+panel frame. Dark only, because gundeck.ai is.
+
+```
+--bg        oklch(6.5% .008 220)     --accent   oklch(78% .18 65)   amber
+--surface   oklch(9%   .01  220)     --up       oklch(68% .18 145)  green
+--text      oklch(94%  .04  85)      --down     oklch(60% .22 25)   red
+--border    oklch(20%  .04  65)      --cyan     oklch(72% .16 200)
+```
+
+One accessibility note on the brand palette: the site's green and red sit at **CVD ΔE 6.8
+(deuteranopia)** against the card surface — close enough that a red-green colourblind
+viewer may not separate them by hue. Every delta on this page therefore carries an explicit
+`+`/`−` sign, so direction is never communicated by colour alone. (Amber vs. green is worse
+at ΔE 2.7, which is why amber is used only for chrome and accents here, never as a data
+series alongside green.)
+
 ## What this can't tell you
 
 Every number describes what a card has **already done**. Nothing here is a forecast, and

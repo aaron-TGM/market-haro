@@ -190,7 +190,13 @@ def test_dashboard_renders_valid_selfcontained_html():
 
     assert html.startswith("<!doctype html>")
     assert html.count("<html") == 1 and "</html>" in html
-    assert "<link" not in html
+    # Self-contained apart from two named externals: the JetBrains Mono fallback
+    # face (so it reads like gundeck.ai on any machine) and card images.
+    head = html[: html.index("</head>")]
+    assert head.count("<link") == 3, "only the font preconnects + stylesheet"
+    assert "fonts.googleapis.com" in head and "fonts.gstatic.com" in head
+    assert "<link" not in html[html.index("</head>") :]
+    assert "<script src" not in html
     # The mission is stated on the page, not just implied by the columns.
     assert "buying and sitting on" in html
     # Rejects are shown with the reason, never silently dropped.
