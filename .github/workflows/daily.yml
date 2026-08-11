@@ -1,0 +1,130 @@
+# Daily run: rebuild the database from the archive, sync today's prices, render
+# the dashboard, commit the archive back, publish the dashboard privately.
+#
+# WHY IT RESTORES FIRST
+# The SQLite database is NOT in the repo. Committing a binary that git rewrites
+# whole every day would grow the pack file into gigabytes (see radar/archive.py).
+# The durable artifact is data/history/*.ndjson, and the database is rebuilt from
+# it at the start of every run. The runner stays stateless, the history stays
+# plain text, and a failed run costs you one day rather than everything.
+#
+# WHAT IT NEEDS
+#   secrets.TCGAPI_KEY             your tcgapi.dev key                  required
+#   secrets.CLOUDFLARE_API_TOKEN   scoped to "Cloudflare Pages: Edit"   optional
+#   secrets.CLOUDFLARE_ACCOUNT_ID  from the Cloudflare dashboard URL    optional
+#
+# Without the Cloudflare pair the dashboard is still built and kept as a workflow
+# artifact -- the publish step is skipped, the run does not fail.
+
+name: daily
+
+on:
+  schedule:
+    # 13:10 UTC. TCGplayer's batch lands overnight US time, so this reads a
+    # settled feed rather than one mid-update. Minute 10 rather than 00 because
+    # GitHub queues everything scheduled on the hour and runs it late anyway.
+    - cron: "10 13 * * *"
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "Also backfill 90-day history for cards that lack it"
+        type: boolean
+        default: false
+
+# Two runs writing the archive at once would race on the commit.
+concurrency:
+  group: radar-daily
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TCGAPI_KEY: ${{ secrets.TCGAPI_KEY }}
+      # Hoisted so the publish step can test it -- `secrets` is not available in
+      # a step-level `if`, but `env` is.
+      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Rebuild the database from the archive
+        run: python -m radar restore
+
+      - name: Sync today's prices
+        run: python -m radar sync --no-history
+
+      - name: Backfill history
+        if: inputs.backfill
+        run: python -m radar backfill --range quarter
+
+      - name: Build the hold screen
+        run: python -m radar invest --out out/index.html
+
+      - name: Write the archive
+        run: python -m radar export
+
+      - name: Test
+        # After the archive is written, before it is committed -- a broken run
+        # must not push a corrupted history.
+        run: python tests/test_pipeline.py
+
+      - name: Monthly validation
+        # Has the score stopped separating winners from losers? Once a month is
+        # enough; what matters is the drift between runs, not any single rho.
+        if: github.event_name == 'schedule'
+        run: |
+          if [ "$(date -u +%d)" = "01" ]; then
+            python -m radar validate | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Not the 1st -- skipping validation." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Commit the archive
+        run: |
+          git config user.name  "radar[bot]"
+          git config user.email "radar[bot]@users.noreply.github.com"
+          git add data/history data/cards.ndjson data/validation_history.json
+          if git diff --staged --quiet; then
+            echo "Nothing new today."
+          else
+            git commit -m "history: $(date -u +%Y-%m-%d)"
+            # Another run may have landed while this one was working.
+            git pull --rebase --autostash
+            git push
+          fi
+
+      - name: Publish the dashboard
+        if: env.CF_TOKEN != ''
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy out --project-name=gundam-radar --commit-dirty=true
+
+      - name: Keep the dashboard as an artifact regardless
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-${{ github.run_number }}
+          path: out/
+          retention-days: 30
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Gundam radar — $(date -u +%Y-%m-%d)"
+            echo ""
+            python -m radar stats 2>/dev/null || echo "stats unavailable"
+          } >> "$GITHUB_STEP_SUMMARY"

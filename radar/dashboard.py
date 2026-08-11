@@ -882,9 +882,11 @@ def _spark(values: Sequence[float], *, w: int = 240, h: int = 36) -> str:
 def _heat_panel(h: dict[str, Any] | None) -> str:
     """Attention outside the price feed.
 
-    Deliberately placed above the table rather than tucked in a footer: it is the
-    number most likely to disagree with the ranking, and a disagreement you have
-    to go looking for is one you will not find.
+    Sits below the table, after the screened-out list. It is context for the
+    ranking rather than part of it -- you come here after you have a shortlist,
+    to ask whether the game underneath it is growing or thinning. Left open by
+    default rather than collapsed, so being at the bottom doesn't also mean
+    being hidden.
     """
     if not h:
         return ""
@@ -1172,8 +1174,6 @@ def render(
     <div class="foot">{_esc(top['name']) if top else '—'}</div></div>{breadth}
 </div>
 
-{_heat_panel(heat)}
-
 <div class="panel bar">
   <span class="flabel" data-tip="Total you're willing to put to work. Positions are sized down the ranking, capped per card.">Budget<span class="info">?</span></span>
   <input type="number" id="budget" placeholder="$" min="0" step="50" aria-label="Budget">
@@ -1225,6 +1225,8 @@ def render(
 </div></div>
 
 {_rejected_table(rejected)}
+
+{_heat_panel(heat)}
 
 <footer>
   <p>Every number here describes what a card has already done. Nothing on this page is a

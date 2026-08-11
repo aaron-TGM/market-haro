@@ -587,6 +587,99 @@ def test_heat_reads_attention_against_its_own_history():
     assert heat.load("does/not/exist.json") is None
 
 
+def test_archive_round_trips_and_is_byte_stable():
+    """The NDJSON archive is the durable asset; the database is a cache.
+
+    Two properties matter and both are tested here:
+
+      round-trip  export -> restore must reproduce every price point, because
+                  the workflow rebuilds the database from this file on every run
+      determinism re-exporting an unchanged database must change zero bytes, so
+                  "commit only if changed" in CI is safe and the repo does not
+                  fill with no-op commits
+
+    Committing the SQLite file instead would be the obvious move and is a trap:
+    git cannot delta it, so a year of daily commits runs to gigabytes.
+    """
+    import tempfile
+
+    from radar import archive
+    from radar.db import Database
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        db = Database(root / "a.sqlite3")
+        db.upsert_cards([
+            {"id": "c1", "name": "Alpha", "rarity": "LR+", "set_name": "S", "tcgplayer_id": 1},
+            {"id": "c2", "name": "Beta", "rarity": "R+", "set_name": "S", "tcgplayer_id": 2},
+        ])
+        pts = []
+        for day in range(1, 8):
+            for cid, px in (("c1", 10.0), ("c2", 20.0)):
+                pts.append({
+                    "card_id": cid, "printing": "Normal",
+                    "obs_date": f"2026-07-{day:02d}",
+                    "market_price": px + day, "sales_volume": day,
+                    "avg_sales_price": px, "source": "snapshot",
+                })
+        # A second month, so the per-month split is exercised.
+        pts.append({"card_id": "c1", "printing": "Foil", "obs_date": "2026-08-01",
+                    "market_price": 99.0, "source": "snapshot"})
+        db.upsert_price_points(pts)
+        before = db.stats()
+        out = archive.export(db, root)
+        db.close()
+
+        assert out["months"] == 2
+        assert out["points"] == 15
+        assert (root / "history" / "2026-07.ndjson").exists()
+        assert (root / "history" / "2026-08.ndjson").exists()
+
+        # Round-trip into a fresh database.
+        db2 = Database(root / "b.sqlite3")
+        res = archive.restore(db2, root)
+        after = db2.stats()
+        assert res["points"] == 15
+        assert after["price_points"] == before["price_points"]
+        assert after["cards"] == before["cards"]
+        row = db2.conn.execute(
+            "SELECT market_price, sales_volume FROM price_points "
+            "WHERE card_id='c1' AND printing='Normal' AND obs_date='2026-07-03'"
+        ).fetchone()
+        assert row["market_price"] == 13.0 and row["sales_volume"] == 3
+
+        # Determinism: re-export from the rebuilt database touches nothing.
+        assert archive.export(db2, root)["changed"] == []
+        db2.close()
+
+    # A missing archive is not a crash -- a fresh clone has no history yet.
+    with tempfile.TemporaryDirectory() as tmp:
+        db3 = Database(Path(tmp) / "c.sqlite3")
+        assert archive.restore(db3, Path(tmp) / "nothing")["points"] == 0
+        db3.close()
+
+
+def test_the_database_is_never_committed():
+    """A committed SQLite file is the failure mode this design exists to avoid."""
+    ROOT = Path(__file__).resolve().parent.parent
+    ignore = (ROOT / ".gitignore").read_text()
+    assert "*.sqlite3" in ignore
+    assert "!data/history/" in ignore
+    assert "!data/cards.ndjson" in ignore
+    assert ".env" in ignore
+
+    wf = ROOT / ".github" / "workflows" / "daily.yml"
+    assert wf.exists()
+    text = wf.read_text()
+    # Restore before sync, export before commit, test before commit.
+    assert text.index("radar restore") < text.index("radar sync")
+    assert text.index("radar export") < text.index("Commit the archive")
+    assert text.index("tests/test_pipeline.py") < text.index("Commit the archive")
+    # The key comes from a secret, never from a committed file.
+    assert "secrets.TCGAPI_KEY" in text
+    assert "tcg_live_" not in text
+
+
 def test_demand_momentum_refuses_windows_the_data_cannot_support():
     """Same windows as the price columns, and blank where Google has no data.
 

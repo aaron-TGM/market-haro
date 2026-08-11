@@ -408,6 +408,32 @@ The seeded baseline is the original calibration run: **ρ = 0.238** (t = 2.62, n
 top quintile +37.8% mean against +28.5% for all eligible. One run is one window; two
 runs three months apart is a trend. Run it monthly.
 
+## Running it on its own
+
+See **[DEPLOY.md](DEPLOY.md)** for the full setup. The short version:
+
+```
+radar export     database  ->  data/history/YYYY-MM.ndjson    (the durable asset)
+radar restore    data/history/*.ndjson  ->  database          (the cache)
+```
+
+`.github/workflows/daily.yml` runs at 13:10 UTC: restore, sync, build, export,
+**test**, commit, publish. The tests run before the commit on purpose — a broken
+run must not push a corrupted history. On the 1st of each month it also runs
+`radar validate` and commits the result.
+
+**The SQLite database is never committed.** SQLite rewrites pages throughout the
+file on every write, so git stores a full copy of a binary it cannot delta, and a
+year of daily commits would run to gigabytes against GitHub's 5 GB soft limit. The
+durable artifact is NDJSON — sorted, one file per month, `None` fields omitted —
+so a day's run appends ~1,700 lines and changes nothing else. Roughly **85 MB of
+text a year**, and re-exporting an unchanged database is byte-identical, which is
+what makes "commit only if changed" safe.
+
+The dashboard publishes to Cloudflare Pages behind Cloudflare Access, so the URL
+needs an email login rather than being merely unguessable. Without the Cloudflare
+secrets the workflow still builds it and keeps it as a run artifact.
+
 ## Notes and gotchas
 
 - **`market_price` lags by up to two days** — it comes from a daily batch. The screen uses

@@ -3,8 +3,12 @@
 *.key
 
 # data + generated output
-# data/ is tracked for the two captured JSON files; the SQLite DB is not.
+# The SQLite database is a DERIVED artifact, rebuilt by `radar restore` from
+# data/history/*.ndjson. Never commit it: git stores a full copy of a binary it
+# cannot delta, and a year of daily commits would be gigabytes. See radar/archive.py.
 data/*
+!data/history/
+!data/cards.ndjson
 !data/market_heat.json
 !data/validation_history.json
 out/

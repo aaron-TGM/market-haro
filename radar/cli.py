@@ -365,6 +365,44 @@ def cmd_stats(cfg, args) -> int:
     return 0
 
 
+def cmd_export(cfg, args) -> int:
+    """Database -> data/history/*.ndjson, the durable append-only archive."""
+    from . import archive
+
+    db = Database(cfg.db_path)
+    try:
+        res = archive.export(db, cfg.path(args.root or "data"))
+    finally:
+        db.close()
+    print(f"Archive -> {res['root']}/history/")
+    print(f"  {res['points']:,} price points across {res['months']} months, "
+          f"{res['cards']:,} cards")
+    if res["changed"]:
+        print(f"  changed: {', '.join(res['changed'][:8])}"
+              + (f" (+{len(res['changed']) - 8} more)" if len(res["changed"]) > 8 else ""))
+    else:
+        print("  nothing changed")
+    return 0
+
+
+def cmd_restore(cfg, args) -> int:
+    """data/history/*.ndjson -> database. Rebuilds from the archive."""
+    from . import archive
+
+    db = Database(cfg.db_path)
+    try:
+        res = archive.restore(db, cfg.path(args.root or "data"))
+        stats = db.stats()
+    finally:
+        db.close()
+    print(f"Restored from {res['root']}/history/ -> {cfg.db_path}")
+    print(f"  {res['points']:,} price points from {res['months']} months, "
+          f"{res['cards']:,} cards")
+    print(f"  database now holds {stats['price_points']:,} points across "
+          f"{stats['snapshot_dates']} snapshot dates")
+    return 0
+
+
 def cmd_validate(cfg, args) -> int:
     """Re-run the walk-forward test and record the result.
 
@@ -556,6 +594,14 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--no-fetch", action="store_true",
                    help="score from what's already in the database, no API calls")
 
+    e = sub.add_parser(
+        "export", help="write the price history to data/history/*.ndjson (the durable archive)"
+    )
+    e.add_argument("--root", help="archive directory (default data/)")
+
+    rs = sub.add_parser("restore", help="rebuild the database from data/history/*.ndjson")
+    rs.add_argument("--root", help="archive directory (default data/)")
+
     v = sub.add_parser(
         "validate",
         help="re-run the walk-forward test -- does the score still separate winners?",
@@ -588,6 +634,8 @@ COMMANDS = {
     "invest": cmd_invest,
     "run": cmd_run,
     "stats": cmd_stats,
+    "export": cmd_export,
+    "restore": cmd_restore,
     "validate": cmd_validate,
     "heat": cmd_heat,
 }
