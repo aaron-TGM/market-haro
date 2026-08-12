@@ -438,6 +438,15 @@ secrets the workflow still builds it and keeps it as a run artifact.
 
 - **`market_price` lags by up to two days** — it comes from a daily batch. The screen uses
   it for the Value component and as a reference; the entry price is live.
+- **Snapshot rows are dated by the API's `last_updated_at`, never by the fetch.** The batch
+  runs behind the history feed: pulled 2026-08-12, 1,142 rows said 08-10 and 873 said 08-11,
+  and not one said the 12th. Stamping them "today" appended a stale price to the *end* of a
+  fresher series and manufactured a reversal — Gundam Epyon read 157.14 → 158.91 in history
+  and then "dropped" to 157.14 on a day that never happened. The tail is exactly what the
+  1d/3d columns and the drawdown measure, so it looked like real data. Pinned by a test.
+- **`latest_prices` returns the newest row per card, not one date.** Because the batch does
+  not reprice everything on the same day, filtering on a single date would silently drop
+  half the game from the screen.
 - **`market_price: 0` means "no market data"**, usually pre-release — not "free".
 - **The API returns `price_change_24h/7d/30d`**; internally they're `change_24h/7d/30d`.
   Pinned by a test. `price_change_24h` is **not trusted** — see the 3d note above. 7d and 30d

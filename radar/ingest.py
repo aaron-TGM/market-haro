@@ -8,6 +8,11 @@ Field mapping note: the API returns `price_change_24h/7d/30d`; internally we
 store them as `change_24h/7d/30d`. A `market_price` of 0 means "no market data"
 (usually pre-release), not "free" -- it is normalised to NULL so it can't drag
 averages or breakout baselines down.
+
+Dating note: snapshot rows are dated by the API's `last_updated_at`, NOT by the
+day we fetched them. `/sets/:id/prices` runs behind `/cards/:id/history`, so
+stamping a fetch with today's date appends a stale price to the end of a fresher
+series and manufactures a reversal that never happened. See `_obs_date_for`.
 """
 
 from __future__ import annotations
@@ -33,6 +38,33 @@ def _price(v: Any) -> float | None:
     return f if f > 0 else None
 
 
+def _obs_date_for(row: dict, fallback: str) -> str:
+    """Date a snapshot row by when the PRICE changed, not when we fetched it.
+
+    This is not a nicety. `/sets/:id/prices` is a batch that runs behind the
+    live feed: pulled 2026-08-12, every row carried `last_updated_at` of
+    2026-08-10 (1,142 rows) or 2026-08-11 (873 rows) and not one said the 12th.
+    Stamping them "today" writes a price the API never claimed for that date.
+
+    The damage is specific and it looks like real data. `/cards/:id/history` is
+    FRESHER than the batch, so the series already held 08-10 and 08-11. Adding
+    a 08-12 point carrying the 08-09 price appended a fake reversal to the tail
+    of every series -- and the tail is exactly what the 1d/3d columns and the
+    drawdown measure. Card 1030262 read 157.14 -> 158.91 -> 158.91 in history
+    and then "dropped" to 157.14 on a day that never happened.
+
+    Using `last_updated_at` makes the row idempotent as a bonus: re-syncing
+    twice in a day writes the same date twice instead of inventing two.
+    """
+    raw = row.get("last_updated_at") or row.get("updated_at")
+    if raw:
+        text = str(raw)[:10]
+        # Cheap shape check -- a malformed date must not become an obs_date.
+        if len(text) == 10 and text[4] == "-" and text[7] == "-":
+            return text
+    return fallback
+
+
 def _norm_price_row(
     row: dict,
     *,
@@ -48,7 +80,7 @@ def _norm_price_row(
     return {
         "card_id": str(card_id),
         "printing": printing,
-        "obs_date": obs_date,
+        "obs_date": _obs_date_for(row, obs_date),
         "market_price": _price(row.get("market_price")),
         "low_price": _price(row.get("low_price")),
         "median_price": _price(row.get("median_price")),

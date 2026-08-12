@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
@@ -411,24 +411,65 @@ class Database:
         return len(rows)
 
     # -- reads ------------------------------------------------------------------
+    # A date represented by a handful of rows is not an observation date. Since
+    # snapshots are dated by the API's `last_updated_at` rather than by the fetch,
+    # a few brand-new products with no price at all can carry a date a day or two
+    # ahead of the real batch -- and that date would otherwise become the header
+    # of the dashboard and the basis of `latest_prices`.
+    MIN_ROWS_FOR_OBS_DATE = 25
+
     def latest_obs_date(self) -> str | None:
+        """Most recent snapshot date with enough priced rows to mean something."""
+        row = self.conn.execute(
+            """SELECT obs_date FROM price_points
+               WHERE source='snapshot' AND market_price IS NOT NULL
+               GROUP BY obs_date
+               HAVING COUNT(*) >= ?
+               ORDER BY obs_date DESC LIMIT 1""",
+            (self.MIN_ROWS_FOR_OBS_DATE,),
+        ).fetchone()
+        if row:
+            return row["obs_date"]
+        # Nothing clears the bar (a brand-new database) -- fall back to the max.
         row = self.conn.execute(
             "SELECT MAX(obs_date) AS d FROM price_points WHERE source='snapshot'"
         ).fetchone()
         return row["d"] if row and row["d"] else None
 
-    def latest_prices(self, obs_date: str | None = None) -> list[sqlite3.Row]:
+    def latest_prices(self, obs_date: str | None = None, *, lookback_days: int = 7) -> list[sqlite3.Row]:
+        """The most recent snapshot row for each (card, printing), not one date.
+
+        Rows are dated by the API's `last_updated_at`, and the batch does not
+        refresh every product on the same day -- pulled 2026-08-12 it carried
+        1,142 rows stamped 08-10 and 873 stamped 08-11. Filtering on a single
+        date would have silently dropped 56% of the game from the screen, which
+        is a much worse failure than showing a price that is one day older.
+
+        `lookback_days` bounds how stale a row may be and still count as current.
+        Anything older than that is a product that has stopped being repriced,
+        and its own history is the honest place to read it.
+        """
         obs_date = obs_date or self.latest_obs_date()
         if not obs_date:
             return []
+        cutoff = (date.fromisoformat(obs_date) - timedelta(days=lookback_days)).isoformat()
         return self.conn.execute(
             """SELECT p.*, c.name, c.number, c.rarity, c.set_name, c.image_url,
                       c.tcgplayer_id, c.tcgplayer_url, c.product_type
                FROM price_points p
                JOIN cards c ON c.id = p.card_id
-               WHERE p.obs_date = ?
+               JOIN (
+                   SELECT card_id, printing, MAX(obs_date) AS d
+                   FROM price_points
+                   WHERE source='snapshot' AND obs_date BETWEEN ? AND ?
+                   GROUP BY card_id, printing
+               ) latest
+                 ON latest.card_id = p.card_id
+                AND latest.printing = p.printing
+                AND latest.d = p.obs_date
+               WHERE p.source='snapshot'
                ORDER BY p.market_price DESC""",
-            (obs_date,),
+            (cutoff, obs_date),
         ).fetchall()
 
     def series(self, card_id: str, printing: str, limit: int = 400) -> list[sqlite3.Row]:
@@ -500,16 +541,17 @@ class Database:
         obs_date = obs_date or self.latest_obs_date()
         if not obs_date:
             return {}
-        row = self.conn.execute(
-            """SELECT COUNT(*) AS priced,
-                      SUM(CASE WHEN change_7d > 0 THEN 1 ELSE 0 END)  AS up_7d,
-                      SUM(CASE WHEN change_7d < 0 THEN 1 ELSE 0 END)  AS down_7d,
-                      SUM(CASE WHEN change_24h > 0 THEN 1 ELSE 0 END) AS up_24h
-               FROM price_points
-               WHERE obs_date = ? AND market_price IS NOT NULL""",
-            (obs_date,),
-        ).fetchone()
-        return {k: row[k] for k in row.keys()} if row else {}
+        # Same latest-per-card rule as latest_prices -- breadth measured on one
+        # date would describe whichever half of the market the batch happened to
+        # touch that day.
+        rows = self.latest_prices(obs_date)
+        priced = [r for r in rows if r["market_price"] is not None]
+        return {
+            "priced": len(priced),
+            "up_7d": sum(1 for r in priced if (r["change_7d"] or 0) > 0),
+            "down_7d": sum(1 for r in priced if (r["change_7d"] or 0) < 0),
+            "up_24h": sum(1 for r in priced if (r["change_24h"] or 0) > 0),
+        }
 
     def flagged_card_ids(self, obs_date: str, limit: int = 500) -> list[str]:
         rows = self.conn.execute(

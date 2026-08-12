@@ -587,6 +587,97 @@ def test_heat_reads_attention_against_its_own_history():
     assert heat.load("does/not/exist.json") is None
 
 
+def test_snapshots_are_dated_by_the_api_not_by_the_fetch():
+    """The batch runs behind the history feed, so the fetch date is a lie.
+
+    Pulled 2026-08-12, every /sets/:id/prices row carried last_updated_at of
+    2026-08-10 (1,142 rows) or 2026-08-11 (873) and not one said the 12th.
+    Stamping them "today" appended a stale price to the END of a fresher history
+    series -- Gundam Epyon read 157.14 -> 158.91 in history and then "dropped"
+    back to 157.14 on a day that never happened. The tail is exactly what the
+    1d/3d columns and the drawdown measure, so this looked like real data.
+    """
+    from radar.ingest import _norm_price_row, _obs_date_for
+
+    assert _obs_date_for({"last_updated_at": "2026-08-10T05:19:41Z"}, "2026-08-12") == "2026-08-10"
+    assert _obs_date_for({"updated_at": "2026-08-11"}, "2026-08-12") == "2026-08-11"
+    # No usable date -> the fetch date, rather than dropping the row.
+    assert _obs_date_for({}, "2026-08-12") == "2026-08-12"
+    assert _obs_date_for({"last_updated_at": "garbage"}, "2026-08-12") == "2026-08-12"
+    assert _obs_date_for({"last_updated_at": ""}, "2026-08-12") == "2026-08-12"
+
+    row = _norm_price_row(
+        {"card_id": "c1", "printing": "Holofoil", "market_price": 157.14,
+         "last_updated_at": "2026-08-10T05:19:41.005Z"},
+        obs_date="2026-08-12", source="snapshot",
+    )
+    assert row["obs_date"] == "2026-08-10"
+    # History rows keep their own date and are untouched by this.
+    assert _norm_price_row(
+        {"card_id": "c1", "market_price": 1.0}, obs_date="2026-07-01", source="history"
+    )["obs_date"] == "2026-07-01"
+
+
+def test_latest_prices_spans_the_batch_rather_than_one_date():
+    """Dating by last_updated_at splits the market across days; the screen must
+    still see all of it.
+
+    On the 2026-08-12 pull, 1,142 products were stamped 08-10 and 873 stamped
+    08-11. Filtering on a single date would have silently dropped 56% of the
+    game from the ranking -- a far worse failure than showing a price one day
+    older. And a date carried by a handful of unpriced new products must not
+    become the header of the dashboard.
+    """
+    import tempfile
+
+    from radar.db import Database
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db = Database(Path(tmp) / "t.sqlite3")
+        db.upsert_cards([{"id": f"c{i}", "name": f"Card {i}"} for i in range(60)])
+        pts = []
+        for i in range(30):
+            pts.append({"card_id": f"c{i}", "printing": "Normal", "obs_date": "2026-08-10",
+                        "market_price": 10.0 + i, "change_7d": 5.0, "source": "snapshot"})
+        for i in range(30, 60):
+            pts.append({"card_id": f"c{i}", "printing": "Normal", "obs_date": "2026-08-11",
+                        "market_price": 10.0 + i, "change_7d": -5.0, "source": "snapshot"})
+        # Four brand-new products with no price, stamped a day ahead.
+        for i in range(4):
+            pts.append({"card_id": f"c{i}", "printing": "Foil", "obs_date": "2026-08-12",
+                        "market_price": None, "source": "snapshot"})
+        db.upsert_price_points(pts)
+
+        # The unpriced 08-12 rows must not become the observation date.
+        assert db.latest_obs_date() == "2026-08-11"
+        # ...and every product is still on the screen.
+        rows = db.latest_prices()
+        assert len({r["card_id"] for r in rows if r["market_price"] is not None}) == 60
+
+        # One row per card+printing -- the most recent, not a duplicate per date.
+        db.upsert_price_points([{"card_id": "c0", "printing": "Normal",
+                                 "obs_date": "2026-08-11", "market_price": 999.0,
+                                 "source": "snapshot"}])
+        rows = {(r["card_id"], r["printing"]): r for r in db.latest_prices()
+                if r["market_price"] is not None}
+        assert rows[("c0", "Normal")]["market_price"] == 999.0
+        assert len([r for r in db.latest_prices() if r["card_id"] == "c0"
+                    and r["printing"] == "Normal"]) == 1
+
+        # Breadth uses the same rule, so it describes the whole market. c0's
+        # newer row above carries no change_7d, so it counts as neither.
+        b = db.market_breadth()
+        assert b["priced"] == 60
+        assert b["up_7d"] == 29 and b["down_7d"] == 30
+
+        # A row older than the lookback is not "current".
+        db.upsert_price_points([{"card_id": "c59", "printing": "Foil",
+                                 "obs_date": "2026-06-01", "market_price": 5.0,
+                                 "source": "snapshot"}])
+        assert not [r for r in db.latest_prices() if r["obs_date"] == "2026-06-01"]
+        db.close()
+
+
 def test_archive_round_trips_and_is_byte_stable():
     """The NDJSON archive is the durable asset; the database is a cache.
 
