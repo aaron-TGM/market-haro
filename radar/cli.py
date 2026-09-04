@@ -256,18 +256,30 @@ def cmd_invest(cfg, args) -> int:
         digest_mod.save(snap, cfg.path("data"))
         since = digest_mod.diff(snap, digest_mod.previous(cfg.path("data"), obs), run_date=today)
 
-        html = dashboard.render(
+        from . import haro
+
+        prev = digest_mod.previous(cfg.path("data"), obs)
+        prev_ranks = (
+            {f"{r['card_id']}|{r.get('printing') or 'Normal'}": r["rank"]
+             for r in prev["rows"] if r.get("rank")}
+            if prev else None
+        )
+        # heat is only consulted for catalyst flags here; the attention panel
+        # itself lives in `radar heat`, not on the subscriber page.
+        heat_for_flags = heat_mod.evaluate(heat_mod.load(cfg.path("data/market_heat.json")))
+        html = haro.render(
             ranked,
             obs_date=obs,
             stats=db.stats(),
             market=market,
             plan_cfg=cfg.raw.get("plan") or {},
-            heat=heat,
             since=since,
             today=today,
+            prev_ranks=prev_ranks,
+            heat=heat_for_flags,
         )
         out = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
-        dashboard.write(html, out)
+        haro.write(html, out)
         print(f"\nDashboard -> {out}")
 
         # The digest alongside, in both shapes, so `radar publish` and a human

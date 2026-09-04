@@ -5,6 +5,7 @@ No network. Run with:  python -m pytest tests -q   (or python tests/test_pipelin
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -1227,6 +1228,63 @@ def test_ghost_token_is_a_valid_hs256_jwt():
     assert g.base == "https://example.ghost.io/ghost/api/admin"
 
 
+def test_haro_page_carries_the_subscriber_contract():
+    """The subscriber screen: budget first, rows with image and chart, no prose walls.
+
+    What must be true on every issue: the disclaimer is on the page; the page is
+    one file plus the font stylesheet; every row carries its rank movement, its
+    catalyst flag when the set has one, and the fields the size/watchlist JS
+    needs; nothing the reader types leaves their browser.
+    """
+    import re
+    import sys
+
+    from radar import haro, invest
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import make_preview
+
+    rows = invest.evaluate(make_preview.parse(), {"min_price": 10.0})
+    prev = {f"{r['card_id']}|{r.get('printing') or 'Normal'}": i + 3
+            for i, r in enumerate(rows) if not r.get("disqualified")}
+    heat = {"catalysts": [{"date": "2026-07-24", "kind": "banlist",
+                           "label": "Anksha banned", "sets": ["Dual Impact"]}]}
+    html = haro.render(rows, obs_date="2026-08-09", market={"priced": 100, "up_7d": 20},
+                       plan_cfg={"max_position_pct": 0.25}, prev_ranks=prev, heat=heat,
+                       today="2026-08-10")
+
+    assert "Market Haro" in html and "GUNDECK.AI" in html
+    assert "financial advice" in html and "can lose value" in html
+    assert 'id="budget"' in html and "Watchlist" in html and "Export CSV" in html
+    # One file: the only <link>s are the font preconnects + stylesheet.
+    head = html[: html.index("</head>")]
+    assert head.count("<link") == 3 and "<link" not in html[html.index("</head>"):]
+    assert "<script src" not in html
+
+    payload = json.loads(re.search(r'id="haro-data">(.*?)</script>', html, re.S).group(1)
+                         .replace("\\u003c", "<").replace("\\u003e", ">").replace("\\u0026", "&"))
+    top = payload["rows"][0]
+    assert top["rank"] == 1 and "series" in top and "image_url" in top
+    assert payload["prev_ranks"][f"{top['card_id']}|{top['printing']}"] == 3
+    # The catalyst flag lands only on cards from the named set.
+    flagged = [r for r in payload["rows"] if r.get("catalyst")]
+    assert flagged and all(r["set_name"] == "Dual Impact" for r in flagged)
+    assert any(r["set_name"] != "Dual Impact" and not r.get("catalyst") for r in payload["rows"])
+    # Every tooltip the JS reads is shipped.
+    for k in ("price", "entry", "prem", "c7", "c90", "sales", "score", "buy", "settled"):
+        assert k in payload["tips"]
+
+    # Nothing the reader types leaves the browser: no form posts, no fetch.
+    assert "<form" not in html and "fetch(" not in haro.JS and "XMLHttpRequest" not in haro.JS
+    # Storage is guarded -- a private window must not break the page.
+    assert "try {" in haro.JS and "localStorage" in haro.JS
+
+    # A late feed is the first panel after the header.
+    late = haro.render(rows, obs_date="2026-08-01", today="2026-08-10")
+    assert "Price feed is 9 days behind" in late
+    assert late.index("Price feed is 9 days behind") < late.index('id="budget"')
+
+
 def test_every_css_var_the_page_uses_is_defined():
     """A var() that points at nothing renders as nothing -- silently.
 
@@ -1238,13 +1296,14 @@ def test_every_css_var_the_page_uses_is_defined():
     """
     import re
 
-    from radar import dashboard
+    from radar import dashboard, haro
 
-    src = dashboard.CSS + dashboard.JS
-    declared = set(re.findall(r"--([a-z][a-z0-9-]*)\s*:", dashboard.CSS))
-    used = set(re.findall(r"var\(--([a-z][a-z0-9-]*)", src))
-    missing = sorted(used - declared)
-    assert not missing, f"CSS variables used but never declared: {missing}"
+    for mod in (dashboard, haro):
+        src = mod.CSS + mod.JS
+        declared = set(re.findall(r"--([a-z][a-z0-9-]*)\s*:", mod.CSS))
+        used = set(re.findall(r"var\(--([a-z][a-z0-9-]*)", src))
+        missing = sorted(used - declared)
+        assert not missing, f"{mod.__name__}: CSS variables used but never declared: {missing}"
 
 
 def test_dashboard_never_shows_the_broken_24h_field():

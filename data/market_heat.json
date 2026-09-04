@@ -1041,13 +1041,23 @@
       "date": "2026-07-24",
       "kind": "release",
       "label": "GD05 Freedom Ascension (1st Anniversary booster)",
-      "url": "https://www.gundam-gcg.com/en/news/1stanniversary.html"
+      "url": "https://www.gundam-gcg.com/en/news/1stanniversary.html",
+      "sets": [
+        "Freedom Ascension",
+        "Deck Build Box Freedom Ascension"
+      ]
     },
     {
       "date": "2026-07-24",
       "kind": "banlist",
-      "label": "Banned & Restricted update effective: GD01-020 Anksha banned; three banned pairs added",
-      "url": "https://www.gundam-gcg.com/en/news/01_234.html"
+      "label": "Banlist effective 2026-07-24: GD01-020 Anksha banned; pairs Guntank+M1 Astray Shrike, Amuro Ray+Mikazuki Augus restricted. Amuro Ray (C+) -14% and Mikazuki (Event Promo) -24% in the fortnight after.",
+      "url": "https://www.gundam-gcg.com/en/news/01_234.html",
+      "sets": [
+        "Newtype Rising",
+        "Freedom Ascension",
+        "Starter Deck 01: Heroic Beginnings",
+        "Starter Deck 05: Iron Bloom"
+      ]
     },
     {
       "date": "2026-07-27",

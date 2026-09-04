@@ -288,6 +288,29 @@ tests/
 mapping, the floor-field regression, every disqualifier, the score ordering, position
 sizing, and HTML escaping.
 
+## The screen: `radar/haro.py`
+
+The subscriber page is three things in order — the budget tool, the ranking as
+rich rows, and a detail panel on tap. Copy lives in tooltips and one collapsed
+"how to read"; the page is meant to be looked at, not read.
+
+Each row: rank with movement since the last issue · card image · name, set,
+rarity, and flags · a 90-day chart with a hover readout · price, entry, vs sold,
+7d, 90d, sales/day · score · size at your budget · watchlist star.
+
+**Budget** sizes positions down the ranking with a per-card cap; sized rows get a
+left bar and a copies·cost pill, and the summary at the top warns when one set
+takes more than half. **Watchlist** is the reader's browser only: star a card,
+enter copies and cost in the detail panel, and the row shows unrealised P&L
+against today's price and flags **trend broke** (weeks-up under 50% or a 7-day
+fall past 10%) — the exit signal a hold screen can give. **Catalyst** flags mark
+cards from a set with a logged banlist or release, because those are the things
+price data cannot see. Sort by rank movement, vs sold, or anything else; filter
+by set with the chips.
+
+Nothing the reader types leaves the browser. The page is one file plus the font
+stylesheet; there is no form and no fetch, and that is pinned by a test.
+
 ## The daily issue: `radar digest` and `radar publish`
 
 Market Haro goes out as a paid daily on Ghost. Each run of `radar invest` also writes:
