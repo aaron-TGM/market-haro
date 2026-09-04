@@ -5,8 +5,9 @@ can't be lost, and you can open the dashboard from your phone without the world
 being able to.
 
 The shape that gets you there is **GitHub Actions for the schedule, git for the
-data, Cloudflare Pages + Access for the private URL**. Nothing here needs a
-server, and the whole thing is free unless you're already paying for something.
+data, Ghost for subscribers, payments, the email and the members-only report**.
+Nothing here needs a server of your own; Ghost Pro or a $6 VPS is the only
+running cost beyond the API plan.
 
 ---
 
