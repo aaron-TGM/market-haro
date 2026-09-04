@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS floors (
     condition   TEXT,
     floor_low   REAL,
     floor_ship  REAL,
+    shelf_med   REAL,
+    language    TEXT,
     copies      INTEGER,
     conditions  TEXT,
     PRIMARY KEY (card_id, printing, obs_ts)
@@ -139,7 +141,15 @@ class Database:
         self.conn = sqlite3.connect(self.path)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Add columns that CREATE TABLE IF NOT EXISTS will not add to an old file."""
+        have = {r["name"] for r in self.conn.execute("PRAGMA table_info(floors)")}
+        for col, typ in (("shelf_med", "REAL"), ("language", "TEXT")):
+            if col not in have:
+                self.conn.execute(f"ALTER TABLE floors ADD COLUMN {col} {typ}")
 
     def close(self) -> None:
         self.conn.close()
@@ -314,6 +324,8 @@ class Database:
                 f.get("condition"),
                 _float_or_none(f.get("floor_low")),
                 _float_or_none(f.get("floor_ship")),
+                _float_or_none(f.get("shelf_med")),
+                f.get("language"),
                 _int_or_none(f.get("copies")),
                 json.dumps(f.get("conditions") or [], separators=(",", ":")),
             )
@@ -322,10 +334,12 @@ class Database:
         with self.tx() as c:
             c.executemany(
                 """INSERT INTO floors
-                   (card_id,printing,obs_ts,condition,floor_low,floor_ship,copies,conditions)
-                   VALUES (?,?,?,?,?,?,?,?)
+                   (card_id,printing,obs_ts,condition,floor_low,floor_ship,shelf_med,language,
+                    copies,conditions)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(card_id,printing,obs_ts) DO UPDATE SET
                      floor_low=excluded.floor_low, floor_ship=excluded.floor_ship,
+                     shelf_med=excluded.shelf_med, language=excluded.language,
                      copies=excluded.copies, conditions=excluded.conditions""",
                 rows,
             )

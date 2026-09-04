@@ -16,10 +16,18 @@ FORMAT (tab-separated, one record per line)
 
   #OBS <date>                                       observation date
   C  id tcgplayer_id name number rarity product_type set_id set_name image_url
+     [total_listings] [printing]
   P  card_id printing market low median lowest_with_shipping total_listings
      sales_volume avg_sales_price c24 c7 c30 product_type tcgplayer_id name
      number set_id set_name image_url [last_updated_at]
   H  card_id printing date market low avg_sales_price sales_volume
+  F  card_id printing condition language low_price lowest_with_shipping
+     median_with_shipping sample_count last_updated_at
+
+Listing counts live on the C rows (that is where /sets/:id/cards puts them) and
+are merged into the matching P row, exactly as ingest.sync does with its
+`listings` dict. F rows are the live English condition shelf and are replayed
+through snipe.fetch_floor so the floor logic is the real one, not a copy.
 
 Empty string means absent, which `_price` and `_int_or_none` already turn into
 NULL. A market price of 0 means "no market data", not "free" -- that rule lives
@@ -62,6 +70,8 @@ def load(path: Path, cfg, updated: Path | None = None) -> dict:
     cards: list[dict] = []
     points: list[dict] = []
     hist: list[dict] = []
+    listings: dict[tuple[str, str], int] = {}
+    shelf: dict[str, list[dict]] = {}
 
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line:
@@ -73,6 +83,8 @@ def load(path: Path, cfg, updated: Path | None = None) -> dict:
             obs = p[1]
 
         elif tag == "C":
+            if _v(p, 10):
+                listings[(p[1], _v(p, 11) or "Normal")] = int(p[10])
             cards.append(
                 _norm_card(
                     {
@@ -118,6 +130,16 @@ def load(path: Path, cfg, updated: Path | None = None) -> dict:
                 }
             )
 
+        elif tag == "F":
+            fl = lambda i: (float(p[i]) if _v(p, i) else None)  # noqa: E731
+            shelf.setdefault(p[1], []).append({
+                "card_id": p[1], "printing": p[2], "condition": _v(p, 3),
+                "language": _v(p, 4), "low_price": fl(5),
+                "lowest_with_shipping": fl(6), "median_with_shipping": fl(7),
+                "sample_count": int(p[8]) if _v(p, 8) else None,
+                "last_updated_at": _v(p, 9),
+            })
+
         elif tag == "H":
             hist.append(
                 {
@@ -146,13 +168,33 @@ def load(path: Path, cfg, updated: Path | None = None) -> dict:
         [_norm_card(r, r.pop("_set_id"), r.pop("_set_name")) for r in list(points)]
     )
 
-    norm = [_norm_price_row(r, obs_date=obs, source="snapshot") for r in points]
+    norm = [
+        _norm_price_row(r, obs_date=obs, source="snapshot", listings=listings) for r in points
+    ]
     n_snap = db.upsert_price_points([r for r in norm if r])
 
     # History rows are floats/ints as strings; _price is applied by the DB layer
     # via _float_or_none, and a market price of 0 was already dropped upstream.
     hist = [h for h in hist if h["market_price"] not in (None, "0", "0.0")]
     n_hist = db.upsert_price_points(hist)
+
+    # Replay the captured shelves through the real floor logic.
+    n_floors = 0
+    if shelf:
+        from radar.snipe import fetch_floors
+
+        class _Replay:
+            budget_left = 10**9
+            requests_made = 0
+
+            def get(self, path, **kw):
+                return shelf.get(path.split("/")[2], [])
+
+        targets = [(cid, rows[0].get("printing") or "Normal") for cid, rows in shelf.items()]
+        floors = fetch_floors(_Replay(), targets, limit=len(targets), language="English")
+        if floors:
+            db.save_floors(floors.values())
+            n_floors = len(floors)
 
     stats = db.stats()
     db.close()
@@ -161,6 +203,7 @@ def load(path: Path, cfg, updated: Path | None = None) -> dict:
         "cards": n_cards,
         "snapshot_points": n_snap,
         "history_points": n_hist,
+        "floors": n_floors,
         "stats": stats,
     }
 
@@ -172,6 +215,7 @@ if __name__ == "__main__":
     res = load(src, cfg, upd)
     print(f"Loaded {src.name}  (obs {res['obs_date']})")
     print(f"  {res['cards']:,} card upserts")
-    print(f"  {res['snapshot_points']:,} snapshot points, {res['history_points']:,} history points")
+    print(f"  {res['snapshot_points']:,} snapshot points, {res['history_points']:,} history points, "
+          f"{res['floors']:,} live shelves")
     for k, v in res["stats"].items():
         print(f"  {k:>16}: {v}")

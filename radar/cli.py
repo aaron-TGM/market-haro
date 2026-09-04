@@ -219,17 +219,24 @@ def cmd_invest(cfg, args) -> int:
                     r["copies"] = f.get("copies")
                     r["floor_language"] = f.get("language")
         else:
+            # Offline: the most recent stored shelf per card. Same fields as the
+            # live path so the detail panel renders identically.
+            stored = db.latest_floors()
             for r in preliminary:
-                f = db.latest_floors().get((r["card_id"], r.get("printing") or "Normal"))
+                f = stored.get((r["card_id"], r.get("printing") or "Normal"))
                 if f:
                     r["floor_low"] = f.get("floor_low")
+                    r["shelf_med"] = f.get("shelf_med")
                     r["copies"] = f.get("copies")
+                    r["floor_language"] = f.get("language")
 
         # 4. Score for real (scarcity uses copies) and render.
         ranked = invest_mod.evaluate(preliminary, icfg)
         from . import heat as heat_mod
 
-        heat = heat_mod.evaluate(heat_mod.load(cfg.path("data/market_heat.json")))
+        heat = None if getattr(args, "no_heat", False) else heat_mod.evaluate(
+            heat_mod.load(cfg.path("data/market_heat.json"))
+        )
         html = dashboard.render(
             ranked,
             obs_date=obs,
@@ -586,6 +593,8 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("--top", type=int, default=20, help="rows to print")
 
     r = sub.add_parser("invest", help="the hold screen: rank cards worth buying and sitting on")
+    r.add_argument("--no-heat", action="store_true",
+                   help="leave the market-heat (search attention) panel off the page")
     r.add_argument("--date", help="observation date (YYYY-MM-DD), default = latest")
     r.add_argument("--out", help="output html path")
     r.add_argument("--top", type=int, default=25, help="rows to print to the terminal")
