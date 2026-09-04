@@ -288,6 +288,53 @@ tests/
 mapping, the floor-field regression, every disqualifier, the score ordering, position
 sizing, and HTML escaping.
 
+## New sets: `radar.setreport`
+
+The hold screen needs 45+ days of history and a 90-day trend, so pointing it at a
+six-week-old set disqualifies almost all of it as "too new" — correctly, and
+uselessly. A new set has one question worth asking: **is it still repricing
+downward, or has it found a floor?**
+
+`radar/setreport.py` answers that from the post-release price path. On **GD05
+Freedom Ascension** (released 2026-07-24, priced through 2026-09-03, 162 products
+with 10+ post-release closes):
+
+| | |
+|---|---|
+| Median off its post-release peak | **−57.0%** |
+| Median since release | **−50.8%** |
+| Last 7 days vs the 7 before | **−21.7%** |
+| Still falling | **152 of 162** |
+
+Graded almost perfectly by what a card was worth **at release**:
+
+| Price at release | n | Off peak | Last 7d | Falling |
+|---|---|---|---|---|
+| $0–25 | 119 | **−71.1%** | **−42.9%** | 115 of 119 |
+| $25–100 | 17 | −38.4% | −9.3% | 16 of 17 |
+| $100–500 | 17 | −17.0% | −3.5% | 15 of 17 |
+| $500+ | 9 | **−4.8%** | −0.9% | 6 of 9 |
+
+That is a release flooding into supply. The commons and mid-rares have given up
+two thirds of their value and were *still* dropping 43% in the final week, while
+the LR++ chase cards barely moved. The useful part is the last column: **the fall
+has not stopped**, so "it's down 70%, it must be cheap" is the wrong read — there
+is no floor in the data yet.
+
+Two details that matter:
+
+- **Banded by opening price, not by today's price.** A card that opened at $40 and
+  now sits at $8 belongs with the tier it was priced into. Band it by today's price
+  and it lands in the bulk bucket — which is the group it fell *into* — and the
+  gradient disappears.
+- **Pre-release closes are dropped.** Several GD05 products carry preorder listings
+  back to 2026-06-06; those trade on a different basis and would flatter the peak.
+
+The attention data called this three weeks early: GD05 peaked in Google Trends on
+**2026-07-19**, the week *before* release, and was at 43% of that peak by 2026-08-10.
+`heat.py` said "singles from it are being bought into falling attention, not rising."
+The prices followed.
+
 ## Market heat: is anyone outside this dashboard paying attention?
 
 Price is a lagging, circular signal — a card is "rising" because people already

@@ -587,6 +587,121 @@ def test_heat_reads_attention_against_its_own_history():
     assert heat.load("does/not/exist.json") is None
 
 
+def test_setreport_reads_the_post_release_path_not_a_90_day_trend():
+    """A six-week-old set has no 90-day trend, so the question is the floor.
+
+    Measured on GD05 Freedom Ascension (released 2026-07-24, priced through
+    2026-09-03, 162 products with 10+ post-release closes): median -57.0% off
+    its own post-release peak, 152 of 162 still lower over the last week than
+    the week before, and the fall graded by opening price -- $0-25 down 71.1%,
+    $500+ down 4.8%.
+    """
+    from radar import setreport
+
+    # Opens at 10, peaks at 20, ends at 5, and the last week is below the one
+    # before it.
+    dates = [f"2026-08-{d:02d}" for d in range(1, 22)]
+    px = [10, 12, 14, 16, 18, 20, 18, 16, 14, 12, 11, 10, 9, 8, 7, 7, 6, 6, 5, 5, 5]
+    series = list(zip(dates, px))
+    t = setreport.trajectory(series, "2026-08-01")
+    assert t["release_price"] == 10 and t["peak"] == 20 and t["now"] == 5
+    assert t["peak_date"] == "2026-08-06"
+    assert t["off_peak_pct"] == -75.0
+    assert t["since_release_pct"] == -50.0
+    assert t["last7_pct"] is not None and t["last7_pct"] < 0
+
+    # Preorder closes before the release date are dropped -- they trade on a
+    # different basis, and several GD05 products carry them back to 2026-06-06.
+    pre = [("2026-06-06", 99.0)] * 5 + series
+    assert setreport.trajectory(pre, "2026-08-01")["peak"] == 20
+
+    # Under 10 post-release closes there is no path, only noise.
+    assert setreport.trajectory(series[:8], "2026-08-01") is None
+    assert setreport.trajectory([], "2026-08-01") is None
+
+
+def test_setreport_bands_by_opening_price_and_refuses_to_call_a_bottom():
+    """Bucketing on today's price would hide the entire effect.
+
+    A card that opened at $40 and now sits at $8 belongs with the tier it was
+    priced into. Band it by today's price and it lands in the bulk bucket,
+    which is exactly the group it fell into — the gradient disappears.
+    """
+    from radar import setreport
+
+    def path(start, end, n=21):
+        step = (end - start) / (n - 1)
+        return [(f"2026-08-{d + 1:02d}", start + step * d) for d in range(n)]
+
+    rows = (
+        # Cheap tier collapses.
+        [{"name": f"bulk {i}", "product_type": "Cards", "rarity": "R+",
+          "series": path(20, 6)} for i in range(12)]
+        # Mid tier drifts.
+        + [{"name": f"mid {i}", "product_type": "Cards", "rarity": "LR+",
+            "series": path(200, 170)} for i in range(6)]
+        # Chase cards hold.
+        + [{"name": f"chase {i}", "product_type": "Cards", "rarity": "LR++",
+            "series": path(800, 796)} for i in range(5)]
+    )
+    out = setreport.compare(rows, "2026-08-01")
+    assert out["n"] == 23
+    labels = {b["label"]: b for b in out["bands"]}
+    # The $20 cards are banded by what they opened at, not by the $6 they end at.
+    assert labels["$0–25"]["n"] == 12
+    assert labels["$100–500"]["n"] == 6
+    assert labels["$500+"]["n"] == 5
+    assert labels["$0–25"]["off_peak"] < labels["$500+"]["off_peak"] - 15
+
+    v = out["verdict"]
+    assert "off its post-release peak" in v
+    assert "has not stopped" in v
+    assert "graded by what a card was worth at release" in v
+    # The one thing it must never do is call a bottom.
+    assert "nothing here shows a floor" in v
+    assert "not the next six" in v
+
+    # A set whose last week genuinely turned up gets that said — and still no
+    # floor call, because one week is not a floor.
+    turning = [{"name": f"t{i}", "product_type": "Cards",
+                "series": [(f"2026-08-{d:02d}", 20.0 - d * 0.5) for d in range(1, 15)]
+                          + [(f"2026-08-{d:02d}", 13.0 + (d - 14) * 4.0)
+                             for d in range(15, 22)]}
+               for i in range(10)]
+    tv = setreport.compare(turning, "2026-08-01")["verdict"]
+    assert "One week is not a floor" in tv
+
+    # Nothing measurable says so rather than dividing by zero.
+    assert setreport.compare([], "2026-08-01")["n"] == 0
+    assert "Not enough" in setreport.compare([], "2026-08-01")["verdict"] or \
+           "No product" in setreport.compare([], "2026-08-01")["verdict"]
+
+
+def test_setreport_renders_self_contained_and_states_its_limits():
+    """The notes panel is part of the deliverable, not decoration."""
+    from radar import setreport
+
+    rows = [{"name": "c", "product_type": "Cards", "rarity": "R+", "tcgplayer_id": 1,
+             "entry": 7.0, "shelf_med": 9.0, "copies": 12, "listings": 40,
+             "series": [(f"2026-08-{d:02d}", 20.0 - d * 0.5) for d in range(1, 22)]}]
+    summary = setreport.compare(rows, "2026-08-01")
+    assert summary["rows"][0]["spread"] == round((9.0 / 7.0 - 1) * 100, 1)
+
+    html = setreport.render(
+        summary, set_name="Freedom Ascension", set_code="GD05",
+        released="2026-07-24", as_of="2026-09-03",
+        notes=["Entry is the cheapest Near Mint English listing.",
+               "Off peak is measured since release, not from preorder."],
+    )
+    assert "GD05 Freedom Ascension" in html
+    assert "not the hold screen" in html
+    assert "cheapest Near Mint English listing" in html
+    assert "?Language=English" in html          # links carry the English filter
+    assert "<svg class=\"spark\"" in html      # the path is drawn
+    assert html.count("<link") == 3             # fonts only
+    assert "<script" not in html                # fully static
+
+
 def test_snapshots_are_dated_by_the_api_not_by_the_fetch():
     """The batch runs behind the history feed, so the fetch date is a lie.
 
