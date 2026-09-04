@@ -8,6 +8,7 @@
 # cannot delta, and a year of daily commits would be gigabytes. See radar/archive.py.
 data/*
 !data/history/
+!data/rankings/
 !data/cards.ndjson
 !data/market_heat.json
 !data/validation_history.json

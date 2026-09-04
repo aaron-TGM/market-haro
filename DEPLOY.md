@@ -110,7 +110,46 @@ Trigger it once manually and watch it go green before trusting the schedule.
 > failing — which is exactly when you'd want it not to. Turn on Actions failure
 > notifications: **Settings → Notifications → Actions → email on failure**.
 
-### 5. The private URL
+### 5. Ghost — subscribers, payments, email, and the private report
+
+This is the layer between the report and a paying reader, and Ghost does all of it:
+Stripe memberships, member-only content, the email send, and magic-link sign-in.
+
+1. Create the site (Ghost Pro, or self-hosted on a $6 VPS). Under **Settings →
+   Membership** turn on paid memberships and connect Stripe. Set the tier and price.
+2. **Settings → Integrations → Add custom integration** → name it `market-haro`.
+   Copy the **Admin API key** (it looks like `<id>:<hex secret>`) and the site URL.
+3. Add two repo secrets:
+
+| Name | Value |
+|---|---|
+| `GHOST_URL` | `https://your-site.ghost.io` (no trailing path) |
+| `GHOST_ADMIN_KEY` | the Admin API key from step 2 |
+
+4. In `config.yaml` under `publish:` set `report_url` to where the report page will
+   live — `https://<your-site>/market-haro/` — so the button in the email points at
+   it. Everything else under `publish:` can stay as it is.
+5. Run it once by hand before trusting the schedule:
+
+```bash
+GHOST_URL=... GHOST_ADMIN_KEY=... python -m radar publish --dry-run   # shows what would go out
+GHOST_URL=... GHOST_ADMIN_KEY=... python -m radar publish --no-email  # publishes, no send
+```
+
+Open the site as a paid member and check the report page renders. Then let the
+workflow send for real.
+
+What gets published each day: the digest as a **paid post emailed to every paying
+member** (`status:-free`), and the full dashboard as a **paid page at `/market-haro/`**
+— the same slug every day, so the link in any past email opens the latest report.
+Free members and the public see neither.
+
+If a day's feed is late the issue still goes out; the feed age is the first line
+and the subject. If Ghost itself is unreachable the workflow fails loudly and the
+dashboard is still kept as a run artifact — turn on failure notifications so you
+find out the same morning.
+
+### 6. The private URL without Ghost (optional)
 
 GitHub Pages on a private repo requires a paid plan, so the free path is
 Cloudflare — and Cloudflare Access is genuinely better for this anyway, since it

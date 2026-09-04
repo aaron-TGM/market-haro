@@ -197,8 +197,11 @@ def test_dashboard_renders_valid_selfcontained_html():
     assert "fonts.googleapis.com" in head and "fonts.gstatic.com" in head
     assert "<link" not in html[html.index("</head>") :]
     assert "<script src" not in html
-    # The mission is stated on the page, not just implied by the columns.
-    assert "buying and sitting on" in html
+    # The mission is stated on the page, not just implied by the columns --
+    # and so is the thing it is not.
+    assert "Market Haro" in html and "GUNDECK.AI" in html
+    assert "describes what a card has already done" in html
+    assert "financial advice" in html and "can lose value" in html
     # Rejects are shown with the reason, never silently dropped.
     assert "Screened out" in html and "no way out of the position" in html
     # XSS-ish name never lands raw in the payload or the markup.
@@ -1101,6 +1104,147 @@ def test_settled_price_is_measured_not_forecast():
                               "ask_premium_pct": 12.8},
                              {"min_price": 10.0, "min_history_days": 45,
                               "max_volatility_pct": 8.0}) is None
+
+
+def test_digest_diffs_two_rankings_and_sends_on_day_one():
+    """The newsletter is a diff, and the first issue still goes out.
+
+    Measured between the 2026-08-11 and 2026-09-03 rankings: 10 cards entered
+    the top 20, 10 left it -- all 10 leavers dropped out of the candidate pool
+    rather than being re-ranked lower, which is different news and is said
+    differently -- and breadth fell from 32% to 20%.
+    """
+    from radar import digest
+
+    def row(cid, score, prem=None, disq=None, name=None):
+        return {"card_id": cid, "printing": "Normal", "name": name or f"Card {cid}",
+                "set_name": "S", "invest_score": score, "ask_premium_pct": prem,
+                "disqualified": disq, "market_price": 50.0, "floor_low": 48.0}
+
+    prev_rows = [row("a", 90, 0), row("b", 85, 1), row("c", 80, 0), row("d", 40)]
+    today_rows = [row("a", 92, 8), row("c", 84, -4), row("e", 70, None), row("d", 45, 0),
+                  row("b", 0, disq="Down over 90 days")]
+    prev = digest.snapshot(prev_rows, obs_date="2026-08-11", market={"priced": 100, "up_7d": 32})
+    today = digest.snapshot(today_rows, obs_date="2026-09-03", market={"priced": 100, "up_7d": 20})
+
+    d = digest.diff(today, prev, top_n=3, run_date="2026-09-04")
+    assert d["has_previous"] and d["prev_date"] == "2026-08-11"
+    assert d["feed_age_days"] == 1 and not d["feed_late"]
+    assert [r["card_id"] for r in d["entered"]] == ["e"]
+    assert d["entered"][0]["prev_rank"] is None          # was not a candidate
+    assert [r["card_id"] for r in d["exited"]] == ["b"]
+    assert d["exited"][0]["disqualified"] == "Down over 90 days"
+    assert d["exited"][0]["rank"] is None
+    # a crossed +5 from 0; c crossed -2 from 0.
+    assert [r["card_id"] for r in d["stretched"]] == ["a"]
+    assert [r["card_id"] for r in d["cheapened"]] == ["c"]
+    assert d["breadth"] == {"now_pct": 20, "prev_pct": 32}
+    assert d["climbers"][0]["card_id"] == "d" and d["climbers"][0]["score_delta"] == 5.0
+
+    # A card that left the pool entirely (not in today's rows at all) says so.
+    gone = digest.diff(digest.snapshot([row("a", 90)], obs_date="2026-09-03", market=None),
+                       prev, top_n=3, run_date="2026-09-04")
+    left = {r["card_id"]: r for r in gone["exited"]}
+    assert "left the pool" in left["b"]["disqualified"]
+
+    # First issue: no previous, still a complete digest with the top list.
+    first = digest.diff(today, None, top_n=3, run_date="2026-09-04")
+    assert first["has_previous"] is False
+    assert first["entered"] == [] and first["exited"] == []
+    assert [r["card_id"] for r in first["top"]] == ["a", "c", "e"]
+    assert "First issue" in digest.to_html(first)
+
+    # A late feed is the first line, not a footnote, and it is the subject.
+    late = digest.diff(today, prev, top_n=3, run_date="2026-09-10")
+    assert late["feed_late"] and late["feed_age_days"] == 7
+    assert digest.to_html(late).lstrip().startswith("<p")
+    assert "7 days behind" in digest.to_html(late)
+    assert "feed 7 days behind" in digest.subject(late)
+
+    # Email HTML is boring on purpose: no scripts, no external CSS, no <style>.
+    html = digest.to_html(d, report_url="https://gundeck.ai/market-haro/")
+    assert "<script" not in html and "<link" not in html and "<style" not in html
+    assert "Open the full report" in html
+    assert "financial advice" in html
+    md = digest.to_markdown(d)
+    assert "New to the top 20" in md and "Card e" in md
+
+
+def test_digest_snapshot_round_trips_through_disk():
+    import tempfile
+
+    from radar import digest
+
+    with tempfile.TemporaryDirectory() as tmp:
+        a = digest.snapshot([{"card_id": "x", "printing": "Normal", "name": "X",
+                              "invest_score": 50}], obs_date="2026-09-01", market=None)
+        b = digest.snapshot([{"card_id": "x", "printing": "Normal", "name": "X",
+                              "invest_score": 55}], obs_date="2026-09-03", market=None)
+        digest.save(a, tmp); digest.save(b, tmp)
+        # Strictly older than the date asked for -- today's own file never
+        # counts as "previous".
+        assert digest.previous(tmp, "2026-09-03")["obs_date"] == "2026-09-01"
+        assert digest.previous(tmp, "2026-09-01") is None
+        assert digest.previous(tmp, "2026-09-04")["obs_date"] == "2026-09-03"
+        # Series are not stored -- the archive has them.
+        assert "series" not in b["rows"][0]
+
+
+def test_ghost_token_is_a_valid_hs256_jwt():
+    """Ghost wants HS256, kid = key id, aud /admin/, five-minute expiry."""
+    import base64
+    import hashlib
+    import hmac
+    import json
+
+    from radar import ghost
+
+    key_id = "64f1c2a9b8e7d6c5a4b3f2e1"
+    secret_hex = "0f" * 32
+    tok = ghost.token(f"{key_id}:{secret_hex}", now=1_700_000_000)
+    head_b, body_b, sig_b = tok.split(".")
+
+    def dec(x):
+        return json.loads(base64.urlsafe_b64decode(x + "=" * (-len(x) % 4)))
+
+    head, body = dec(head_b), dec(body_b)
+    assert head == {"alg": "HS256", "typ": "JWT", "kid": key_id}
+    assert body == {"iat": 1_700_000_000, "exp": 1_700_000_300, "aud": "/admin/"}
+    expected = hmac.new(bytes.fromhex(secret_hex), f"{head_b}.{body_b}".encode(),
+                        hashlib.sha256).digest()
+    assert base64.urlsafe_b64decode(sig_b + "=" * (-len(sig_b) % 4)) == expected
+
+    # A key without the id:secret shape is refused with a clear message.
+    try:
+        ghost.token("not-a-key")
+    except ValueError as exc:
+        assert "id>:<hex secret" in str(exc)
+    else:
+        raise AssertionError("malformed key accepted")
+
+    # The client never puts credentials in config -- URL and key are explicit.
+    g = ghost.Ghost("https://example.ghost.io/", f"{key_id}:{secret_hex}")
+    assert g.base == "https://example.ghost.io/ghost/api/admin"
+
+
+def test_every_css_var_the_page_uses_is_defined():
+    """A var() that points at nothing renders as nothing -- silently.
+
+    The table sparklines were invisible for three weeks after the gundeck.ai
+    restyle because they still referenced --series-1 and --surface-1, which
+    the new palette did not define. No error, no blank box, just an empty
+    column that looked like missing data. This walks every var(--x) in the CSS
+    and the JS templates and checks --x is declared on the root.
+    """
+    import re
+
+    from radar import dashboard
+
+    src = dashboard.CSS + dashboard.JS
+    declared = set(re.findall(r"--([a-z][a-z0-9-]*)\s*:", dashboard.CSS))
+    used = set(re.findall(r"var\(--([a-z][a-z0-9-]*)", src))
+    missing = sorted(used - declared)
+    assert not missing, f"CSS variables used but never declared: {missing}"
 
 
 def test_dashboard_never_shows_the_broken_24h_field():

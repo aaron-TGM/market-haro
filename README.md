@@ -1,4 +1,4 @@
-# Gundam Hold Screen
+# Market Haro — from GUNDECK.AI
 
 Finds Gundam Card Game singles that **already have value, have been climbing for months
 rather than days, and sell often enough to get out of**. Built for buying and sitting on
@@ -287,6 +287,40 @@ tests/
 `python tests/test_pipeline.py` runs everything offline. Coverage includes the API field
 mapping, the floor-field regression, every disqualifier, the score ordering, position
 sizing, and HTML escaping.
+
+## The daily issue: `radar digest` and `radar publish`
+
+Market Haro goes out as a paid daily on Ghost. Each run of `radar invest` also writes:
+
+| File | What it is |
+|---|---|
+| `data/rankings/YYYY-MM-DD.json` | today's scored ranking, kept so tomorrow can diff against it (committed) |
+| `out/digest.html` | the email body — what moved since the last issue, table-based, inline styles, no scripts |
+| `out/digest.md` | the same in markdown, for the run log or a second channel |
+| `out/digest.json` | the subject line and freshness flags `radar publish` reads |
+
+The digest is a **diff, not a summary**: new entrants to the top 20, exits with the
+reason, asking prices that crossed above (+5%) or below (−2%) what copies actually
+sold for, the biggest score moves, and market breadth against the previous issue. A
+report that restates the whole ranking every morning teaches readers to stop opening
+it; the delta is what a subscriber wants at 8am.
+
+Three promises the code keeps:
+
+- **An issue goes out every day**, including the first (it says "first issue" and
+  shows the top 10) and including days the price feed is late — the feed age is the
+  first line of the email and the subject line, never a footnote.
+- **The "since" panel on the page is the same diff**, so the email and the report
+  never disagree.
+- **Nothing in the email is a forecast.** The disclaimer is in the template.
+
+`radar publish` pushes to Ghost through the Admin API: the digest as a `paid`
+post emailed to `status:-free` (every paying member), and the full dashboard as
+a `paid` page at a fixed slug, so yesterday's email link opens today's report.
+Credentials come only from `GHOST_URL` and `GHOST_ADMIN_KEY` in the environment;
+the non-secret shape (brand, slugs, segment, report URL) lives under `publish:`
+in `config.yaml`. `--dry-run` shows what would go out; `--no-email` publishes
+the post to the site without sending.
 
 ## New sets: `radar.setreport`
 

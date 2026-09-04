@@ -147,11 +147,20 @@ def cmd_invest(cfg, args) -> int:
 
         min_price = float(icfg.get("min_price", 10.0))
         rows = [dict(r) for r in db.latest_prices(obs)]
+        # The API's change_30d is the cheap pre-filter. When it is missing --
+        # an older archive, or a product the batch has not repriced -- fall
+        # back to the stored series rather than silently dropping the card.
+        series_30 = db.change_over_days(30)
+        def _up_30d(r: dict) -> bool:
+            c = r.get("change_30d")
+            if c is None:
+                c = series_30.get((r["card_id"], r.get("printing") or "Normal"))
+            return (c or 0) > 0
         candidates = [
             r for r in rows
             if r.get("product_type") != "Sealed Products"
             and (r.get("market_price") or 0) >= min_price
-            and (r.get("change_30d") or 0) > 0
+            and _up_30d(r)
         ]
         print(f"{len(candidates)} cards at ${min_price:,.0f}+ and up over 30d.")
 
@@ -232,22 +241,47 @@ def cmd_invest(cfg, args) -> int:
 
         # 4. Score for real (scarcity uses copies) and render.
         ranked = invest_mod.evaluate(preliminary, icfg)
+        from . import digest as digest_mod
         from . import heat as heat_mod
 
         heat = None if getattr(args, "no_heat", False) else heat_mod.evaluate(
             heat_mod.load(cfg.path("data/market_heat.json"))
         )
+        market = db.market_breadth(obs)
+
+        # Today's ranking is kept so tomorrow can diff against it. The diff is
+        # the newsletter and the "since yesterday" panel on the page.
+        today = getattr(args, "today", None) or _today()
+        snap = digest_mod.snapshot(ranked, obs_date=obs, market=market)
+        digest_mod.save(snap, cfg.path("data"))
+        since = digest_mod.diff(snap, digest_mod.previous(cfg.path("data"), obs), run_date=today)
+
         html = dashboard.render(
             ranked,
             obs_date=obs,
             stats=db.stats(),
-            market=db.market_breadth(obs),
+            market=market,
             plan_cfg=cfg.raw.get("plan") or {},
             heat=heat,
+            since=since,
+            today=today,
         )
         out = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
         dashboard.write(html, out)
         print(f"\nDashboard -> {out}")
+
+        # The digest alongside, in both shapes, so `radar publish` and a human
+        # reading the run log see the same thing.
+        report_url = cfg.raw.get("publish", {}).get("report_url") or None
+        (out.parent / "digest.html").write_text(
+            digest_mod.to_html(since, report_url=report_url), encoding="utf-8")
+        (out.parent / "digest.md").write_text(
+            digest_mod.to_markdown(since, report_url=report_url), encoding="utf-8")
+        (out.parent / "digest.json").write_text(
+            json.dumps({"subject": digest_mod.subject(since), "date": obs, "run_date": today,
+                        "feed_late": since["feed_late"], "has_previous": since["has_previous"]}),
+            encoding="utf-8")
+        print(f"Digest    -> {out.parent / 'digest.html'}  ({digest_mod.subject(since)})")
 
         keep = [r for r in ranked if not r.get("disqualified")]
         drop = [r for r in ranked if r.get("disqualified")]
@@ -350,6 +384,69 @@ def cmd_snipe(cfg, args) -> int:
         print("  Re-run `python -m radar report` to fold these into the dashboard.")
     finally:
         db.close()
+    return 0
+
+
+def _today() -> str:
+    from datetime import date as _d
+
+    return _d.today().isoformat()
+
+
+def cmd_publish(cfg, args) -> int:
+    """Push today's report and digest to Ghost.
+
+    Reads what `radar invest` wrote to out/ rather than rebuilding, so what
+    gets emailed is byte-for-byte what was tested. Credentials come from the
+    environment only -- GHOST_URL and GHOST_ADMIN_KEY -- never from config.
+    """
+    import os
+
+    from . import ghost as ghost_mod
+
+    url = os.getenv("GHOST_URL")
+    key = os.getenv("GHOST_ADMIN_KEY")
+    if not url or not key:
+        print("GHOST_URL and GHOST_ADMIN_KEY must be set. Nothing published.")
+        return 2
+
+    out_dir = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html")).parent
+    report = out_dir / "dashboard.html"
+    digest_html = out_dir / "digest.html"
+    meta_path = out_dir / "digest.json"
+    for p in (report, digest_html, meta_path):
+        if not p.exists():
+            print(f"Missing {p} -- run `radar invest` first.")
+            return 1
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    pcfg = cfg.raw.get("publish") or {}
+    brand = pcfg.get("brand", "Market Haro")
+
+    g = ghost_mod.Ghost(url, key)
+    if args.dry_run:
+        site = g.site()
+        print(f"Would publish to {site.get('title') or url}:")
+        print(f"  page  /{pcfg.get('report_slug', ghost_mod.REPORT_SLUG)}  ({report.stat().st_size:,} bytes)")
+        print(f"  post  {meta['subject']}  (email={'no' if args.no_email else 'yes'})")
+        return 0
+
+    page = g.upsert_report_page(
+        report.read_text(encoding="utf-8"),
+        title=f"{brand} — {meta['date']}",
+        slug=pcfg.get("report_slug", ghost_mod.REPORT_SLUG),
+    )
+    print(f"Report page -> {page.get('url') or page.get('slug')}")
+
+    post = g.publish_digest(
+        digest_html.read_text(encoding="utf-8"),
+        title=meta["subject"],
+        slug=f"{pcfg.get('digest_slug_prefix', 'market-haro')}-{meta['date']}",
+        segment=pcfg.get("email_segment", "status:-free"),
+        email=not args.no_email,
+    )
+    print(f"Digest post -> {post.get('url') or post.get('slug')}"
+          f"{'  (emailed to ' + pcfg.get('email_segment', 'status:-free') + ')' if not args.no_email else '  (not emailed)'}")
+    print(f"{g.requests_made} Ghost requests.")
     return 0
 
 
@@ -595,6 +692,13 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("invest", help="the hold screen: rank cards worth buying and sitting on")
     r.add_argument("--no-heat", action="store_true",
                    help="leave the market-heat (search attention) panel off the page")
+    r.add_argument("--today", help="override the run date (for reproducing a past issue)")
+
+    pb = sub.add_parser("publish", help="push today's report and digest to Ghost")
+    pb.add_argument("--out", help="where radar invest wrote the dashboard")
+    pb.add_argument("--dry-run", action="store_true", help="show what would be published")
+    pb.add_argument("--no-email", action="store_true",
+                    help="publish the digest post without sending the email")
     r.add_argument("--date", help="observation date (YYYY-MM-DD), default = latest")
     r.add_argument("--out", help="output html path")
     r.add_argument("--top", type=int, default=25, help="rows to print to the terminal")
@@ -646,6 +750,7 @@ COMMANDS = {
     "export": cmd_export,
     "restore": cmd_restore,
     "validate": cmd_validate,
+    "publish": cmd_publish,
     "heat": cmd_heat,
 }
 

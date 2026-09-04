@@ -56,6 +56,13 @@ FIELDS = (
     "total_listings",
     "sales_volume",
     "avg_sales_price",
+    # The API's own change fields. Dropping these looked harmless -- they are
+    # derivable from history -- until a restored database produced zero
+    # candidates, because the pre-filter in cmd_invest reads change_30d before
+    # any history is loaded. Lossless beats clever.
+    "change_24h",
+    "change_7d",
+    "change_30d",
     "source",
 )
 

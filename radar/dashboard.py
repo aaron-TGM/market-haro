@@ -200,7 +200,7 @@ tr.buy td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   border:1px solid var(--border);border-radius:2px;white-space:nowrap}
 .heat .stalebar{background:var(--surface);border-left:2px solid var(--down);
   padding:8px 12px;margin:2px;font-size:12px;color:var(--down)}
-.spark{display:block;width:100%;height:36px;margin:6px 0 2px}
+.heat .spark{display:block;width:100%;height:36px;margin:6px 0 2px}
 /* Listed above what copies have been selling for / listed below it. */
 .hot{color:var(--down);font-weight:700}
 .cool{color:var(--up);font-weight:700}
@@ -290,8 +290,50 @@ footer code{background:var(--muted-bg);border:1px solid var(--border);padding:2p
   border:1px solid currentColor;border-radius:50%;font-size:8px;line-height:1;margin-left:5px;
   opacity:.6;vertical-align:1px;cursor:help;font-weight:700}
 .info:hover{opacity:1}
+.brand{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);
+  margin-bottom:6px}
+.brand-from{color:var(--text-muted);letter-spacing:.12em;margin-right:6px}
+.howto .steps{margin:4px 0 2px;padding-left:22px;font-size:12.5px;line-height:1.75;
+  color:var(--text)}
+.howto .steps li{margin:4px 0}
+.howto .steps b{color:var(--accent)}
+.since .since-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;
+  padding:4px 2px}
+.since h5{margin:0 0 6px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--accent)}
+.since ul{margin:0;padding-left:16px;font-size:12px;line-height:1.7}
+.since li .meta{font-size:10px;color:var(--text-muted);text-transform:uppercase;
+  letter-spacing:.06em;margin-left:6px}
+.stale-feed{border-left:2px solid var(--down);padding:10px 14px;margin:12px 0;font-size:13px;
+  line-height:1.6}
+.stale-feed b{color:var(--down)}
 @media (max-width:1080px){.col-hide{display:none}}
-@media (max-width:820px){.wrap{padding:18px 12px 48px}}
+@media (max-width:820px){
+  .wrap{padding:18px 12px 48px}
+  /* Phones: the ranking becomes a stack of cards. Each cell carries its column
+     name in data-label so nothing is lost, only re-flowed. */
+  table thead{display:none}
+  table,table tbody,table tr.row{display:block;width:100%}
+  tr.row{border:1px solid var(--border);border-radius:var(--r);margin:0 0 10px;
+    padding:10px 12px 6px;background:var(--surface)}
+  tr.row td{display:flex;justify-content:space-between;align-items:baseline;
+    gap:12px;padding:5px 0;border:0;border-bottom:1px dotted var(--border)}
+  tr.row td:last-child{border-bottom:0}
+  tr.row td::before{content:attr(data-label);font-size:9.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--text-muted);flex:0 0 auto}
+  tr.row td.rank{display:block;padding:0 0 2px;font-size:11px;color:var(--accent);
+    border-bottom:0}
+  tr.row td.rank::before{content:"#";color:var(--accent)}
+  tr.row td:nth-of-type(2){display:block}
+  tr.row td:nth-of-type(2)::before{display:none}
+  tr.row td[data-label="90-day trend"]{display:block}
+  tr.row td[data-label="90-day trend"] svg.spark{width:100%;height:34px;display:block;margin-top:4px}
+  tr.row td.col-hide{display:flex}
+  tr.detail{display:block}
+  tr.detail td{display:block;padding:0}
+  .tiles{grid-template-columns:repeat(2,1fr)}
+  .det{grid-template-columns:1fr}
+}
 """
 
 JS = r"""
@@ -324,10 +366,10 @@ function sparkline(series){
   const lx = w-p, ly = h-p - ((ys[ys.length-1]-lo)/span)*(h-2*p);
   return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img"
     aria-label="90-day price, ${ys[ys.length-1]>=ys[0]?'up':'down'} to $${ys[ys.length-1].toFixed(2)}">
-    <polyline points="${pts}" fill="none" stroke="var(--series-1)" stroke-width="2"
+    <polyline points="${pts}" fill="none" stroke="var(--cyan)" stroke-width="2"
       stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.5" fill="var(--series-1)"
-      stroke="var(--surface-1)" stroke-width="2"/></svg>`;
+    <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.5" fill="var(--cyan)"
+      stroke="var(--surface)" stroke-width="2"/></svg>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -480,21 +522,21 @@ function rowHTML(r, i, plan){
     <td class="rank">${i+1}</td>
     <td><div class="who">${img}<div><div class="nm">${nm}<span class="rar">${esc(r.rarity||'—')}</span></div>
       <div class="meta">${meta}</div></div></div></td>
-    <td class="num">${money(r.market_price)}</td>
-    <td class="num">${r.ask_premium_pct==null ? '<span class="flat">—</span>'
+    <td class="num" data-label="Price">${money(r.market_price)}</td>
+    <td class="num" data-label="vs sold">${r.ask_premium_pct==null ? '<span class="flat">—</span>'
       : `<span class="${r.ask_premium_pct>5?'hot':(r.ask_premium_pct<-2?'cool':'')}">${
           (r.ask_premium_pct>0?'+':'')+r.ask_premium_pct.toFixed(0)}%</span>`}</td>
-    <td class="num col-hide">${pct(r.change_3d)}</td>
-    <td class="num">${pct(r.change_7d)}</td>
-    <td class="num col-hide">${pct(r.change_30d)}</td>
-    <td class="num">${pct(r.change_90d)}</td>
-    <td>${sparkline(r.series)}</td>
-    <td class="num">${r.consistency_pct==null?'<span class="flat">—</span>':r.consistency_pct+'%'}</td>
-    <td class="num"><span class="${salesCls}">${sales==null?'—':sales.toFixed(1)}</span></td>
-    <td class="num col-hide">${r.floor_low==null?'<span class="flat">—</span>':money(r.floor_low)}</td>
-    <td class="num"><div class="score">${r.invest_score.toFixed(0)}</div>
+    <td class="num col-hide" data-label="3d">${pct(r.change_3d)}</td>
+    <td class="num" data-label="7d">${pct(r.change_7d)}</td>
+    <td class="num col-hide" data-label="30d">${pct(r.change_30d)}</td>
+    <td class="num" data-label="90d">${pct(r.change_90d)}</td>
+    <td data-label="90-day trend">${sparkline(r.series)}</td>
+    <td class="num" data-label="Weeks up">${r.consistency_pct==null?'<span class="flat">—</span>':r.consistency_pct+'%'}</td>
+    <td class="num" data-label="Sales/day"><span class="${salesCls}">${sales==null?'—':sales.toFixed(1)}</span></td>
+    <td class="num col-hide" data-label="Entry">${r.floor_low==null?'<span class="flat">—</span>':money(r.floor_low)}</td>
+    <td class="num" data-label="Score"><div class="score">${r.invest_score.toFixed(0)}</div>
       <div class="scorebar" style="width:${Math.max(4, r.invest_score)}%"></div></td>
-    <td class="num">${buy?`<span class="pill">${plan.qty} · $${plan.cost.toFixed(0)}</span>`:'<span class="pill none">—</span>'}</td>
+    <td class="num" data-label="Size">${buy?`<span class="pill">${plan.qty} · $${plan.cost.toFixed(0)}</span>`:'<span class="pill none">—</span>'}</td>
   </tr>` + (openNow ? detailHTML(r, plan) : '');
 }
 
@@ -593,7 +635,7 @@ function exportCSV(){
   const body = [cols.join(',')].concat((window.__view||[]).map(r=>cols.map(c=>e2(r[c])).join(','))).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([body],{type:'text/csv'}));
-  a.download = `gundam-hold-screen-${DATA.obs_date}.csv`;
+  a.download = `market-haro-${DATA.obs_date}.csv`;
   a.click(); URL.revokeObjectURL(a.href);
 }
 
@@ -620,6 +662,17 @@ document.addEventListener('mouseout', e=>{
   if (to !== from){ tipAnchor = to; to ? showTip(to) : hideTip(); }
 });
 window.addEventListener('scroll', ()=>{ if (tipAnchor) showTip(tipAnchor); }, {passive:true});
+// Touch: no hover, so a tap on a "?" or a header toggles the tip and a tap
+// anywhere else closes it. Row clicks still expand the row.
+document.addEventListener('click', e=>{
+  const el = e.target.closest('[data-tip]');
+  if (el && (e.target.closest('.info') || el.tagName === 'TH' || el.classList.contains('flabel'))){
+    if (tipAnchor === el && tip.classList.contains('on')){ hideTip(); tipAnchor = null; }
+    else { tipAnchor = el; showTip(el); }
+    return;
+  }
+  if (tipAnchor && !e.target.closest('#tip')){ hideTip(); tipAnchor = null; }
+});
 
 // listeners
 document.getElementById('q').addEventListener('input', e=>{state.q=e.target.value; state.limit=40; apply();});
@@ -856,7 +909,9 @@ TIPS = {
     "score": "Weighted blend of value, liquidity, trend, stability and scarcity. Click any row "
              "for the breakdown. It ranks how well a card fits a buy-and-hold thesis; it is not "
              "a prediction.",
-    "buy": "Copies and cost at your budget, sized down the ranking with a per-position cap.",
+    "buy": "How many copies fit at the budget you entered above, and what they cost, sized "
+           "down the ranking with a per-position cap. This is arithmetic on your number and "
+           "the live entry price &mdash; it is not a recommendation to buy.",
     "card": "Click the name for the TCGplayer page. Click anywhere else on the row to open the "
             "full case.",
 }
@@ -1080,6 +1135,77 @@ def _heat_panel(h: dict[str, Any] | None) -> str:
 </details>'''
 
 
+def _freshness(obs_date: str, today: str | None) -> str:
+    """A plain banner when the price feed is behind.
+
+    The subscriber promise is that the report goes out every day even when the
+    feed is late or partial. That is only honest if the page says so in the
+    first thing they see, not in a footnote. Two days is the feed's normal lag;
+    past that it is late and the banner says by how much.
+    """
+    if not today:
+        return ""
+    try:
+        from datetime import date as _d
+
+        age = (_d.fromisoformat(today) - _d.fromisoformat(obs_date)).days
+    except (ValueError, TypeError):
+        return ""
+    if age <= 2:
+        return ""
+    return (
+        f'<div class="panel stale-feed"><b>Price feed is {age} days behind.</b> The most recent '
+        f'market prices here are from {_esc(obs_date)}. The ranking is still built the same way '
+        f'and entry prices are still live, but treat the market column as history until the feed '
+        f'catches up.</div>'
+    )
+
+
+def _since_panel(since: dict[str, Any] | None) -> str:
+    """What changed since the last issue -- the newsletter, on the page."""
+    if not since or not since.get("has_previous"):
+        return ""
+
+    def card(r):
+        return f'<b>{_esc(r["name"])}</b> <span class="meta">{_esc(r.get("set_name") or "")}</span>'
+
+    blocks = []
+    if since.get("entered"):
+        blocks.append("<h5>New to the top 20</h5><ul>" + "".join(
+            f'<li>{card(r)} &mdash; #{r["rank"]}, score {r["invest_score"]:.0f}, '
+            f'{("was #" + str(r["prev_rank"])) if r.get("prev_rank") else "was not a candidate"}</li>'
+            for r in since["entered"][:6]) + "</ul>")
+    if since.get("exited"):
+        blocks.append("<h5>Dropped out of the top 20</h5><ul>" + "".join(
+            f'<li>{card(r)} &mdash; was #{r.get("prev_rank")}, '
+            f'{("now #" + str(r["rank"])) if r.get("rank") else ("screened out: " + _esc(r.get("disqualified") or ""))}</li>'
+            for r in since["exited"][:6]) + "</ul>")
+    if since.get("stretched"):
+        blocks.append("<h5>Asking price ran ahead of sales</h5><ul>" + "".join(
+            f'<li>{card(r)} &mdash; listed {r["ask_premium_pct"]:+.0f}% vs what copies sold for</li>'
+            for r in since["stretched"][:5]) + "</ul>")
+    if since.get("cheapened"):
+        blocks.append("<h5>Asking price fell below sales</h5><ul>" + "".join(
+            f'<li>{card(r)} &mdash; listed {r["ask_premium_pct"]:+.0f}% vs what copies sold for</li>'
+            for r in since["cheapened"][:5]) + "</ul>")
+    b = since.get("breadth") or {}
+    if b.get("now_pct") is not None and b.get("prev_pct") is not None:
+        d = b["now_pct"] - b["prev_pct"]
+        blocks.append(
+            f'<h5>Market breadth</h5><p class="sub2">{b["now_pct"]}% of priced products up over '
+            f'7 days, {"up" if d > 0 else "down" if d < 0 else "unchanged"}'
+            f'{f" {abs(d)} points" if d else ""} since {_esc(since.get("prev_date") or "last issue")}.</p>'
+        )
+    if not blocks:
+        return ""
+    return (
+        f'<details class="panel since" open><summary>Since {_esc(since.get("prev_date") or "last issue")}'
+        f'<span class="sc">what moved in the ranking</span></summary><div class="since-grid">'
+        + "".join(f"<div>{x}</div>" for x in blocks)
+        + "</div></details>"
+    )
+
+
 def render(
     ranked: Sequence[dict],
     *,
@@ -1090,6 +1216,8 @@ def render(
     plan_cfg: dict[str, Any] | None = None,
     scope_note: str = "",
     heat: dict[str, Any] | None = None,
+    since: dict[str, Any] | None = None,
+    today: str | None = None,
 ) -> str:
     stats = stats or {}
     market = market or {}
@@ -1133,7 +1261,7 @@ def render(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gundam Hold Screen — {_esc(obs_date)}</title>
+<title>Market Haro — {_esc(obs_date)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet"
@@ -1144,17 +1272,20 @@ def render(
 <div class="wrap">
 <header>
   <div>
-    <h1>Gundam Hold Screen</h1>
-    <p class="mission">Cards that already have value, have been climbing for months rather than
-      days, and sell often enough to get out of. Ranked for buying and sitting on &mdash; not for
-      flipping.</p>
-    <p class="stamp">{_esc(obs_date)} · {len(candidates)} candidates from {len(ranked)} screened ·
-      English printings only · source: tcgapi.dev{(' · ' + _esc(scope_note)) if scope_note else ''}</p>
+    <div class="brand"><span class="brand-from">from</span> GUNDECK.AI</div>
+    <h1>Market Haro</h1>
+    <p class="mission">The daily Gundam Card Game hold screen. Every English single with real
+      value, a steady multi-month climb, and enough sales to get back out of &mdash; ranked, with
+      the price you would actually pay today. It describes what a card has already done. It does
+      not predict what it will do next.</p>
+    <p class="stamp">Prices through {_esc(obs_date)} · {len(candidates)} candidates from
+      {len(ranked)} screened · English printings only · source: tcgapi.dev{(' · ' + _esc(scope_note)) if scope_note else ''}</p>
   </div>
   <div class="hbtns">
     <button class="ghost" id="csv">Export CSV</button>
   </div>
 </header>
+{_freshness(obs_date, today)}
 
 <div class="tiles">
   <div class="tile"><div class="label" data-tip="Cards that cleared every gate: real price, enough history, recorded sales, up over 90 days, and not too volatile.">Candidates<span class="info">?</span></div>
@@ -1173,6 +1304,26 @@ def render(
     <div class="value">{top['invest_score']:.0f}</div>
     <div class="foot">{_esc(top['name']) if top else '—'}</div></div>{breadth}
 </div>
+
+{_since_panel(since)}
+<details class="panel howto" open>
+  <summary>How to use this<span class="sc">two minutes, once</span></summary>
+  <ol class="steps">
+    <li><b>Start at the top of the table.</b> Rank is the weighted score: value, liquidity,
+      trend, stability and scarcity, each 0&ndash;100. A high score means &ldquo;top quarter of
+      this actual market&rdquo;, not &ldquo;guaranteed to rise&rdquo;.</li>
+    <li><b>Read <i>Entry</i>, not <i>Price</i>, before you act.</b> Price is a daily batch that
+      runs a day or two behind. Entry is the cheapest Near Mint English copy on the shelf right
+      now, shipping included &mdash; the number you would pay.</li>
+    <li><b>Check <i>vs sold</i> for timing.</b> Red means sellers are asking more than buyers
+      have been paying; historically those gave a little back. Green means the opposite. It is a
+      timing read, not a quality read &mdash; a great card can be listed ahead of itself.</li>
+    <li><b>Open a row</b> for the case in plain English, what would break it, the live shelf, and
+      &mdash; if you enter a budget above &mdash; how many copies fit and what limited it.</li>
+    <li><b>Read <i>Screened out</i> too.</b> Nothing is silently dropped. Every card that failed
+      a gate is listed with the reason, and the reasons are as useful as the ranking.</li>
+  </ol>
+</details>
 
 <div class="panel bar">
   <span class="flabel" data-tip="Total you're willing to put to work. Positions are sized down the ranking, capped per card.">Budget<span class="info">?</span></span>
@@ -1218,7 +1369,7 @@ def render(
   <th class="num" data-sort="sales" data-tip="{TIPS['sales']}">Sales/day</th>
   <th class="num col-hide" data-sort="entry" data-tip="{TIPS['entry']}">Entry</th>
   <th class="num" data-sort="score" aria-sort="descending" data-tip="{TIPS['score']}">Score</th>
-  <th class="num" data-tip="{TIPS['buy']}">Buy</th>
+  <th class="num" data-tip="{TIPS['buy']}">Size</th>
 </tr></thead><tbody id="tbody"></tbody></table>
 <div class="more" id="more" style="display:none">
   <button class="ghost" id="more-all">Show all</button>
@@ -1229,11 +1380,15 @@ def render(
 {_heat_panel(heat)}
 
 <footer>
-  <p>Every number here describes what a card has already done. Nothing on this page is a
-  forecast, and nothing knows <em>why</em> a price is moving &mdash; bans, reprints, rotation and
-  tournament results are the things that end a run, and none of them are visible in price data.</p>
-  <p>Thresholds and weights live in <code>config.yaml</code> under <code>invest:</code> ·
-  regenerate with <code>python -m radar invest</code></p>
+  <p><b>Market Haro</b> is published by GUNDECK.AI for its subscribers. Every number on this
+  page describes what a card has already done. Nothing here is a forecast, a recommendation, or
+  financial advice, and nothing knows <em>why</em> a price is moving &mdash; bans, reprints,
+  rotation and tournament results are the things that end a run, and none of them are visible in
+  price data. Trading cards can lose value. Do your own research and never put in money you
+  cannot afford to lose.</p>
+  <p>Prices from tcgapi.dev under commercial licence · market price is a daily batch up to two
+  days behind; entry prices are live at build time · English Near Mint printings only ·
+  &copy; GUNDECK.AI</p>
 </footer>
 </div>
 <div id="tip" role="tooltip"></div>

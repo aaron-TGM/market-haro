@@ -65,6 +65,17 @@ def _updated_map(path: Path | None) -> dict[tuple[str, str], str]:
 
 def load(path: Path, cfg, updated: Path | None = None) -> dict:
     db = Database(cfg.db_path)
+
+    # Safety net. A snapshot loaded into an EMPTY database and then exported
+    # would rewrite every archive month with only what the snapshot carries --
+    # which is how three weeks of stored history got overwritten once. If the
+    # database is empty and an archive exists, restore it first.
+    if db.stats()["price_points"] == 0:
+        from radar import archive
+
+        res = archive.restore(db, cfg.path("data"))
+        if res["points"]:
+            print(f"Empty database: restored {res['points']:,} points from the archive first.")
     upd = _updated_map(updated)
     obs = None
     cards: list[dict] = []

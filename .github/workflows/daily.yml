@@ -10,11 +10,21 @@
 #
 # WHAT IT NEEDS
 #   secrets.TCGAPI_KEY             your tcgapi.dev key                  required
+#   secrets.GHOST_URL              https://your-site.ghost.io           optional
+#   secrets.GHOST_ADMIN_KEY        Ghost Admin API key, "<id>:<secret>"  optional
 #   secrets.CLOUDFLARE_API_TOKEN   scoped to "Cloudflare Pages: Edit"   optional
 #   secrets.CLOUDFLARE_ACCOUNT_ID  from the Cloudflare dashboard URL    optional
 #
-# Without the Cloudflare pair the dashboard is still built and kept as a workflow
-# artifact -- the publish step is skipped, the run does not fail.
+# With the Ghost pair set, every run emails the digest to paying members and
+# refreshes the members-only report page. Without it -- or without Cloudflare
+# -- the dashboard is still built and kept as a workflow artifact; nothing
+# fails, the publish steps are skipped.
+#
+# THE PROMISE TO SUBSCRIBERS
+# An issue goes out every day the workflow runs, including days the price feed
+# is late or partial. The page and the email both say how old the prices are.
+# What must NOT happen is a silent skip, so the Ghost step runs even when sync
+# reported a problem -- the digest carries the feed age in its first line.
 
 name: daily
 
@@ -45,9 +55,11 @@ jobs:
     timeout-minutes: 30
     env:
       TCGAPI_KEY: ${{ secrets.TCGAPI_KEY }}
-      # Hoisted so the publish step can test it -- `secrets` is not available in
-      # a step-level `if`, but `env` is.
+      # Hoisted so the publish steps can test them -- `secrets` is not available
+      # in a step-level `if`, but `env` is.
       CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      GHOST_URL: ${{ secrets.GHOST_URL }}
+      GHOST_ADMIN_KEY: ${{ secrets.GHOST_ADMIN_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -63,6 +75,9 @@ jobs:
         run: python -m radar restore
 
       - name: Sync today's prices
+        # continue-on-error: a late or partial feed must not stop the issue.
+        # invest builds on what is stored, and the digest says how old it is.
+        continue-on-error: true
         run: python -m radar sync --no-history
 
       - name: Backfill history
@@ -95,7 +110,7 @@ jobs:
         run: |
           git config user.name  "radar[bot]"
           git config user.email "radar[bot]@users.noreply.github.com"
-          git add data/history data/cards.ndjson data/validation_history.json
+          git add data/history data/cards.ndjson data/rankings data/validation_history.json
           if git diff --staged --quiet; then
             echo "Nothing new today."
           else
@@ -105,7 +120,11 @@ jobs:
             git push
           fi
 
-      - name: Publish the dashboard
+      - name: Publish to Ghost (email the digest, refresh the report page)
+        if: env.GHOST_URL != '' && env.GHOST_ADMIN_KEY != ''
+        run: python -m radar publish
+
+      - name: Publish the dashboard to Cloudflare Pages
         if: env.CF_TOKEN != ''
         uses: cloudflare/wrangler-action@v3
         with:

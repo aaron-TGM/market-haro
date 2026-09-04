@@ -140,3 +140,19 @@ watchlist:
   tcgplayer_ids:
     - 684008   # Giant Killing -- Starter Deck 09: Destiny Ignition
     - 707579   # Amuro Ray R+ -- Freedom Ascension
+
+# Publishing to Ghost. Credentials are NOT here -- GHOST_URL and GHOST_ADMIN_KEY
+# come from the environment (a repo secret in CI, .env locally). This block is
+# the non-secret shape of what gets published.
+publish:
+  brand: Market Haro
+  # The members-only page that always holds the latest report. Same slug every
+  # day, so yesterday's email opens today's report.
+  report_slug: market-haro
+  # Daily digest posts get this prefix plus the date.
+  digest_slug_prefix: market-haro
+  # Ghost member filter for the email send. status:-free = every paying member.
+  email_segment: "status:-free"
+  # Absolute URL of the report page, for the button in the email. Set once the
+  # Ghost site exists, e.g. https://gundeck.ai/market-haro/
+  report_url: ""

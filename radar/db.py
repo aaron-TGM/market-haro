@@ -535,6 +535,46 @@ class Database:
             )
         return out
 
+    def change_over_days(self, days: int) -> dict[tuple[str, str], float]:
+        """% change from the close nearest `days` before the latest close, per series.
+
+        Used as the fallback for the API's change_* fields, which are not
+        always present. Nearest-earlier close within a 3-day tolerance, same
+        rule as invest._change_over.
+        """
+        latest = self.latest_obs_date()
+        if not latest:
+            return {}
+        target = (date.fromisoformat(latest) - timedelta(days=days)).isoformat()
+        floor = (date.fromisoformat(target) - timedelta(days=3)).isoformat()
+        out: dict[tuple[str, str], float] = {}
+        rows = self.conn.execute(
+            """WITH now AS (
+                 SELECT card_id, printing, market_price
+                 FROM price_points p
+                 WHERE obs_date = (SELECT MAX(obs_date) FROM price_points q
+                                   WHERE q.card_id=p.card_id AND q.printing=p.printing
+                                     AND q.market_price IS NOT NULL)
+                   AND market_price IS NOT NULL
+               ), then_ AS (
+                 SELECT card_id, printing, market_price
+                 FROM price_points p
+                 WHERE obs_date = (SELECT MAX(obs_date) FROM price_points q
+                                   WHERE q.card_id=p.card_id AND q.printing=p.printing
+                                     AND q.obs_date <= ? AND q.obs_date >= ?
+                                     AND q.market_price IS NOT NULL)
+                   AND market_price IS NOT NULL
+               )
+               SELECT now.card_id, now.printing,
+                      (now.market_price / then_.market_price - 1) * 100 AS pct
+               FROM now JOIN then_ ON then_.card_id=now.card_id AND then_.printing=now.printing
+               WHERE then_.market_price > 0""",
+            (target, floor),
+        )
+        for r in rows:
+            out[(r["card_id"], r["printing"])] = r["pct"]
+        return out
+
     def cards_needing_history(self, min_price: float, limit: int) -> list[sqlite3.Row]:
         """Cards above a price floor with the least history -- backfill these first."""
         return self.conn.execute(
