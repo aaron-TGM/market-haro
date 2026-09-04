@@ -117,7 +117,23 @@ This is the layer between the report and a paying reader, and Ghost does all of 
 Stripe memberships, member-only content, the email send, and magic-link sign-in.
 
 1. Create the site (Ghost Pro, or self-hosted on a $6 VPS). Under **Settings →
-   Membership** turn on paid memberships and connect Stripe. Set the tier and price.
+   Membership** connect Stripe and set up **one paid tier**:
+
+   | | |
+   |---|---|
+   | Monthly | **$15** |
+   | Yearly | **$125** |
+   | Free tier | off |
+   | Founding / launch discount | none |
+
+   Two settings make "no free" real, and both are easy to miss:
+   **Settings → Membership → Subscription access → Paid-members only** (nobody can
+   sign up without paying), and in **Settings → Portal** untick the free tier so it
+   never appears on the signup screen. `radar publish` already sends only to
+   `status:-free` and publishes with visibility `paid`, so the code side is
+   consistent with this whether or not the settings are — but without them a
+   free signup could still exist and simply see nothing, which is confusing rather
+   than harmful.
 2. **Settings → Integrations → Add custom integration** → name it `market-haro`.
    Copy the **Admin API key** (it looks like `<id>:<hex secret>`) and the site URL.
 3. Add two repo secrets:

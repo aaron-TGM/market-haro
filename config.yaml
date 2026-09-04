@@ -146,6 +146,10 @@ watchlist:
 # the non-secret shape of what gets published.
 publish:
   brand: Market Haro
+  # Pricing is set in Ghost (Settings -> Membership), not here. Recorded so the
+  # repo says what the product is: one paid tier, $15/month or $125/year, no
+  # free tier, no founding discount. Everything published is visibility `paid`.
+  pricing_note: "$15/mo or $125/yr, single paid tier, no free tier"
   # The members-only page that always holds the latest report. Same slug every
   # day, so yesterday's email opens today's report.
   report_slug: market-haro
