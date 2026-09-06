@@ -13,6 +13,7 @@ data/*
 !data/sets.ndjson
 !data/index.ndjson
 !data/index_members.json
+!data/notes/
 !data/market_heat.json
 !data/validation_history.json
 out/

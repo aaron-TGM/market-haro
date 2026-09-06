@@ -188,7 +188,8 @@ def _esc(x: Any) -> str:
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
-def to_html(d: dict, *, report_url: str | None = None, brand: str = "Market Haro") -> str:
+def to_html(d: dict, *, report_url: str | None = None, brand: str = "Market Haro",
+            note: dict | None = None) -> str:
     """The email body. Plain, table-based, safe for every mail client."""
     A = "#f0a030"
     MUTED = "#8a8f98"
@@ -205,6 +206,10 @@ def to_html(d: dict, *, report_url: str | None = None, brand: str = "Market Haro
         return f'<b>{nm}</b> <span {st_m}>{_esc(r.get("set_name") or "")}</span>'
 
     parts = []
+
+    if note and note.get("html"):
+        parts.append(f'<h3 {st_h}>This week</h3><div style="font:15px/1.6 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
+                     f'margin:0 0 18px;padding:0 0 14px;border-bottom:1px solid #2a2418">{note["html"]}</div>')
 
     if d["feed_late"]:
         parts.append(

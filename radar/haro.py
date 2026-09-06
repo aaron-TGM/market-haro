@@ -134,6 +134,13 @@ details.panel>summary+*{margin-top:10px}
 .legend{display:flex;gap:16px;font-size:10px;color:var(--text-muted);margin-top:6px;letter-spacing:.04em}
 .legend i{display:inline-block;width:14px;border-top:1px dashed var(--accent-dim);vertical-align:middle;margin-right:5px}
 .legend b{display:inline-block;width:8px;height:8px;border:1.5px solid var(--warn);border-radius:50%;vertical-align:middle;margin-right:5px}
+.note .nh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.note .nl{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.note .nd{font-size:10.5px;color:var(--text-muted);letter-spacing:.06em}
+.note .nb{font-size:14px;line-height:1.65;max-width:76ch}
+.note .nb p{margin:0 0 10px} .note .nb p:last-child{margin-bottom:0}
+.note .nb h3,.note .nb h4,.note .nb h5{margin:12px 0 4px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.note .nb ul{margin:0 0 10px;padding-left:20px}
 .portfolio{padding:10px 16px}
 .pf{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:13px}
 .pfl{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
@@ -1142,6 +1149,14 @@ def _playbook_panel(pb: dict | None) -> str:
 </details>"""
 
 
+def _note_panel(note: dict | None) -> str:
+    """A person's note, shown while it is fresh. See radar/note.py."""
+    if not note or not note.get("html"):
+        return ""
+    return (f'<div class="panel note"><div class="nh"><span class="nl">This week</span>'
+            f'<span class="nd">{_esc(note["date"])}</span></div><div class="nb">{note["html"]}</div></div>')
+
+
 def _index_payload(ix: dict | None) -> dict | None:
     if not ix or not ix.get("levels"):
         return None
@@ -1185,6 +1200,7 @@ def render(
     sealed: Sequence[dict] | None = None,
     playbook: dict[str, Any] | None = None,
     sync_url: str | None = None,
+    note: dict[str, Any] | None = None,
 ) -> str:
     """`since` and `heat` are accepted for compatibility and unused: the
     issue-to-issue comparison is the email digest's job, and the hand-kept
@@ -1278,6 +1294,7 @@ def render(
 
 <div class="panel gindex" id="gindex" hidden></div>
 <div class="panel portfolio" id="portfolio" hidden></div>
+{_note_panel(note)}
 <div class="sync" id="sync-status" hidden></div>
 
 <div class="panel budget">

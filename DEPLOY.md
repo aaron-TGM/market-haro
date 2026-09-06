@@ -121,8 +121,9 @@ Stripe memberships, member-only content, the email send, and magic-link sign-in.
 
    | | |
    |---|---|
-   | Monthly | **$15** |
-   | Yearly | **$125** |
+   | Monthly | **$35** |
+   | Yearly | **$300** |
+   | Free trial | **7 days** (Settings → Membership → the tier → "Free trial days") |
    | Free tier | off |
    | Founding / launch discount | none |
 
@@ -165,6 +166,49 @@ If a day's feed is late the issue still goes out; the feed age is the first line
 and the subject. If Ghost itself is unreachable the workflow fails loudly and the
 dashboard is still kept as a run artifact — turn on failure notifications so you
 find out the same morning.
+
+What gets published each day, in full: the digest as a **paid post emailed to
+every paying member**, the full dashboard as a **paid page at `/market-haro/`**,
+and the **track record as a public page at `/track-record/`** — the one page
+without a paywall, because a prospect deserves to see the ranking scored before
+they pay. Set `track_slug` under `publish:` to change its address.
+
+### 5b. The sync + alerts Worker (optional, and what makes it a $35 product)
+
+Without this, every subscriber's watchlist lives in their browser and dies on
+their phone. With it, the watchlist and holdings follow the member across
+devices, the page opens with their P&L, and they get one email on the days
+something on their list changed — trend broke, a card listed below what it
+sells for, a top-20 move, a release in seven days. It is one Cloudflare
+Worker and one KV namespace; free tier covers thousands of members.
+
+1. `cd worker && npm install`, then create the KV namespace:
+   `npx wrangler kv namespace create HARO` — paste the id it prints into
+   `wrangler.toml`. Set `GHOST_URL` and `REPORT_URL` there too.
+2. Secrets: `npx wrangler secret put ADMIN_SECRET` (any long random string) and,
+   for email, `npx wrangler secret put RESEND_API_KEY` (a [Resend](https://resend.com)
+   key with the sending domain verified; set `MAIL_FROM` in `wrangler.toml`).
+   Without the Resend key the Worker still syncs watchlists; it just cannot send.
+3. `npx wrangler deploy`. Note the Worker URL it prints.
+4. In `config.yaml` under `publish:` set `sync_url` to that URL. Add the repo
+   secret `HARO_ADMIN_SECRET` with the same value as step 2, so `radar publish`
+   can push the day's issue to the Worker.
+5. Check it: open the report as a signed-in member; the line under the index
+   should say "Watchlist synced to your account." Star a card on your laptop,
+   open the report on your phone, it is there.
+
+How identity works, so you can explain it to a subscriber: Ghost issues a
+signed token to the logged-in member at `/members/api/session`; the page sends
+that token to the Worker; the Worker verifies the signature against the
+site's published keys. There is no password, no account to create, and the
+Worker never sees a Ghost admin key. The alert rules live in `radar/alerts.py`
+and are mirrored in the Worker; `python tests/test_pipeline.py` writes the
+cases and `cd worker && npm test` replays them, so the two cannot drift.
+
+**The weekly note.** Drop a file at `data/notes/YYYY-MM-DD.md` (a few hundred
+words, small Markdown) and it appears at the top of the page and the email for
+ten days. No file, no slot. This is the one thing in the product a person
+writes, and it is the thing subscribers forward.
 
 ### 6. The private URL without Ghost (optional)
 
@@ -231,6 +275,8 @@ what stops the repo filling with no-op commits.
 | GitHub storage | ~85 MB/year of text |
 | Cloudflare Pages | free, unlimited requests |
 | Cloudflare Access | free up to 50 users |
+| Cloudflare Worker + KV | free tier: 100k requests/day, 1 GB KV |
+| Resend | free tier: 3,000 emails/month; one email per member per day at most |
 | tcgapi.dev Pro | your existing plan; a daily run costs ~60 requests of 10,000 |
 
 So: **free**, with a wide margin on every limit.

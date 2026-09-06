@@ -101,8 +101,10 @@ class Ghost:
         pages = out.get("pages") or []
         return pages[0] if pages else None
 
-    def upsert_report_page(self, html: str, *, title: str, slug: str = REPORT_SLUG) -> dict:
-        """Create or update the members-only page that holds the full report.
+    def upsert_report_page(self, html: str, *, title: str, slug: str = REPORT_SLUG,
+                           visibility: str = "paid") -> dict:
+        """Create or update a page from raw HTML: the members-only report, or
+        the public track record (`visibility="public"`).
 
         Ghost stores content as Lexical; an HTML card keeps the dashboard's
         markup, styles and script intact instead of having them 'cleaned'.
@@ -115,7 +117,7 @@ class Ghost:
         })
         existing = self.find_page(slug)
         body = {"title": title, "slug": slug, "lexical": lexical,
-                "status": "published", "visibility": "paid"}
+                "status": "published", "visibility": visibility}
         if existing:
             body["updated_at"] = existing["updated_at"]
             out = self._call("PUT", f"/pages/{existing['id']}/", {"pages": [body]})
@@ -146,7 +148,7 @@ class Ghost:
             }
         })
         body = {"title": title, "slug": slug, "lexical": lexical,
-                "status": "published", "visibility": "paid"}
+                "status": "published", "visibility": visibility}
         query: dict[str, Any] = {}
         if email:
             body["email_segment"] = segment

@@ -282,7 +282,11 @@ def cmd_invest(cfg, args) -> int:
         gindex = index_mod.build(cfg.path("data"), series, card_meta, obs)
         sealed_rows = sealed_mod.evaluate(
             [r for r in rows if r.get("product_type") == "Sealed Products"], series, all_sets, obs)
+        from . import note as note_mod
         from . import playbook as playbook_mod
+        from . import track as track_mod
+
+        weekly_note = note_mod.latest(cfg.path("data"), today)
 
         pbook = playbook_mod.build(
             all_sets, [dict(x) for x in db.conn.execute("SELECT id, set_id, product_type FROM cards")],
@@ -304,6 +308,7 @@ def cmd_invest(cfg, args) -> int:
             sealed=sealed_rows,
             playbook=pbook,
             sync_url=(cfg.raw.get("publish") or {}).get("sync_url") or None,
+            note=weekly_note,
             art_cache=cfg.path("data/images"),
             fetch_art=not getattr(args, "no_art_fetch", False),
         )
@@ -326,7 +331,12 @@ def cmd_invest(cfg, args) -> int:
         # The digest alongside, in both shapes, so `radar publish` and a human
         # reading the run log see the same thing.
         (out.parent / "digest.html").write_text(
-            digest_mod.to_html(since, report_url=report_url), encoding="utf-8")
+            digest_mod.to_html(since, report_url=report_url, note=weekly_note), encoding="utf-8")
+
+        # The public track record, rebuilt every issue from the stored rankings.
+        track_html, _ = track_mod.build(cfg.path("data"), series, obs, report_url=report_url or "",
+                                        index=gindex)
+        (out.parent / "track-record.html").write_text(track_html, encoding="utf-8")
         (out.parent / "digest.md").write_text(
             digest_mod.to_markdown(since, report_url=report_url), encoding="utf-8")
         (out.parent / "digest.json").write_text(
@@ -488,6 +498,12 @@ def cmd_publish(cfg, args) -> int:
         slug=pcfg.get("report_slug", ghost_mod.REPORT_SLUG),
     )
     print(f"Report page -> {page.get('url') or page.get('slug')}")
+
+    track = out_dir / "track-record.html"
+    if track.exists():
+        tp = g.upsert_report_page(track.read_text(encoding="utf-8"), title=f"{brand} — track record",
+                                  slug=pcfg.get("track_slug", "track-record"), visibility="public")
+        print(f"Track record (public) -> {tp.get('url') or tp.get('slug')}")
 
     post = g.publish_digest(
         digest_html.read_text(encoding="utf-8"),

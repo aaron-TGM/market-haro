@@ -288,6 +288,38 @@ tests/
 mapping, the floor-field regression, every disqualifier, the score ordering, position
 sizing, and HTML escaping.
 
+## What a subscriber gets, top to bottom
+
+**GUNDECK 50** (`radar/index.py`). An equal-weight, chain-linked index of the
+fifty most-traded singles priced $5+, base 100, members fixed per calendar
+month. One number for the market, with a year of history and release marks.
+Stored daily in `data/index.ndjson`.
+
+**Your holdings.** Star cards, enter copies and cost, and the page opens with
+positions, cost in, value now, P&L and how many broke trend. With the sync
+Worker deployed (see DEPLOY §5b) that list follows the member across devices
+and drives the daily alert email; without it, it lives in the browser.
+
+**The weekly note** (`radar/note.py`). A person's few hundred words, from
+`data/notes/YYYY-MM-DD.md`, shown for ten days on the page and in the email.
+
+**The hold screen** — the ranking, below. **Sealed** (`radar/sealed.py`) is a
+fourth view: boxes, decks and cases measured against their earliest price,
+days since release, drawdown and units a day, deliberately not scored.
+
+**What releases did to prices** (`radar/playbook.py`). For every release on
+record, the previous set's top 20, the new set's top 20 and the whole market
+at +30/60/90 days, medians with n on every cell. Eight releases in: the new
+set's chase cards fell a median 20–30% in their first two months every time.
+
+**The track record** (`radar/track.py`) is the one public page: every issue's
+top 20 scored against its pool at +30/60/90 days, spread shown, losers kept,
+plus the monthly walk-forward validation.
+
+**Alerts** (`radar/alerts.py`, `worker/`). Trend broke, listed below sold,
+left or entered the top 20, release in seven days — on change only, one email
+a day at most, per member.
+
 ## The screen: `radar/haro.py`
 
 The subscriber page is three things in order — the budget tool, the ranking as

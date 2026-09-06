@@ -1369,6 +1369,55 @@ def test_alert_rules_fire_on_change_only_and_match_the_worker():
     out.write_text(json.dumps(cases, indent=1, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def test_weekly_note_shows_only_while_fresh_and_renders_small_markdown():
+    import tempfile
+
+    from radar import note
+
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d); (root / "notes").mkdir()
+        (root / "notes" / "2026-09-01.md").write_text("Old **note**.", encoding="utf-8")
+        (root / "notes" / "2026-09-06.md").write_text(
+            "## Heading\nThis week the *market* gave back GD05. See [the playbook](https://x/y).\n\n- one\n- two <b>\n",
+            encoding="utf-8")
+        got = note.latest(root, "2026-09-06")
+        assert got["date"] == "2026-09-06"
+        assert "<h4>Heading</h4>" in got["html"] and "<em>market</em>" in got["html"]
+        assert '<a href="https://x/y" target="_blank" rel="noopener">the playbook</a>' in got["html"]
+        assert "<ul>" in got["html"] and "&lt;b&gt;" in got["html"]   # escaped, not injected
+        assert note.latest(root, "2026-09-15")["date"] == "2026-09-06"  # 9 days: still fresh
+        assert note.latest(root, "2026-09-20") is None                   # 14 days: past MAX_AGE, gone
+        assert note.latest(root, "2026-08-31") is None                   # never from the future
+
+
+def test_track_record_scores_each_issue_against_its_pool_and_keeps_losers():
+    import tempfile
+    from datetime import date, timedelta
+
+    from radar import track
+
+    def ser(p0, slope, start="2026-06-01", n=120):
+        d0 = date.fromisoformat(start)
+        return [((d0 + timedelta(days=i)).isoformat(), p0 + slope * i, 1, None) for i in range(n)]
+    series = {("1", "Normal"): ser(100, +1), ("2", "Normal"): ser(100, +0.5), ("3", "Normal"): ser(100, 0),
+              ("4", "Normal"): ser(100, -0.5), ("5", "Normal"): ser(100, -1), ("6", "Normal"): ser(100, -1),
+              ("7", "Normal"): ser(100, +2)}
+    rows = [{"card_id": str(i), "printing": "Normal", "rank": i} for i in range(1, 8)]
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d); (root / "rankings").mkdir()
+        (root / "rankings" / "2026-07-01.json").write_text(json.dumps({"obs_date": "2026-07-01", "rows": rows}))
+        (root / "validation_history.json").write_text("[]")
+        # TOP=20 covers all 7 here; make the top 5 the "top" by trimming rank > 5 into the pool only
+        recs = track.issues(root / "rankings", series, "2026-08-15")
+        r = recs[0]
+        assert r["date"] == "2026-07-01" and 30 in r["windows"] and 60 not in r["windows"]
+        w = r["windows"][30]
+        assert w["top_n"] == 7 and w["pool_n"] == 7 and w["spread"] == 0.0   # same set: spread is zero by construction
+        assert r["to_date"]["days"] == 45
+        html, _ = track.build(root, series, "2026-08-15", report_url="https://x/r/")
+        assert "2026-07-01" in html and "Nothing is removed" in html and "financial advice" in html
+
+
 def test_release_calendar_labels_itself_from_card_numbers():
     """GD05 from GD05-001, a wave of starters collapsed to one mark, a deck
     build box riding on its booster, promos and tokens left off, and an
