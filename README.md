@@ -127,6 +127,7 @@ tests/            python tests/test_pipeline.py
 docs/METHOD.md    how the score, gates, settled price and validation were measured
 docs/ARCHITECTURE.md   modules, data flow, what is a cache and what is an asset
 docs/SOW-two-fifties.md   next: Market Haro 50 rename + the GUNDECK 50 (most played)
+docs/LAUNCH.md    the launch plan: Ghost, Stripe, the Worker, the GUNDECK offer, operations
 DEPLOY.md         GitHub Actions, Ghost, the Worker, Resend, costs
 CHANGELOG.md      what changed, by issue
 ```
