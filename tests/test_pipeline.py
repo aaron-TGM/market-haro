@@ -1285,6 +1285,66 @@ def test_haro_page_carries_the_subscriber_contract():
     assert late.index("Price feed is 9 days behind") < late.index('id="budget"')
 
 
+def test_haro_embeds_cached_art_and_leaves_the_rest_remote():
+    """Card art ships inside the file, from the cache, without touching the CDN.
+
+    The CDN was never the problem -- sandboxed previews were. So the row
+    thumbnail is a data URI when the cache has the card, the detail keeps a
+    CDN URL for a sharp copy, and a card that is not cached keeps its remote
+    URL rather than failing the render. fetch=False must never go online.
+    """
+    import io
+    import json
+    import re
+    import tempfile
+
+    from radar import art, haro
+
+    rows = [
+        {"card_id": 1, "name": "Cached", "set_name": "S", "number": "S-001", "rarity": "R",
+         "market_price": 20.0, "invest_score": 70.0, "tcgplayer_id": 111,
+         "image_url": "https://product-images.tcgplayer.com/fit-in/400x400/111.jpg",
+         "avg_daily_sales": 1.5, "series": [["2026-08-01", 10.0], ["2026-08-02", 11.0]]},
+        {"card_id": 2, "name": "Remote", "set_name": "S", "number": "S-002", "rarity": "R",
+         "market_price": 20.0, "invest_score": 60.0, "tcgplayer_id": 222,
+         "image_url": "https://product-images.tcgplayer.com/fit-in/400x400/222.jpg",
+         "avg_daily_sales": 1.5, "series": [["2026-08-01", 10.0], ["2026-08-02", 11.0]]},
+    ]
+    with tempfile.TemporaryDirectory() as d:
+        cache = Path(d)
+        try:
+            from PIL import Image
+            im = Image.new("RGB", (286, 400), (200, 40, 40)); buf = io.BytesIO(); im.save(buf, "JPEG")
+            (cache / "111.jpg").write_bytes(buf.getvalue())
+            mime = "image/webp"
+        except ImportError:
+            (cache / "111.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 64)
+            mime = "image/jpeg"
+        html = haro.render(rows, obs_date="2026-08-09", art_cache=cache, fetch_art=False)
+    payload = json.loads(re.search(r'id="haro-data">(.*?)</script>', html, re.S).group(1)
+                         .replace("\\u003c", "<").replace("\\u003e", ">").replace("\\u0026", "&"))
+    cached, remote = payload["rows"]
+    assert cached["thumb"].startswith(f"data:{mime};base64,")
+    assert cached["image_large"] == art.large_url(111)
+    assert "thumb" not in remote and remote["image_url"].endswith("/222.jpg")
+    assert remote["image_large"] == art.large_url(222)
+    # The page never shows a broken-image glyph: a failed load becomes a labelled frame.
+    assert "placeholder(r)" in haro.JS and 'referrerpolicy="no-referrer"' in haro.JS
+
+
+def test_haro_page_is_the_screen_not_the_diff():
+    """The issue-to-issue comparison lives in the email, not on the page; the
+    filters people touch daily are one row and the rest sit behind one button."""
+    from radar import haro
+
+    html = haro.render([], obs_date="2026-08-09", since={"has_previous": True, "entered": [{"name": "x"}]})
+    assert 'class="panel since"' not in html and "Since " not in html
+    assert 'id="fbtn"' in html and 'id="filters" hidden' in html
+    assert 'id="inbudget"' not in html  # the Sized view already does this
+    for control in ("q", "sort", "dir", "clear", "reset", "minprice", "maxprice", "minscore", "minsales"):
+        assert f'id="{control}"' in html
+
+
 def test_every_css_var_the_page_uses_is_defined():
     """A var() that points at nothing renders as nothing -- silently.
 

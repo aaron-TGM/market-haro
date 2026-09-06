@@ -305,8 +305,23 @@ enter copies and cost in the detail panel, and the row shows unrealised P&L
 against today's price and flags **trend broke** (weeks-up under 50% or a 7-day
 fall past 10%) — the exit signal a hold screen can give. **Catalyst** flags mark
 cards from a set with a logged banlist or release, because those are the things
-price data cannot see. Sort by rank movement, vs sold, or anything else; filter
-by set with the chips.
+price data cannot see. Search, the three views and sort are one row; set,
+rarity, price, score and sales filters sit behind one **Filters** button that
+shows how many are on.
+
+**Tap a row** and the detail reads top-down like a card: the art at 200px,
+three verdict chips (is it listed ahead of itself, is the climb intact, can you
+get out), four hero numbers (entry, sold-for, vs sold, 90 days), the case and
+what would break it as callouts, then score / the shelf / your money / the
+checklist as four boxes. Colour appears only where a verdict is made.
+
+**Card art is embedded in the file** (`radar/art.py`). TCGplayer's CDN serves
+to any origin; what breaks images is sandboxed previews and mail clients that
+refuse third-party hosts. So each issue carries 240px WebP thumbnails as data
+URIs (~15 KB a card, ~2 MB an issue), the detail asks the CDN for a 1000px
+copy and falls back to the thumbnail, and a card with neither gets a labelled
+frame rather than a broken-image glyph. Art is cached under `data/images/`
+(gitignored); `--no-art-fetch` renders from the cache without touching the CDN.
 
 Nothing the reader types leaves the browser. The page is one file plus the font
 stylesheet; there is no form and no fetch, and that is pinned by a test.

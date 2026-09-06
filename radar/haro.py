@@ -1,28 +1,37 @@
 """Market Haro -- the subscriber-facing screen. One self-contained HTML file.
 
-WHAT CHANGED FROM THE FIRST DASHBOARD, AND WHY
+THE SHAPE OF THE PAGE, AND WHY
 
-The first version was a table with a paragraph above every panel. It was built
-for one person who wanted to understand the method. A paying subscriber wants
-the opposite: look, decide, close the tab. So the copy went into tooltips and a
-single collapsible "how to read", and the page is now three things in order --
-the budget tool, the ranking as rich rows with a large card image and a large
-90-day chart, and a detail panel on click.
+A paying reader wants to look, decide, close the tab. So the page is three
+things in order -- the budget tool, the ranking as rich rows with a large card
+image and a large 90-day chart, and a detail panel on click -- and everything
+that explains the method lives in tooltips and one collapsed "how to read".
+
+The v3 pass (this file) was a usability review from a person's point of view:
+
+  - Card art is embedded in the file (radar/art.py). The CDN was never the
+    problem; sandboxed previews were. Art is 120x168 in the row, 200x280 in
+    the detail, and a card that has no image gets a labelled frame, never a
+    broken-image glyph.
+  - Filters are two layers. What you touch every day -- search, the three
+    views, sort -- is one row. Everything else -- set, rarity, price, score,
+    sales -- is behind one "Filters" button that shows how many are on. The
+    "only what fits" checkbox is gone; that was the Sized view wearing a
+    second hat.
+  - The detail panel reads top-down like a card, not a spreadsheet: art, the
+    name, three verdict chips (timing, trend, exit), four hero numbers, then
+    the case and what would break it as a callout, then score / shelf / your
+    money / checklist as four boxes. Colour is on the verdicts and signed
+    numbers only, so it means something when it appears.
+  - The "since last issue" panel is gone from the page; that comparison is
+    the email digest's job.
 
 The layout rules come from the dataviz method, applied to a screen that is
-mostly one line chart repeated 140 times:
+mostly one line chart repeated 140 times: a 2px line with a 10% area wash and
+a ringed end marker, a crosshair readout on hover; signed deltas carry their
+sign as well as their colour; one hero figure per view.
 
-  - the chart is a 2px line with a 10% area wash and an 8px end marker ringed
-    in the surface colour; a crosshair readout on hover, never a value on every
-    point
-  - signed deltas carry their sign as well as their colour, so red/green is
-    never the only channel
-  - one hero figure per view: the budget summary once a budget is entered,
-    the candidate count before that
-  - filters in one row above the content; the ranking re-renders against the
-    same slice as the plan summary, so the numbers always agree
-
-WHAT IS NEW FOR SUBSCRIBERS
+WHAT IS THERE FOR SUBSCRIBERS
 
   Watchlist. Star a card; enter copies and cost in the detail panel; the row
   shows unrealised P&L against today's price and flags the moment the trend
@@ -54,10 +63,14 @@ from .dashboard import CHECKLIST, _esc, _rejected_table, _row_payload
 CSS = r"""
 .viz-root{
   --bg:oklch(6.5% .008 220); --surface:oklch(9% .01 220); --surface-2:oklch(12% .012 220);
+  --surface-3:oklch(15% .014 220);
   --text:oklch(94% .04 85); --text-muted:oklch(62% .02 85); --accent:oklch(78% .18 65);
-  --accent-dim:oklch(60% .14 65); --border:oklch(20% .04 65); --up:oklch(68% .18 145);
-  --down:oklch(60% .22 25); --warn:oklch(78% .18 65); --cyan:oklch(72% .16 200);
-  --cyan-wash:oklch(72% .16 200 / .12); --r:2px;
+  --accent-dim:oklch(60% .14 65); --accent-wash:oklch(78% .18 65 / .12);
+  --border:oklch(20% .04 65); --border-2:oklch(28% .04 65);
+  --up:oklch(68% .18 145); --up-wash:oklch(68% .18 145 / .14);
+  --down:oklch(60% .22 25); --down-wash:oklch(60% .22 25 / .14);
+  --warn:oklch(78% .18 65); --cyan:oklch(72% .16 200); --cyan-wash:oklch(72% .16 200 / .12);
+  --r:2px;
   --mono:"TRT Terminal Mono","JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }
 *{box-sizing:border-box}
@@ -66,6 +79,7 @@ a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
 b{font-weight:700}
 .wrap{max-width:1360px;margin:0 auto;padding:22px 20px 72px}
+[hidden]{display:none!important}
 
 /* header ------------------------------------------------------------- */
 header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;
@@ -77,9 +91,12 @@ h1{margin:2px 0 4px;font-size:26px;letter-spacing:.14em;text-transform:uppercase
 .hbtns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .ghost{background:transparent;color:var(--accent);border:1px solid var(--border);
   border-radius:var(--r);padding:7px 12px;font:inherit;font-size:11px;letter-spacing:.1em;
-  text-transform:uppercase;cursor:pointer}
+  text-transform:uppercase;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .ghost:hover{border-color:var(--accent)}
 .ghost.on{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.ghost .badge{background:var(--accent);color:var(--bg);border-radius:9px;min-width:16px;height:16px;
+  font-size:10px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px}
+.ghost.on .badge{background:var(--bg);color:var(--accent)}
 
 /* panels ------------------------------------------------------------- */
 .panel{position:relative;background:var(--surface);border:1px solid var(--border);
@@ -107,83 +124,92 @@ details.panel>summary+*{margin-top:10px}
 .budget{display:grid;grid-template-columns:auto auto 1fr;gap:14px 22px;align-items:center}
 .budget label{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);
   display:flex;align-items:center;gap:8px}
-.budget input[type=number]{background:var(--bg);color:var(--text);border:1px solid var(--border);
-  border-radius:var(--r);padding:9px 12px;font:inherit;font-size:16px;width:150px}
+.money-in{position:relative;display:inline-block}
+.money-in::before{content:"$";position:absolute;left:12px;top:50%;transform:translateY(-50%);
+  color:var(--text-muted);font-size:16px;pointer-events:none}
+.budget input[type=number]{background:var(--bg);color:var(--text);border:1px solid var(--border-2);
+  border-radius:var(--r);padding:9px 12px 9px 26px;font:inherit;font-size:16px;width:160px}
 .budget input[type=number]:focus{outline:none;border-color:var(--accent)}
-.chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--text-muted);cursor:pointer;user-select:none}
-.chip input{accent-color:var(--accent)}
 .plan-sum{font-size:14px;line-height:1.5}
 .plan-sum .hero{font-size:24px;font-weight:700;color:var(--accent);margin-right:6px}
 .plan-sum .conc{color:var(--warn)}
 .plan-sum .muted{color:var(--text-muted);font-size:12px}
 
 /* kpi strip ---------------------------------------------------------- */
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:14px 0}
 .kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:10px 12px}
 .kpi .l{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted)}
 .kpi .v{font-size:22px;font-weight:700;margin-top:2px;line-height:1.1}
 .kpi .f{font-size:10px;color:var(--text-muted);margin-top:3px;text-transform:uppercase;letter-spacing:.06em}
 .kpi.down .v{color:var(--down)} .kpi.up .v{color:var(--up)} .kpi.cyan .v{color:var(--cyan)}
+a.kpi{display:block;color:inherit} a.kpi:hover{text-decoration:none;border-color:var(--accent-dim)}
 
-/* since -------------------------------------------------------------- */
-.since-chips{display:flex;flex-wrap:wrap;gap:8px}
-.since-chips .sc-chip{border:1px solid var(--border);border-radius:var(--r);padding:5px 10px;
-  font-size:11px;letter-spacing:.06em}
-.since-chips .sc-chip b{color:var(--accent)}
-.since-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:12px}
-.since-grid h5{margin:0 0 6px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
-.since-grid ul{margin:0;padding-left:16px;font-size:12px;line-height:1.65}
-.since-grid .m{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-left:6px}
-
-/* toolbar ------------------------------------------------------------ */
-.bar{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
-.bar input,.bar select{background:var(--bg);color:var(--text);border:1px solid var(--border);
-  border-radius:var(--r);padding:7px 10px;font:inherit;font-size:12px}
-.bar input:focus,.bar select:focus{outline:none;border-color:var(--accent)}
-.bar input[type=search]{min-width:200px}
-.bar input[type=number]{width:88px}
-.bar .lbl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted)}
-.bar .spacer{flex:1}
-.bar .count{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted)}
-.setchips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:thin}
-.setchips button{white-space:nowrap;background:transparent;border:1px solid var(--border);
-  color:var(--text-muted);border-radius:var(--r);padding:4px 10px;font:inherit;font-size:10.5px;
-  letter-spacing:.06em;cursor:pointer}
-.setchips button.on{color:var(--bg);background:var(--accent);border-color:var(--accent)}
-.views{display:inline-flex;border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
-.views button{background:transparent;color:var(--text-muted);border:0;padding:7px 12px;font:inherit;
+/* toolbar: what you touch every day ----------------------------------- */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;margin:14px 0 0}
+.toolbar input,.toolbar select,.filters input,.filters select{background:var(--bg);color:var(--text);
+  border:1px solid var(--border-2);border-radius:var(--r);padding:8px 10px;font:inherit;font-size:12px}
+.toolbar input:focus,.toolbar select:focus,.filters input:focus{outline:none;border-color:var(--accent)}
+.toolbar input[type=search]{flex:1 1 220px;min-width:180px}
+.toolbar .lbl,.filters .lbl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted)}
+.toolbar .count{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin-left:auto}
+.views{display:inline-flex;border:1px solid var(--border-2);border-radius:var(--r);overflow:hidden}
+.views button{background:transparent;color:var(--text-muted);border:0;padding:8px 12px;font:inherit;
   font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
 .views button.on{background:var(--accent);color:var(--bg)}
+.sortbox{display:inline-flex;align-items:center;gap:6px}
+.dirbtn{background:transparent;border:1px solid var(--border-2);border-radius:var(--r);color:var(--accent);
+  width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.dirbtn:hover{border-color:var(--accent)}
+.dirbtn svg{transition:transform .15s}
+.dirbtn.asc svg{transform:rotate(180deg)}
+
+/* filters: the second layer -------------------------------------------- */
+.filters{margin:10px 0 0;padding:14px 16px}
+.filters .frow{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:flex-start}
+.filters .fgroup{display:flex;flex-direction:column;gap:6px}
+.filters .fgroup .lbl{margin-bottom:0}
+.filters .frow+.frow{margin-top:12px;padding-top:12px;border-top:1px dotted var(--border)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{background:transparent;border:1px solid var(--border-2);color:var(--text-muted);
+  border-radius:var(--r);padding:5px 10px;font:inherit;font-size:10.5px;letter-spacing:.06em;cursor:pointer}
+.chips button:hover{border-color:var(--accent)}
+.chips button.on{color:var(--bg);background:var(--accent);border-color:var(--accent)}
+.filters input[type=number]{width:96px}
+.range{display:flex;align-items:center;gap:6px}
+.range span{color:var(--text-muted)}
+.filters .factions{margin-left:auto;align-self:flex-end}
 
 /* the ranking -------------------------------------------------------- */
-.rows{display:flex;flex-direction:column;gap:8px}
-.row{display:grid;grid-template-columns:44px 96px minmax(180px,1.2fr) minmax(240px,1.6fr) auto 92px 96px 36px;
+.rows{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.row{display:grid;grid-template-columns:44px 120px minmax(180px,1.2fr) minmax(240px,1.6fr) auto 92px 96px 36px;
   gap:0 16px;align-items:center;background:var(--surface);border:1px solid var(--border);
   border-radius:var(--r);padding:10px 14px;cursor:pointer;position:relative}
 .row:hover{border-color:var(--accent-dim)}
-.row.open{border-color:var(--accent)}
+.row.open{border-color:var(--accent);border-bottom-color:transparent;border-radius:var(--r) var(--r) 0 0}
 .row.sized{box-shadow:inset 3px 0 0 var(--accent)}
 .row.watched .star{color:var(--accent)}
 .rank{display:flex;flex-direction:column;align-items:center;gap:2px}
 .rank .n{font-size:16px;font-weight:700;color:var(--accent)}
 .rank .d{font-size:10px;color:var(--text-muted);white-space:nowrap}
 .rank .d.up{color:var(--up)} .rank .d.down{color:var(--down)}
-.art{width:96px;height:134px;border-radius:3px;overflow:hidden;background:var(--surface-2);
-  display:flex;align-items:center;justify-content:center}
+.art{width:120px;height:168px;border-radius:4px;overflow:hidden;background:var(--surface-2);
+  display:flex;align-items:center;justify-content:center;position:relative;flex:none}
 .art img{width:100%;height:100%;object-fit:cover;display:block}
-.art .ph{font-size:9px;letter-spacing:.14em;color:var(--text-muted);text-transform:uppercase}
-.who .nm{font-size:15px;font-weight:700;line-height:1.25}
+.art .ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:6px;padding:10px;text-align:center;border:1px dashed var(--border-2);border-radius:4px;
+  font-size:9px;letter-spacing:.12em;color:var(--text-muted);text-transform:uppercase;line-height:1.4}
+.art .ph b{font-size:11px;color:var(--text);letter-spacing:.04em;text-transform:none}
+.who .nm{font-size:16px;font-weight:700;line-height:1.25}
 .who .nm a{color:var(--text)}
 .who .meta{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-top:4px}
 .who .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
 .tag{font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:2px 6px;
-  border:1px solid var(--border);border-radius:var(--r);color:var(--accent);white-space:nowrap}
+  border:1px solid var(--border-2);border-radius:var(--r);color:var(--accent);white-space:nowrap}
 .tag.flag{color:var(--down);border-color:var(--down)}
 .tag.pos{color:var(--cyan);border-color:var(--cyan)}
 .tag.broke{color:var(--bg);background:var(--down);border-color:var(--down)}
 .chart{position:relative}
-.chart svg{display:block;width:100%;height:72px}
+.chart svg{display:block;width:100%;height:80px}
 .chart .cap{display:flex;justify-content:space-between;font-size:9.5px;letter-spacing:.08em;
   text-transform:uppercase;color:var(--text-muted);margin-top:2px}
 .stats{display:grid;grid-template-columns:repeat(3,minmax(70px,auto));gap:6px 16px}
@@ -191,9 +217,11 @@ details.panel>summary+*{margin-top:10px}
 .stats .s .v{font-size:14px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
 .up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--text-muted)}
 .score{text-align:center}
-.score .n{font-size:28px;font-weight:700;color:var(--accent);line-height:1}
+.score .n{font-size:28px;font-weight:700;color:var(--text);line-height:1}
+.score.top .n{color:var(--accent)}
 .score .bar{height:3px;background:var(--surface-2);border-radius:2px;margin-top:6px;overflow:hidden}
-.score .bar i{display:block;height:100%;background:var(--accent)}
+.score .bar i{display:block;height:100%;background:var(--text-muted)}
+.score.top .bar i{background:var(--accent)}
 .score .l{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-top:4px}
 .size{text-align:center}
 .pill{display:inline-block;padding:5px 9px;border-radius:var(--r);font-size:11.5px;font-weight:700;
@@ -203,36 +231,79 @@ details.panel>summary+*{margin-top:10px}
 .star{background:transparent;border:0;color:var(--text-muted);cursor:pointer;line-height:0;padding:4px}
 .star:hover{color:var(--accent)}
 
-/* detail ------------------------------------------------------------- */
-.detail{background:var(--surface);border:1px solid var(--accent);border-top:0;border-radius:0 0 var(--r) var(--r);
-  margin:-9px 0 0;padding:16px 18px 18px}
-.det{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px}
-.det h5{margin:0 0 8px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
-.det p{margin:0 0 8px;font-size:12.5px;line-height:1.6}
-.det .warn{color:var(--warn)}
-.det ul{margin:0;padding-left:16px;font-size:12px;line-height:1.6}
-.kv{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px dotted var(--border);font-size:12px}
+/* detail: reads top-down like a card ----------------------------------- */
+.detail{background:var(--surface);border:1px solid var(--accent);border-top:0;
+  border-radius:0 0 var(--r) var(--r);margin:-8px 0 0;padding:18px 18px 18px}
+.dtop{display:grid;grid-template-columns:200px 1fr;gap:22px;align-items:start}
+.dart{width:200px;height:280px;border-radius:6px;overflow:hidden;background:var(--surface-2);position:relative}
+.dart img{width:100%;height:100%;object-fit:cover;display:block}
+.dart .ph{font-size:10px}
+.dhead .nm{font-size:22px;font-weight:700;line-height:1.2}
+.dhead .nm a{color:var(--text)}
+.dhead .meta{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin-top:4px}
+.verdicts{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 14px}
+.vchip{display:inline-flex;flex-direction:column;gap:1px;padding:7px 11px;border-radius:var(--r);
+  border:1px solid var(--border-2);background:var(--surface-2);min-width:150px}
+.vchip .vt{font-size:12px;font-weight:700}
+.vchip .vs{font-size:10px;letter-spacing:.06em;color:var(--text-muted)}
+.vchip.good{border-color:var(--up);background:var(--up-wash)} .vchip.good .vt{color:var(--up)}
+.vchip.bad{border-color:var(--down);background:var(--down-wash)} .vchip.bad .vt{color:var(--down)}
+.vchip.warn{border-color:var(--warn);background:var(--accent-wash)} .vchip.warn .vt{color:var(--warn)}
+.heroes{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.hero-n{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px}
+.hero-n .l{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted)}
+.hero-n .v{font-size:21px;font-weight:700;line-height:1.15;margin-top:2px;font-variant-numeric:tabular-nums}
+.hero-n .f{font-size:10px;color:var(--text-muted);margin-top:2px}
+.hero-n.accent .v{color:var(--accent)}
+.callout{border-left:3px solid var(--border-2);padding:8px 12px;margin:0 0 10px;font-size:12.5px;line-height:1.6;
+  background:var(--surface-2);border-radius:0 var(--r) var(--r) 0}
+.callout .cl{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);display:block;margin-bottom:3px}
+.callout.warn{border-left-color:var(--warn)} .callout.warn .cl{color:var(--warn)}
+.callout.bad{border-left-color:var(--down)} .callout.bad .cl{color:var(--down)}
+.callout.good{border-left-color:var(--up)} .callout.good .cl{color:var(--up)}
+.dbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.cta{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--accent);padding:8px 14px;
+  font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;border-radius:var(--r);background:var(--accent);color:var(--bg)}
+.cta:hover{text-decoration:none;filter:brightness(1.1)}
+.cta.quiet{background:transparent;color:var(--accent)}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:18px}
+.dbox{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px}
+.dbox h5{margin:0 0 10px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);
+  display:flex;align-items:center;gap:6px}
+.dbox h5 .sub{color:var(--text-muted);font-weight:400;letter-spacing:.06em;text-transform:none;font-size:10.5px;margin-left:auto}
+.kv{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:5px 0;
+  border-bottom:1px dotted var(--border);font-size:12px}
 .kv:last-child{border-bottom:0}
-.kv .hot{color:var(--down);font-weight:700} .kv .cool{color:var(--up);font-weight:700}
-.big{font-size:18px;font-weight:700;margin:2px 0}
+.kv .k{color:var(--text-muted)} .kv .vv{font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+.big{font-size:20px;font-weight:700;margin:2px 0;line-height:1.2}
 .sub2{color:var(--text-muted);font-size:11.5px;margin:0 0 6px;line-height:1.5}
-.cta{display:inline-block;margin-top:8px;border:1px solid var(--accent);padding:7px 12px;
-  font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;border-radius:var(--r)}
-.crow{display:grid;grid-template-columns:76px 1fr 32px;gap:8px;align-items:center;font-size:11px;margin:3px 0}
+.crow{display:grid;grid-template-columns:72px 1fr 34px;gap:8px;align-items:center;font-size:11px;margin:5px 0}
 .crow .cl{color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;font-size:9.5px}
-.crow .ct{height:6px;background:var(--surface-2);border-radius:2px;overflow:hidden}
-.crow .ct i{display:block;height:100%;background:var(--accent)}
-.crow .cv{text-align:right;font-variant-numeric:tabular-nums}
+.crow .ct{height:7px;background:var(--surface-2);border-radius:2px;overflow:hidden}
+.crow .ct i{display:block;height:100%;background:var(--text-muted)}
+.crow.hi .ct i{background:var(--up)} .crow.lo .ct i{background:var(--down)}
+.crow .cv{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+.crow.hi .cv{color:var(--up)} .crow.lo .cv{color:var(--down)}
+.score-line{margin-bottom:10px}
+.score-line .n{font-size:32px;font-weight:700;line-height:1;display:block} .score-line.top .n{color:var(--accent)}
+.score-line .t{font-size:10px;color:var(--text-muted);letter-spacing:.04em;display:block;margin-top:4px}
+.changes{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+.changes div{background:var(--surface-2);border-radius:var(--r);padding:6px 8px;text-align:center}
+.changes .l{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted)}
+.changes .v{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
 .pos-form{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0 8px}
-.pos-form label{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);display:block}
-.pos-form input{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);
-  border-radius:var(--r);padding:6px 8px;font:inherit}
-.pnl{font-size:16px;font-weight:700}
+.pos-form label{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);display:block;margin-bottom:3px}
+.pos-form input{width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border-2);
+  border-radius:var(--r);padding:7px 8px;font:inherit}
+.pos-form input:focus{outline:none;border-color:var(--accent)}
+.pnl{font-size:18px;font-weight:700}
+.checklist{margin:0;padding-left:18px;font-size:11.5px;line-height:1.55;color:var(--text-muted)}
+.checklist li{margin:4px 0} .checklist li::marker{color:var(--accent)}
 
 /* misc --------------------------------------------------------------- */
 .more{display:flex;justify-content:center;padding:14px 0 0}
 .empty{padding:40px;text-align:center;color:var(--text-muted)}
-#tip{position:fixed;z-index:50;max-width:340px;background:var(--surface-2);color:var(--text);
+#tip{position:fixed;z-index:50;max-width:340px;background:var(--surface-3);color:var(--text);
   border:1px solid var(--accent);border-radius:var(--r);padding:9px 11px;font-size:11.5px;line-height:1.55;
   pointer-events:none;opacity:0;transition:opacity .08s}
 #tip.on{opacity:1}
@@ -255,9 +326,9 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--border);color
   font-size:11px;line-height:1.65}
 
 @media (max-width:1100px){
-  .row{grid-template-columns:40px 84px minmax(160px,1fr) 88px 36px;grid-template-areas:
+  .row{grid-template-columns:40px 104px minmax(160px,1fr) 88px 36px;grid-template-areas:
     "rank art who score star" "rank art chart chart chart" "rank art stats stats size"}
-  .rank{grid-area:rank} .art{grid-area:art;width:84px;height:117px} .who{grid-area:who}
+  .rank{grid-area:rank} .art{grid-area:art;width:104px;height:146px} .who{grid-area:who}
   .chart{grid-area:chart;margin-top:8px} .stats{grid-area:stats;margin-top:8px}
   .score{grid-area:score} .size{grid-area:size;margin-top:8px} .star{grid-area:star}
 }
@@ -266,15 +337,21 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--border);color
   h1{font-size:20px}
   header{flex-direction:column;align-items:flex-start}
   .budget{grid-template-columns:1fr;gap:10px}
-  .row{grid-template-columns:72px 1fr 32px;gap:0 10px;padding:10px;grid-template-areas:
+  .toolbar .count{margin-left:0;width:100%}
+  .row{grid-template-columns:88px 1fr 32px;gap:0 10px;padding:10px;grid-template-areas:
     "art who star" "art score score" "chart chart chart" "stats stats stats" "size size size"}
   .rank{display:none}
-  .art{width:72px;height:100px}
+  .art{width:88px;height:123px}
   .score{text-align:left;margin-top:6px} .score .bar{max-width:120px}
   .size{text-align:left}
   .stats{grid-template-columns:repeat(3,1fr)}
   .kpis{grid-template-columns:repeat(2,1fr)}
-  .det{grid-template-columns:1fr}
+  .detail{padding:14px 12px}
+  .dtop{grid-template-columns:1fr}
+  .dart{width:140px;height:196px}
+  .dhead .nm{font-size:18px}
+  .heroes{grid-template-columns:repeat(2,1fr)}
+  .dgrid{grid-template-columns:1fr}
 }
 """
 
@@ -284,8 +361,7 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--border);color
 JS = r"""
 const DATA = JSON.parse(document.getElementById('haro-data').textContent);
 const state = {q:'', set:'', rarity:'', minPrice:null, maxPrice:null, minScore:null, minSales:null,
-               sort:'score', dir:-1, limit:30, budget:null, inBudgetOnly:false, view:'all',
-               open:new Set()};
+               sort:'score', dir:-1, limit:30, budget:null, view:'all', open:new Set()};
 
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -299,6 +375,33 @@ const pct = (v, digits=0) => {
 const key = r => r.card_id + '|' + r.printing;
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const shortDate = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d||''); return m ? `${MON[+m[2]-1]} ${+m[3]}` : (d||''); };
+const TOP_SCORE = 75;  // top quarter of what is trading, per the score's own anchoring
+const cardURL = r => r.tcgplayer_url || (r.tcgplayer_id ? 'https://www.tcgplayer.com/product/'+r.tcgplayer_id+'?Language=English' : null);
+
+// ---- card art ------------------------------------------------------------
+// The thumbnail is embedded in the file, so it shows with the network
+// unplugged. The detail asks the CDN for a sharp copy and falls back to the
+// thumbnail; a card with neither gets a labelled frame, never a broken glyph.
+function placeholder(r){
+  return `<div class="ph"><b>${esc(r.name)}</b>${esc(r.number||'')}<span>no image</span></div>`;
+}
+function artHTML(r){
+  const src = r.thumb || r.image_url;
+  if (!src) return placeholder(r);
+  return `<img src="${esc(src)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-ph="${esc(key(r))}">`;
+}
+function bigArtHTML(r){
+  const big = r.image_large || r.image_url, small = r.thumb || '';
+  if (!big && !small) return placeholder(r);
+  const fallback = small ? `data-fallback="${esc(small)}"` : '';
+  return `<img src="${esc(big||small)}" alt="" decoding="async" referrerpolicy="no-referrer" ${fallback} data-ph="${esc(key(r))}">`;
+}
+document.addEventListener('error', e=>{
+  const img = e.target; if (!(img instanceof HTMLImageElement) || !img.dataset.ph) return;
+  if (img.dataset.fallback){ img.src = img.dataset.fallback; delete img.dataset.fallback; return; }
+  const r = DATA.rows.find(x=>key(x)===img.dataset.ph);
+  if (r) img.outerHTML = placeholder(r);
+}, true);
 
 // ---- watchlist: the reader's browser only -------------------------------
 // Wrapped in try/catch throughout: private windows, blocked storage and
@@ -334,10 +437,10 @@ function pnlHTML(r){
   if (val==null) return '<p class="sub2">No market price to value it against.</p>';
   const d = val - basis, p = d/basis*100;
   return `<div class="pnl ${d>=0?'up':'down'}">${d>=0?'+':'−'}$${Math.abs(d).toFixed(2)} <span style="font-size:12px">(${p>=0?'+':''}${p.toFixed(1)}%)</span></div>
-    <div class="kv"><span>${q} × $${c.toFixed(2)}</span><span>$${basis.toFixed(2)} in</span></div>
-    <div class="kv"><span>${q} × ${money(now)} market</span><span>$${val.toFixed(2)} now</span></div>
-    ${r.floor_low!=null ? `<div class="kv"><span>Cheapest listing today</span><span>${money(r.floor_low)}</span></div>` : ''}
-    ${trendBroke(r) ? '<p class="warn" style="margin-top:8px"><b>Trend broke.</b> The weekly climb has stopped or the last week gave back more than a wobble. This is the exit signal a hold screen can give; it is not a forecast.</p>' : ''}`;
+    <div class="kv"><span class="k">${q} × $${c.toFixed(2)}</span><span class="vv">$${basis.toFixed(2)} in</span></div>
+    <div class="kv"><span class="k">${q} × ${money(now)} market</span><span class="vv">$${val.toFixed(2)} now</span></div>
+    ${r.floor_low!=null ? `<div class="kv"><span class="k">Cheapest listing today</span><span class="vv">${money(r.floor_low)}</span></div>` : ''}
+    ${trendBroke(r) ? '<div class="callout bad" style="margin-top:10px"><span class="cl">Trend broke</span>The weekly climb has stopped, or the last week gave back more than a wobble. This is the exit signal a hold screen can give; it is not a forecast.</div>' : ''}`;
 }
 
 // ---- sizing (twin of radar/plan.py::allocate) ----------------------------
@@ -377,7 +480,7 @@ function allocate(rows, budget){
 function renderPlanSummary(plans, rows){
   const el = document.getElementById('plan-sum');
   if (!state.budget){
-    el.innerHTML = `<span class="hero">${DATA.rows.length}</span> candidates today. <span class="muted">Enter a budget and each row gets a size: copies, cost, and what limited it.</span>`;
+    el.innerHTML = `<span class="hero">${DATA.rows.length}</span> cards pass the screen today. <span class="muted">Enter a budget and each row gets a size: copies, cost, and what limited it.</span>`;
     return;
   }
   let n=0, spend=0; const bySet = {};
@@ -396,7 +499,7 @@ function renderPlanSummary(plans, rows){
 
 // ---- the chart -------------------------------------------------------------
 // 2px line, 10% wash, 8px ringed end marker, crosshair readout on hover.
-const CH = {w:300, h:72, p:6};
+const CH = {w:300, h:80, p:6};
 function chart(series, id){
   if (!series || series.length < 2) return '<div class="chart"><div class="empty" style="padding:22px">no history</div></div>';
   const {w,h,p} = CH, ys = series.map(d=>d[1]);
@@ -448,13 +551,14 @@ const COMPONENTS = [
 ];
 function componentBars(c){
   if (!c) return '';
-  return COMPONENTS.map(([k,label,tip])=>{ const v = c[k] ?? 0;
-    return `<div class="crow" data-tip="${esc(tip)}"><span class="cl">${label}</span><span class="ct"><i style="width:${Math.max(2,v)}%"></i></span><span class="cv">${v.toFixed(0)}</span></div>`;
+  return COMPONENTS.map(([k,label,tip])=>{ const v = c[k] ?? 0; const cls = v>=75?'hi':(v<40?'lo':'');
+    return `<div class="crow ${cls}" data-tip="${esc(tip)}"><span class="cl">${label}</span><span class="ct"><i style="width:${Math.max(2,v)}%"></i></span><span class="cv">${v.toFixed(0)}</span></div>`;
   }).join('');
 }
+const realRarity = r => r.rarity && r.rarity !== '—' && r.rarity !== 'None';
 function tagsHTML(r){
   const t = [];
-  if (r.rarity && r.rarity !== '—') t.push(`<span class="tag">${esc(r.rarity)}</span>`);
+  if (realRarity(r)) t.push(`<span class="tag">${esc(r.rarity)}</span>`);
   if (r.printing && r.printing !== 'Normal') t.push(`<span class="tag">${esc(r.printing)}</span>`);
   if (r.catalyst) t.push(`<span class="tag flag" data-tip="${esc(r.catalyst)}">catalyst</span>`);
   if (isWatched(r)){
@@ -473,16 +577,15 @@ function rankDelta(r){
 }
 function rowHTML(r, plan){
   const k = key(r), openNow = state.open.has(k), sized = plan && plan.affordable;
-  const url = r.tcgplayer_url || (r.tcgplayer_id ? 'https://www.tcgplayer.com/product/'+r.tcgplayer_id+'?Language=English' : null);
+  const url = cardURL(r);
   const nm = url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(r.name)}</a>` : esc(r.name);
   const meta = [r.set_name, r.number].filter(Boolean).map(esc).join(' · ');
-  const art = r.image_url ? `<img src="${esc(r.image_url)}" alt="" loading="lazy" decoding="async">` : '<span class="ph">no image</span>';
   const prem = r.ask_premium_pct;
   const premHTML = prem==null ? '<span class="flat">—</span>'
     : `<span class="${prem>5?'down':(prem<-2?'up':'flat')}">${prem>0?'+':''}${prem.toFixed(0)}%</span>`;
   return `<div class="row${openNow?' open':''}${sized?' sized':''}${isWatched(r)?' watched':''}" data-key="${esc(k)}" role="button" aria-expanded="${openNow}">
     <div class="rank"><span class="n">${r.rank}</span>${rankDelta(r)}</div>
-    <div class="art">${art}</div>
+    <div class="art">${artHTML(r)}</div>
     <div class="who"><div class="nm">${nm}</div><div class="meta">${meta}</div><div class="tags">${tagsHTML(r)}</div></div>
     ${chart(r.series, k)}
     <div class="stats">
@@ -493,69 +596,116 @@ function rowHTML(r, plan){
       <div class="s" data-tip="${esc(DATA.tips.c90)}"><div class="l">90d</div><div class="v">${pct(r.change_90d)}</div></div>
       <div class="s" data-tip="${esc(DATA.tips.sales)}"><div class="l">Sales/day</div><div class="v ${(r.avg_daily_sales??0)<1?'down':''}">${r.avg_daily_sales==null?'—':r.avg_daily_sales.toFixed(1)}</div></div>
     </div>
-    <div class="score" data-tip="${esc(DATA.tips.score)}"><div class="n">${r.invest_score.toFixed(0)}</div><div class="bar"><i style="width:${Math.max(3,r.invest_score)}%"></i></div><div class="l">score</div></div>
+    <div class="score${r.invest_score>=TOP_SCORE?' top':''}" data-tip="${esc(DATA.tips.score)}"><div class="n">${r.invest_score.toFixed(0)}</div><div class="bar"><i style="width:${Math.max(3,r.invest_score)}%"></i></div><div class="l">score</div></div>
     <div class="size" data-tip="${esc(DATA.tips.buy)}">${sized?`<span class="pill">${plan.qty} · $${plan.cost.toFixed(0)}</span>`:'<span class="pill none">—</span>'}<div class="l">size</div></div>
     <button class="star" data-star="${esc(k)}" aria-label="${isWatched(r)?'Remove from':'Add to'} watchlist" title="Watchlist"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.8.8-5 4.6 1.3 6.7L12 17.5l-6 3.3 1.3-6.7-5-4.6 6.8-.8z" fill="${isWatched(r)?'currentColor':'none'}" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
   </div>` + (openNow ? detailHTML(r, plan) : '');
 }
 
+// ---- the detail ------------------------------------------------------------
+// Three verdicts a person actually asks about -- is it priced ahead of
+// itself, is the climb intact, can I get out -- then the numbers, then the
+// words. Colour appears only where a verdict is made.
+function verdicts(r){
+  const v = [];
+  const p = r.ask_premium_pct;
+  if (p == null) v.push({c:'', t:'No read on price', s:'too few recent sales'});
+  else if (p > 5) v.push({c:'bad', t:`Asking ${p.toFixed(0)}% above sales`, s:'listed ahead of itself'});
+  else if (p < -2) v.push({c:'good', t:`Asking ${Math.abs(p).toFixed(0)}% below sales`, s:'copies selling above the list'});
+  else v.push({c:'good', t:'Asking what it sells for', s:'list and sales agree'});
+  const cons = r.consistency_pct;
+  if (trendBroke(r)) v.push({c:'bad', t:'Trend broke', s: (r.change_7d!=null && r.change_7d<=-10) ? `${r.change_7d.toFixed(0)}% this week` : `up ${cons??'—'}% of weeks`});
+  else if (cons != null && cons >= 70) v.push({c:'good', t:`Up ${cons}% of weeks`, s:'the climb is intact'});
+  else if (cons != null) v.push({c:'warn', t:`Up ${cons}% of weeks`, s:'a choppy climb'});
+  const s = r.avg_daily_sales;
+  if (s == null) v.push({c:'', t:'No sales data', s:''});
+  else if (s >= 2) v.push({c:'good', t:`${s.toFixed(1)} sales a day`, s:'easy to exit'});
+  else if (s >= 1) v.push({c:'good', t:`${s.toFixed(1)} sales a day`, s:'a stack clears in days'});
+  else v.push({c:'bad', t:`${s.toFixed(1)} sales a day`, s:'slow to exit'});
+  if (r.drawdown_pct != null && r.drawdown_pct >= 10) v.push({c:'warn', t:`${r.drawdown_pct.toFixed(0)}% off its high`, s:'90-day high'});
+  return v.map(x=>`<span class="vchip ${x.c}"><span class="vt">${esc(x.t)}</span>${x.s?`<span class="vs">${esc(x.s)}</span>`:''}</span>`).join('');
+}
+const cleanWatch = s => { const t = String(s||'').replace(/^Watch:\s*/i,'').replace(/\s*Reprints, ban-list changes and rotation[^.]*\.\s*$/,'').trim(); return t ? t[0].toUpperCase() + t.slice(1) : ''; };
 function detailHTML(r, plan){
-  const url = r.tcgplayer_url || (r.tcgplayer_id ? 'https://www.tcgplayer.com/product/'+r.tcgplayer_id+'?Language=English' : null);
+  const url = cardURL(r);
   const k = key(r), w = watch[k] || {};
+  const meta = [r.set_name, r.number, realRarity(r) ? r.rarity : null, r.printing && r.printing!=='Normal' ? r.printing : null].filter(Boolean).map(esc).join(' · ');
+
   let pos;
   if (!state.budget) pos = '<p class="sub2">Enter a budget at the top and this becomes copies and a cost.</p>';
   else if (plan && plan.affordable) pos = `<div class="big">${plan.qty} ${plan.qty===1?'copy':'copies'} · $${plan.cost.toFixed(2)}</div>
       <div class="sub2">at $${plan.unit.toFixed(2)} shipped each · ${plan.pct.toFixed(0)}% of your budget</div>
-      <div class="kv"><span>Limited by</span><span>${plan.limitedBy}</span></div>
-      <div class="kv"><span>Copies listed</span><span>${r.copies ?? '—'}</span></div>
-      <div class="kv"><span>Budget left after</span><span>$${(plan.remaining??0).toFixed(2)}</span></div>
-      ${r.avg_daily_sales ? `<div class="kv"><span>Days to sell that many</span><span>~${Math.ceil(plan.qty/r.avg_daily_sales)}</span></div>` : ''}`;
+      <div class="kv"><span class="k">Limited by</span><span class="vv">${plan.limitedBy}</span></div>
+      <div class="kv"><span class="k">Budget left after</span><span class="vv">$${(plan.remaining??0).toFixed(2)}</span></div>
+      ${r.avg_daily_sales ? `<div class="kv"><span class="k">Days to sell that many</span><span class="vv">~${Math.ceil(plan.qty/r.avg_daily_sales)}</span></div>` : ''}`;
   else pos = `<div class="big">No position</div><p class="sub2">${plan ? plan.reason : 'No live entry price.'}</p>`;
 
-  const entry = (r.floor_low != null)
-    ? `<div class="kv"><span>Cheapest NM English, shipped</span><span>$${r.floor_low.toFixed(2)}</span></div>
-       <div class="kv"><span>Median listing</span><span>${r.shelf_med!=null?'$'+r.shelf_med.toFixed(2):'—'}</span></div>
-       <div class="kv"><span>Entry vs the shelf</span><span>${r.entry_vs_shelf_pct==null?'—':(r.entry_vs_shelf_pct>0?Math.abs(r.entry_vs_shelf_pct).toFixed(0)+'% below median':Math.abs(r.entry_vs_shelf_pct).toFixed(0)+'% above median')}</span></div>
-       <div class="kv"><span>Copies at Near Mint</span><span>${r.copies ?? '—'}</span></div>`
+  const shelf = (r.floor_low != null)
+    ? `<div class="kv"><span class="k">Cheapest NM English, shipped</span><span class="vv">$${r.floor_low.toFixed(2)}</span></div>
+       <div class="kv"><span class="k">Median listing</span><span class="vv">${r.shelf_med!=null?'$'+r.shelf_med.toFixed(2):'—'}</span></div>
+       <div class="kv"><span class="k">Entry vs the shelf</span><span class="vv ${r.entry_vs_shelf_pct==null?'':(r.entry_vs_shelf_pct>0?'up':'down')}">${r.entry_vs_shelf_pct==null?'—':(r.entry_vs_shelf_pct>0?Math.abs(r.entry_vs_shelf_pct).toFixed(0)+'% below median':Math.abs(r.entry_vs_shelf_pct).toFixed(0)+'% above median')}</span></div>
+       <div class="kv"><span class="k">Copies at Near Mint</span><span class="vv">${r.copies ?? '—'}</span></div>`
     : '<p class="sub2">No live entry price for this card today.</p>';
-  const settled = (r.settled_price != null)
-    ? `<div class="kv"><span>Trading at</span><span>$${r.settled_price.toFixed(2)}</span></div>
-       <div class="kv"><span>Listed price is</span><span class="${r.ask_premium_pct==null?'':(r.ask_premium_pct>5?'hot':(r.ask_premium_pct<-2?'cool':''))}">${r.ask_premium_pct==null?'—':(r.ask_premium_pct>=0?'+'+r.ask_premium_pct.toFixed(1)+'% above':Math.abs(r.ask_premium_pct).toFixed(1)+'% below')}</span></div>
-       <div class="kv"><span>Based on</span><span>${r.settled_volume ?? '—'} sales / ${r.settled_days} days</span></div>
-       <p class="sub2">${r.ask_premium_pct==null?'':r.ask_premium_pct>5?'Sellers are asking more than buyers have been paying. Cards in this state gave back a median 4% over the next 30 days.':r.ask_premium_pct<-2?'Copies have been selling above the listed price. Cards in this state gained a median 10% over the next 30 days.':'Asking price and sale price agree.'}</p>`
-    : '<p class="sub2">Under three days of recorded sales in the last fortnight — not enough to say what it trades at.</p>';
+  const soldLine = r.settled_price != null
+    ? `<div class="kv"><span class="k">Sold for, 14-day average</span><span class="vv">$${r.settled_price.toFixed(2)}</span></div>
+       <div class="kv"><span class="k">Based on</span><span class="vv">${r.settled_volume ?? '—'} sales / ${r.settled_days} days</span></div>`
+    : '<div class="kv"><span class="k">Sold for, 14-day average</span><span class="vv flat">under 3 days of sales</span></div>';
 
-  return `<div class="detail" data-detail="${esc(k)}"><div class="det">
-    <div>
-      <h5>The case</h5><p>${esc(r.thesis||'')}</p><p class="warn">${esc(r.watch||'')}</p>
-      ${r.catalyst ? `<p class="warn"><b>Catalyst on this set:</b> ${esc(r.catalyst)}</p>` : ''}
-      ${url?`<a class="cta" href="${esc(url)}" target="_blank" rel="noopener">Open on TCGplayer &rarr;</a>`:''}
-    </div>
-    <div>
-      <h5>Score, broken down</h5>${componentBars(r.components)}
-      <div class="kv" style="margin-top:8px"><span>Weighted total</span><span>${r.invest_score.toFixed(0)} / 100</span></div>
-      <div class="kv"><span>3d / 7d / 30d / 90d</span><span>${[r.change_3d,r.change_7d,r.change_30d,r.change_90d].map(v=>v==null?'—':(v>0?'+':'')+v.toFixed(0)+'%').join(' / ')}</span></div>
-      <div class="kv"><span>Weeks closing up</span><span>${r.consistency_pct ?? '—'}%</span></div>
-      <div class="kv"><span>Daily volatility</span><span>${r.volatility_pct ?? '—'}%</span></div>
-      <div class="kv"><span>Off its 90-day high</span><span>${r.drawdown_pct ?? '—'}%</span></div>
-    </div>
-    <div>
-      <h5 data-tip="${esc(DATA.tips.settled)}">What it trades at<span class="info">?</span></h5>${settled}
-      <h5 style="margin-top:14px">Entry today</h5>${entry}
-    </div>
-    <div>
-      <h5>Size at your budget</h5>${pos}
-      <h5 style="margin-top:14px">Your position <span class="sub2" style="display:inline">(saved in this browser)</span></h5>
-      <div class="pos-form">
-        <div><label>Copies</label><input type="number" min="0" step="1" data-pos="qty" data-k="${esc(k)}" value="${w.qty??''}"></div>
-        <div><label>Paid each</label><input type="number" min="0" step="0.01" data-pos="cost" data-k="${esc(k)}" value="${w.cost??''}"></div>
+  const premCls = r.ask_premium_pct==null ? '' : (r.ask_premium_pct>5 ? 'down' : (r.ask_premium_pct<-2 ? 'up' : ''));
+  const heroes = `
+    <div class="hero-n accent"><div class="l">Entry today</div><div class="v">${money(r.floor_low)}</div><div class="f">cheapest NM, shipped</div></div>
+    <div class="hero-n"><div class="l">Sold for</div><div class="v">${money(r.settled_price)}</div><div class="f">14-day sales average</div></div>
+    <div class="hero-n"><div class="l">vs sold</div><div class="v ${premCls}">${r.ask_premium_pct==null?'—':(r.ask_premium_pct>0?'+':'')+r.ask_premium_pct.toFixed(1)+'%'}</div><div class="f">list against sales</div></div>
+    <div class="hero-n"><div class="l">90 days</div><div class="v">${pct(r.change_90d)}</div><div class="f">market ${money(r.market_price)} now</div></div>`;
+
+  const watchTxt = cleanWatch(r.watch);
+  const calm = /^nothing in the numbers/i.test(watchTxt);
+  const changes = [['3d',r.change_3d],['7d',r.change_7d],['30d',r.change_30d],['90d',r.change_90d]]
+    .map(([l,v])=>`<div><div class="l">${l}</div><div class="v">${pct(v)}</div></div>`).join('');
+
+  return `<div class="detail" data-detail="${esc(k)}">
+    <div class="dtop">
+      <div class="dart">${bigArtHTML(r)}</div>
+      <div class="dhead">
+        <div class="nm">${url?`<a href="${esc(url)}" target="_blank" rel="noopener">${esc(r.name)}</a>`:esc(r.name)}</div>
+        <div class="meta">${meta}</div>
+        <div class="verdicts">${verdicts(r)}</div>
+        <div class="heroes">${heroes}</div>
+        <div class="callout"><span class="cl">The case</span>${esc(r.thesis||'')}</div>
+        ${watchTxt ? `<div class="callout ${calm?'good':'warn'}"><span class="cl">${calm?'Nothing flashing':'What would break it'}</span>${esc(watchTxt)}</div>` : ''}
+        ${r.catalyst ? `<div class="callout bad"><span class="cl">Catalyst on this set</span>${esc(r.catalyst)}</div>` : ''}
+        <div class="dbtns">${url?`<a class="cta" href="${esc(url)}" target="_blank" rel="noopener">Open on TCGplayer</a>`:''}
+          <button class="cta quiet" data-star="${esc(k)}">${isWatched(r)?'Remove from watchlist':'Add to watchlist'}</button></div>
       </div>
-      <div data-pnl="${esc(k)}">${pnlHTML(r)}</div>
     </div>
-    <div>
-      <h5>Before you buy</h5><ul>${DATA.checklist.map(x=>`<li>${x}</li>`).join('')}</ul>
+    <div class="dgrid">
+      <div class="dbox">
+        <h5>Score <span class="sub">${r.invest_score>=TOP_SCORE?'top quarter':'of 100'}</span></h5>
+        <div class="score-line${r.invest_score>=TOP_SCORE?' top':''}"><span class="n">${r.invest_score.toFixed(0)}</span><span class="t">value 20 · liquidity 25 · trend 25 · stability 20 · scarcity 10</span></div>
+        ${componentBars(r.components)}
+        <div class="changes">${changes}</div>
+        <div class="kv" style="margin-top:8px"><span class="k">Daily volatility</span><span class="vv">${r.volatility_pct ?? '—'}%</span></div>
+        <div class="kv"><span class="k">Off its 90-day high</span><span class="vv">${r.drawdown_pct ?? '—'}%</span></div>
+      </div>
+      <div class="dbox">
+        <h5 data-tip="${esc(DATA.tips.settled)}">The shelf today<span class="info">?</span></h5>
+        ${shelf}${soldLine}
+      </div>
+      <div class="dbox">
+        <h5>Your money <span class="sub">saved in this browser</span></h5>
+        <div class="kv" style="border:0;padding:0 0 4px"><span class="k">Size at your budget</span></div>
+        ${pos}
+        <div class="pos-form" style="margin-top:12px">
+          <div><label>Copies you hold</label><input type="number" min="0" step="1" data-pos="qty" data-k="${esc(k)}" value="${w.qty??''}"></div>
+          <div><label>Paid each</label><input type="number" min="0" step="0.01" data-pos="cost" data-k="${esc(k)}" value="${w.cost??''}"></div>
+        </div>
+        <div data-pnl="${esc(k)}">${pnlHTML(r)}</div>
+      </div>
+      <div class="dbox">
+        <h5>Before you buy</h5><ol class="checklist">${DATA.checklist.map(x=>`<li>${x}</li>`).join('')}</ol>
+      </div>
     </div>
-  </div></div>`;
+  </div>`;
 }
 
 const SORTERS = {
@@ -579,6 +729,7 @@ function filtered(){
     return true;
   });
 }
+const activeFilters = () => ['set','rarity','minPrice','maxPrice','minScore','minSales'].filter(k => state[k]!=null && state[k]!=='').length;
 
 function apply(){
   let rows = filtered();
@@ -588,26 +739,37 @@ function apply(){
   // the same budget gives the same plan whatever you are looking at.
   const byScore = DATA.rows.slice().sort((a,b)=>b.invest_score-a.invest_score);
   const plans = state.budget ? allocate(byScore, state.budget) : new Map();
-  if (state.budget && (state.inBudgetOnly || state.view==='sized')) rows = rows.filter(r => (plans.get(key(r))||{}).affordable);
+  if (state.view==='sized') rows = state.budget ? rows.filter(r => (plans.get(key(r))||{}).affordable) : [];
   renderPlanSummary(plans, byScore);
   const shown = rows.slice(0, state.limit);
+  const emptyMsg = state.view==='watch' ? 'Nothing on your watchlist yet — tap the star on any card.'
+    : (state.view==='sized' && !state.budget) ? 'Enter a budget at the top and this view shows only the cards it can take a position in.'
+    : 'Nothing matches those filters.';
   document.getElementById('rows').innerHTML = shown.length ? shown.map(r=>rowHTML(r, plans.get(key(r)))).join('')
-    : `<div class="empty">${state.view==='watch' ? 'Nothing on your watchlist yet — tap the star on any card.' : 'Nothing matches those filters.'}</div>`;
+    : `<div class="empty">${emptyMsg}</div>`;
   document.getElementById('count').textContent = `${shown.length?'1–'+shown.length:'0'} of ${rows.length}`;
   const more = document.getElementById('more');
   if (rows.length > shown.length){ more.style.display='flex'; document.getElementById('more-all').textContent = `Show all ${rows.length}`; } else more.style.display='none';
   document.querySelectorAll('.views button').forEach(b=>b.classList.toggle('on', b.dataset.view===state.view));
-  document.querySelectorAll('.setchips button').forEach(b=>b.classList.toggle('on', (b.dataset.set||'')===state.set));
+  document.querySelectorAll('[data-set]').forEach(b=>b.classList.toggle('on', (b.dataset.set||'')===state.set));
+  document.querySelectorAll('[data-rarity]').forEach(b=>b.classList.toggle('on', (b.dataset.rarity||'')===state.rarity));
   document.getElementById('watch-count').textContent = Object.keys(watch).length ? `(${Object.keys(watch).length})` : '';
+  const n = activeFilters(), fb = document.getElementById('fbtn');
+  fb.querySelector('.badge').textContent = n; fb.querySelector('.badge').hidden = !n;
+  fb.classList.toggle('on', !!n);
   window.__view = rows;
 }
 
-function reset(){
-  Object.assign(state, {q:'', set:'', rarity:'', minPrice:null, maxPrice:null, minScore:null, minSales:null, sort:'score', dir:-1, limit:30, inBudgetOnly:false, view:'all'});
-  document.getElementById('q').value=''; document.getElementById('rarityfilter').value='';
+function clearFilters(){
+  Object.assign(state, {set:'', rarity:'', minPrice:null, maxPrice:null, minScore:null, minSales:null, limit:30});
   ['minprice','maxprice','minscore','minsales'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
-  document.getElementById('sort').value='score';
-  const ib=document.getElementById('inbudget'); if(ib) ib.checked=false;
+  apply();
+}
+function reset(){
+  clearFilters();
+  Object.assign(state, {q:'', sort:'score', dir:-1, view:'all'});
+  document.getElementById('q').value=''; document.getElementById('sort').value='score';
+  document.getElementById('dir').classList.remove('asc');
   state.open.clear(); apply();
 }
 
@@ -648,9 +810,13 @@ window.addEventListener('scroll', ()=>{ if (tipAnchor) showTip(tipAnchor); }, {p
 document.addEventListener('click', e=>{
   const star = e.target.closest('[data-star]');
   if (star){ e.stopPropagation(); const r = DATA.rows.find(x=>key(x)===star.dataset.star); if (r) toggleWatch(r); return; }
-  const info = e.target.closest('.info, [data-tip].l, .s[data-tip], .score[data-tip], .size[data-tip]');
-  if (info && e.target.closest('.row') && (e.target.closest('.info'))){ e.stopPropagation(); const el = e.target.closest('[data-tip]'); if (tipAnchor===el && tip.classList.contains('on')){hideTip(); tipAnchor=null;} else {tipAnchor=el; showTip(el);} return; }
+  if (e.target.closest('.info')){ e.stopPropagation(); const el = e.target.closest('[data-tip]'); if (tipAnchor===el && tip.classList.contains('on')){hideTip(); tipAnchor=null;} else {tipAnchor=el; showTip(el);} return; }
+  const setBtn = e.target.closest('[data-set]');
+  if (setBtn){ state.set = (state.set===setBtn.dataset.set)?'':setBtn.dataset.set; state.limit=30; apply(); return; }
+  const rarBtn = e.target.closest('[data-rarity]');
+  if (rarBtn){ state.rarity = (state.rarity===rarBtn.dataset.rarity)?'':rarBtn.dataset.rarity; state.limit=30; apply(); return; }
   if (e.target.closest('a, input, select, button, .detail')) { return; }
+  hideTip();  // a tap on a chart leaves a readout behind on touch screens
   const row = e.target.closest('.row');
   if (row){ const k = row.dataset.key; state.open.has(k) ? state.open.delete(k) : state.open.add(k); apply(); return; }
   if (tipAnchor && !e.target.closest('#tip')){ hideTip(); tipAnchor = null; }
@@ -665,17 +831,16 @@ document.addEventListener('input', e=>{
 
 // ---- controls -----------------------------------------------------------------
 document.getElementById('q').addEventListener('input', e=>{state.q=e.target.value; state.limit=30; apply();});
-document.getElementById('rarityfilter').addEventListener('change', e=>{state.rarity=e.target.value; state.limit=30; apply();});
 [['minprice','minPrice'],['maxprice','maxPrice'],['minscore','minScore'],['minsales','minSales']].forEach(([id,k])=>{
   const el = document.getElementById(id); if (!el) return;
   el.addEventListener('input', e=>{ const v = e.target.value===''?null:Number(e.target.value); state[k] = (v==null||Number.isNaN(v))?null:v; state.limit=30; apply(); });
 });
-document.getElementById('sort').addEventListener('change', e=>{ state.sort = e.target.value; state.dir = (state.sort==='name')?1:-1; apply(); });
-document.getElementById('dir').addEventListener('click', ()=>{ state.dir*=-1; document.getElementById('dir').textContent = state.dir===-1?'desc':'asc'; apply(); });
+document.getElementById('sort').addEventListener('change', e=>{ state.sort = e.target.value; state.dir = (state.sort==='name')?1:-1; document.getElementById('dir').classList.toggle('asc', state.dir===1); apply(); });
+document.getElementById('dir').addEventListener('click', ()=>{ state.dir*=-1; document.getElementById('dir').classList.toggle('asc', state.dir===1); apply(); });
 document.getElementById('budget').addEventListener('input', e=>{ const v = e.target.value===''?null:Number(e.target.value); state.budget = (v==null||Number.isNaN(v)||v<=0)?null:v; state.limit=30; apply(); });
-const ib = document.getElementById('inbudget'); if (ib) ib.addEventListener('change', e=>{ state.inBudgetOnly = e.target.checked; apply(); });
 document.querySelectorAll('.views button').forEach(b=>b.addEventListener('click', ()=>{ state.view=b.dataset.view; state.limit=30; apply(); }));
-document.querySelectorAll('.setchips button').forEach(b=>b.addEventListener('click', ()=>{ state.set = (state.set===b.dataset.set)?'':b.dataset.set; state.limit=30; apply(); }));
+document.getElementById('fbtn').addEventListener('click', ()=>{ const f = document.getElementById('filters'); f.hidden = !f.hidden; document.getElementById('fbtn').setAttribute('aria-expanded', String(!f.hidden)); });
+document.getElementById('clear').addEventListener('click', clearFilters);
 document.getElementById('more-all').addEventListener('click', ()=>{state.limit=1e9; apply();});
 document.getElementById('reset').addEventListener('click', reset);
 document.getElementById('csv').addEventListener('click', exportCSV);
@@ -694,6 +859,22 @@ TIPS = {
     "settled": "Volume-weighted average of what copies actually sold for over 14 days, next to the listed price. Across 1,201 observations the fifth of cards listed ~7% below recent sales returned +10.3% over 30 days; the fifth listed ~9% above returned −4.0% (ρ = −0.31). Describes where it trades, not where it goes.",
 }
 
+_SORT_ICON = ('<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">'
+              '<path d="M8 3v10M4 9l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" '
+              'stroke-linecap="round" stroke-linejoin="round"/></svg>')
+
+
+RARITY_ORDER = ["Common", "C+", "C++", "Uncommon", "U+", "U++", "Rare", "R+", "R++",
+                "Legend Rare", "LR+", "LR++", "Promo"]
+
+
+def _rarity_order(name: str) -> tuple[int, str]:
+    """Tier order for the rarity chips: common to legendary, promos last, unknowns after."""
+    try:
+        return (RARITY_ORDER.index(name), name)
+    except ValueError:
+        return (len(RARITY_ORDER), name)
+
 
 def _freshness(obs_date: str, today: str | None) -> str:
     if not today:
@@ -709,45 +890,6 @@ def _freshness(obs_date: str, today: str | None) -> str:
     return (f'<div class="panel stale-feed"><b>Price feed is {age} days behind.</b> Market prices are '
             f'from {_esc(obs_date)}. The ranking method is unchanged and entry prices are live; read the '
             f'market column as history until the feed catches up.</div>')
-
-
-def _since(since: dict | None) -> str:
-    """One row of chips; the lists open on click. No prose."""
-    if not since or not since.get("has_previous"):
-        return ""
-    n = lambda k: len(since.get(k) or [])  # noqa: E731
-    b = since.get("breadth") or {}
-    chips = []
-    if n("entered"): chips.append(f'<span class="sc-chip"><b>{n("entered")}</b> entered top 20</span>')
-    if n("exited"): chips.append(f'<span class="sc-chip"><b>{n("exited")}</b> left top 20</span>')
-    if n("stretched"): chips.append(f'<span class="sc-chip"><b>{n("stretched")}</b> asks ran ahead of sales</span>')
-    if n("cheapened"): chips.append(f'<span class="sc-chip"><b>{n("cheapened")}</b> asks fell below sales</span>')
-    if b.get("now_pct") is not None and b.get("prev_pct") is not None:
-        d = b["now_pct"] - b["prev_pct"]
-        chips.append(f'<span class="sc-chip">breadth <b>{b["now_pct"]}%</b> ({d:+d} pts)</span>')
-    if not chips:
-        return ""
-
-    def card(r):
-        return f'<b>{_esc(r["name"])}</b><span class="m">{_esc(r.get("set_name") or "")}</span>'
-    blocks = []
-    if n("entered"):
-        blocks.append("<div><h5>Entered the top 20</h5><ul>" + "".join(
-            f'<li>{card(r)} — #{r["rank"]}, {("was #" + str(r["prev_rank"])) if r.get("prev_rank") else "was not a candidate"}</li>'
-            for r in since["entered"][:8]) + "</ul></div>")
-    if n("exited"):
-        blocks.append("<div><h5>Left the top 20</h5><ul>" + "".join(
-            f'<li>{card(r)} — was #{r.get("prev_rank")}, {("now #" + str(r["rank"])) if r.get("rank") else _esc(r.get("disqualified") or "screened out")}</li>'
-            for r in since["exited"][:8]) + "</ul></div>")
-    if n("stretched"):
-        blocks.append("<div><h5>Ask ran ahead of sales</h5><ul>" + "".join(
-            f'<li>{card(r)} — {r["ask_premium_pct"]:+.0f}% vs sold</li>' for r in since["stretched"][:6]) + "</ul></div>")
-    if n("cheapened"):
-        blocks.append("<div><h5>Ask fell below sales</h5><ul>" + "".join(
-            f'<li>{card(r)} — {r["ask_premium_pct"]:+.0f}% vs sold</li>' for r in since["cheapened"][:6]) + "</ul></div>")
-    return (f'<details class="panel since"><summary>Since {_esc(since.get("prev_date") or "last issue")}'
-            f'<span class="sc">open for the lists</span></summary>'
-            f'<div class="since-chips">{"".join(chips)}</div><div class="since-grid">{"".join(blocks)}</div></details>')
 
 
 def _catalyst_index(heat: dict | None) -> dict[str, str]:
@@ -776,7 +918,11 @@ def render(
     today: str | None = None,
     prev_ranks: dict[str, int] | None = None,
     heat: dict[str, Any] | None = None,
+    art_cache: Path | None = None,
+    fetch_art: bool = False,
 ) -> str:
+    """`since` is accepted for compatibility and unused: the issue-to-issue
+    comparison is the email digest's job, not the page's."""
     market = market or {}
     candidates = [r for r in ranked if not r.get("disqualified")]
     rejected = [r for r in ranked if r.get("disqualified")]
@@ -789,14 +935,19 @@ def render(
         p["printing"] = r.get("printing") or "Normal"
         p["catalyst"] = catalysts.get(r.get("set_name") or "")
         rows.append(p)
+    if art_cache is not None:
+        from . import art
+
+        art.embed(rows, art_cache, fetch=fetch_art)
     sets = sorted({r["set_name"] for r in rows if r.get("set_name")})
-    rarities = sorted({r["rarity"] for r in rows if r.get("rarity") and r["rarity"] != "—"})
+    rarities = sorted({r["rarity"] for r in rows if r.get("rarity") and r["rarity"] not in ("—", "None")},
+                      key=_rarity_order)
     liquid = sum(1 for r in rows if (r.get("avg_daily_sales") or 0) >= 1.0)
-    scores = [r["invest_score"] for r in rows]
-    median_score = sorted(scores)[len(scores) // 2] if scores else 0
     breadth = None
     if market.get("priced") and market.get("up_7d") is not None:
         breadth = round(100 * market["up_7d"] / market["priced"])
+    breadth_word = ("—" if breadth is None else "falling market" if breadth < 35
+                    else "rising market" if breadth > 55 else "mixed market")
 
     payload = json.dumps({
         "rows": rows, "obs_date": obs_date, "checklist": CHECKLIST,
@@ -805,7 +956,7 @@ def render(
     }, separators=(",", ":")).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
 
     setchips = "".join(f'<button data-set="{_esc(s)}">{_esc(s)}</button>' for s in sets)
-    rarity_opts = "".join(f'<option value="{_esc(x)}">{_esc(x)}</option>' for x in rarities)
+    rarchips = "".join(f'<button data-rarity="{_esc(x)}">{_esc(x)}</button>' for x in rarities)
 
     return f"""<!doctype html>
 <html lang="en" class="viz-root" data-theme="dark">
@@ -824,50 +975,52 @@ def render(
   <div>
     <div class="brand"><span>from</span>GUNDECK.AI</div>
     <h1>Market Haro</h1>
-    <div class="stamp">Prices through {_esc(obs_date)} · {len(candidates)} candidates from {len(ranked)} screened · English NM only</div>
+    <div class="stamp">Prices through {_esc(obs_date)} · {len(candidates)} cards pass the screen · English NM only</div>
   </div>
   <div class="hbtns">
     <button class="ghost" id="csv">Export CSV</button>
-    <button class="ghost" id="reset">Reset</button>
   </div>
 </header>
 {_freshness(obs_date, today)}
 
 <div class="panel budget">
   <label for="budget" data-tip="Total you are willing to put to work. Positions are sized down the ranking, capped per card.">Budget<span class="info">?</span></label>
-  <input type="number" id="budget" placeholder="$" min="0" step="50" aria-label="Budget">
+  <span class="money-in"><input type="number" id="budget" placeholder="amount" min="0" step="50" aria-label="Budget in dollars"></span>
   <div class="plan-sum" id="plan-sum"></div>
 </div>
 
 <div class="kpis">
-  <div class="kpi"><div class="l">Candidates</div><div class="v">{len(candidates)}</div><div class="f">of {len(ranked)} screened</div></div>
-  <div class="kpi{' down' if breadth is not None and breadth < 35 else ' up' if breadth is not None and breadth > 55 else ' cyan'}"><div class="l" data-tip="Share of every priced product in the game that is up over 7 days. Whether your candidates are rising with the market or against it.">Market breadth<span class="info">?</span></div><div class="v">{f'{breadth}%' if breadth is not None else '—'}</div><div class="f">{market.get('up_7d', 0):,} of {market.get('priced', 0):,} up over 7d</div></div>
+  <div class="kpi{' down' if breadth is not None and breadth < 35 else ' up' if breadth is not None and breadth > 55 else ' cyan'}"><div class="l" data-tip="Share of every priced product in the game that is up over 7 days. Whether your candidates are rising with the market or against it.">Market breadth<span class="info">?</span></div><div class="v">{f'{breadth}%' if breadth is not None else '—'}</div><div class="f">{breadth_word} · {market.get('up_7d', 0):,} of {market.get('priced', 0):,} up over 7d</div></div>
+  <div class="kpi"><div class="l">Pass the screen</div><div class="v">{len(candidates)}</div><div class="f">of {len(ranked):,} screened</div></div>
   <div class="kpi up"><div class="l" data-tip="Candidates selling at least one copy a day. Below that, exiting a stack takes weeks.">Liquid enough<span class="info">?</span></div><div class="v">{liquid}</div><div class="f">1+ sales a day</div></div>
-  <div class="kpi"><div class="l">Median score</div><div class="v">{median_score:.0f}</div><div class="f">of 100</div></div>
-  <div class="kpi down"><div class="l" data-tip="Cards excluded and why — every one is listed at the bottom with its reason.">Screened out<span class="info">?</span></div><div class="v">{len(rejected)}</div><div class="f">listed with reasons</div></div>
+  <a class="kpi" href="#screened-out"><div class="l">Screened out</div><div class="v">{len(rejected)}</div><div class="f">every one listed with its reason</div></a>
 </div>
 
-{_since(since)}
-
-<div class="panel bar">
+<div class="toolbar">
   <input type="search" id="q" placeholder="Search card, set or number" aria-label="Search">
-  <select id="rarityfilter" aria-label="Rarity"><option value="">All rarities</option>{rarity_opts}</select>
-  <span class="lbl">Price</span><input type="number" id="minprice" placeholder="min" min="0"><input type="number" id="maxprice" placeholder="max" min="0">
-  <span class="lbl">Score</span><input type="number" id="minscore" placeholder="min" min="0" max="100">
-  <span class="lbl">Sales/day</span><input type="number" id="minsales" placeholder="min" min="0" step="0.1">
-  <span class="spacer"></span>
-  <span class="lbl">Sort</span>
+  <span class="views"><button data-view="all" class="on">All</button><button data-view="sized" data-tip="Only cards that get a size at your budget.">Sized</button><button data-view="watch">Watchlist <span id="watch-count"></span></button></span>
+  <span class="sortbox"><span class="lbl">Sort</span>
   <select id="sort" aria-label="Sort by">
     <option value="score">Score</option><option value="moved">Rank movement</option><option value="c7">7-day change</option>
     <option value="c90">90-day change</option><option value="prem">vs sold</option><option value="price">Price</option>
     <option value="entry">Entry price</option><option value="sales">Sales/day</option><option value="cons">Weeks up</option><option value="name">Name</option>
   </select>
-  <button class="ghost" id="dir" aria-label="Sort direction">desc</button>
-  <span class="views"><button data-view="all" class="on">All</button><button data-view="sized" data-tip="Only cards that get a size at your budget.">Sized</button><button data-view="watch">Watchlist <span id="watch-count"></span></button></span>
-  <label class="chip" data-tip="Hide candidates the budget can’t take a position in."><input type="checkbox" id="inbudget"> only what fits</label>
+  <button class="dirbtn" id="dir" aria-label="Flip sort direction" title="Flip sort direction">{_SORT_ICON}</button></span>
+  <button class="ghost" id="fbtn" aria-expanded="false" aria-controls="filters">Filters <span class="badge" hidden>0</span></button>
   <span class="count" id="count"></span>
 </div>
-<div class="setchips"><button data-set="">All sets</button>{setchips}</div>
+<div class="panel filters" id="filters" hidden>
+  <div class="frow">
+    <div class="fgroup"><span class="lbl">Set</span><div class="chips">{setchips}</div></div>
+  </div>
+  <div class="frow">
+    <div class="fgroup"><span class="lbl">Rarity</span><div class="chips">{rarchips}</div></div>
+    <div class="fgroup"><span class="lbl">Market price</span><div class="range"><input type="number" id="minprice" placeholder="min" min="0" aria-label="Minimum price"><span>to</span><input type="number" id="maxprice" placeholder="max" min="0" aria-label="Maximum price"></div></div>
+    <div class="fgroup"><span class="lbl">Score at least</span><input type="number" id="minscore" placeholder="e.g. 70" min="0" max="100" aria-label="Minimum score"></div>
+    <div class="fgroup"><span class="lbl">Sales/day at least</span><input type="number" id="minsales" placeholder="e.g. 1" min="0" step="0.1" aria-label="Minimum sales per day"></div>
+    <div class="factions"><button class="ghost" id="clear">Clear filters</button> <button class="ghost" id="reset">Reset everything</button></div>
+  </div>
+</div>
 
 <div class="rows" id="rows"></div>
 <div class="more" id="more" style="display:none"><button class="ghost" id="more-all">Show all</button></div>
@@ -879,12 +1032,12 @@ def render(
     <li><b>Entry, not Price.</b> Price is a daily batch a day or two behind. Entry is the cheapest Near Mint English copy on the shelf now, shipped — what you would pay.</li>
     <li><b>vs sold</b> is timing. Red: sellers asking more than buyers have paid. Green: the reverse. A great card can be listed ahead of itself.</li>
     <li><b>Budget</b> turns the ranking into positions — copies, cost, what limited it — with a per-card cap so one card cannot eat the whole thing. It is arithmetic on your number.</li>
-    <li><b>Tap a row</b> for the case, what would break it, the live shelf, and your position if you hold it. <b>Star</b> a card to keep it on your watchlist; enter copies and cost and the row flags the day the trend breaks.</li>
+    <li><b>Tap a row</b> for the verdicts, the case, what would break it, the live shelf, and your position if you hold it. <b>Star</b> a card to keep it on your watchlist; enter copies and cost and the row flags the day the trend breaks.</li>
     <li><b>Screened out</b> at the bottom lists every card that failed a gate and why. Nothing is dropped silently.</li>
   </ol>
 </details>
 
-<div class="rej">{_rejected_table(rejected)}</div>
+<div class="rej" id="screened-out">{_rejected_table(rejected)}</div>
 
 <footer>
   <p><b>Market Haro</b> is published by GUNDECK.AI for its subscribers. Every number on this page describes what a card has already done. Nothing here is a forecast, a recommendation, or financial advice, and nothing knows <em>why</em> a price is moving — bans, reprints, rotation and tournament results end runs and are invisible in price data. Trading cards can lose value. Your watchlist and positions are saved only in this browser. Prices from tcgapi.dev under commercial licence · © GUNDECK.AI</p>

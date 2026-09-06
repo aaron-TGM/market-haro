@@ -277,6 +277,8 @@ def cmd_invest(cfg, args) -> int:
             today=today,
             prev_ranks=prev_ranks,
             heat=heat_for_flags,
+            art_cache=cfg.path("data/images"),
+            fetch_art=not getattr(args, "no_art_fetch", False),
         )
         out = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
         haro.write(html, out)
@@ -705,6 +707,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--no-heat", action="store_true",
                    help="leave the market-heat (search attention) panel off the page")
     r.add_argument("--today", help="override the run date (for reproducing a past issue)")
+    r.add_argument("--no-art-fetch", action="store_true",
+                   help="embed only card art already cached under data/images; never call the image CDN")
 
     pb = sub.add_parser("publish", help="push today's report and digest to Ghost")
     pb.add_argument("--out", help="where radar invest wrote the dashboard")
@@ -747,6 +751,7 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--top", type=int, default=25)
     a.add_argument("--entries", type=int, default=None)
     a.add_argument("--no-fetch", action="store_true")
+    a.add_argument("--no-art-fetch", action="store_true")
     return p
 
 
