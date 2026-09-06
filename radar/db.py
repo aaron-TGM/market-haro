@@ -474,7 +474,7 @@ class Database:
             return []
         cutoff = (date.fromisoformat(obs_date) - timedelta(days=lookback_days)).isoformat()
         return self.conn.execute(
-            """SELECT p.*, c.name, c.number, c.rarity, c.set_name, c.image_url,
+            """SELECT p.*, c.name, c.number, c.rarity, c.set_name, c.set_id, c.image_url,
                       c.tcgplayer_id, c.tcgplayer_url, c.product_type
                FROM price_points p
                JOIN cards c ON c.id = p.card_id

@@ -76,7 +76,22 @@ def _f(v: Any) -> float | None:
 # --------------------------------------------------------------------------
 # Features: everything the score needs, measured from 90 days of history.
 # --------------------------------------------------------------------------
-def _change_over(pts: Sequence[Sequence[Any]], days: int) -> float | None:
+WINDOW_DAYS = 90
+
+
+def _window(pts: Sequence[Sequence[Any]], days: int) -> list:
+    """The points dated within `days` of the last point."""
+    if not pts:
+        return []
+    try:
+        last_d = _date.fromisoformat(str(pts[-1][0])[:10])
+    except (ValueError, TypeError):
+        return list(pts)
+    cut = (last_d - _timedelta(days=days)).isoformat()
+    return [p for p in pts if str(p[0])[:10] >= cut]
+
+
+def _change_over(pts: Sequence[Sequence[Any]], days: int, *, tolerance: int = 3) -> float | None:
     """% change from the last close back to the close `days` calendar days earlier.
 
     Indexed by date, not by list position, because the daily series has gaps --
@@ -101,7 +116,7 @@ def _change_over(pts: Sequence[Sequence[Any]], days: int) -> float | None:
         if cur > target:
             continue
         gap = (target - cur).days
-        if gap > 3:
+        if gap > tolerance:
             continue
         if best is None or gap < best[0]:
             best = (gap, price)
@@ -170,6 +185,31 @@ def settled(pts: Sequence[tuple[str, float, float, float | None]], window: int =
     }
 
 
+def weekly_points(pts: Sequence[Sequence[Any]], days: int) -> list[tuple[str, float]]:
+    """One point a week over the last `days`, for the long chart.
+
+    Keeps the first point of every ISO week plus the very last point, so the
+    line ends where today's price is. Daily and weekly stretches both come out
+    at weekly spacing.
+    """
+    out: list[tuple[str, float]] = []
+    seen = set()
+    for d, p, *_ in _window(pts, days):
+        if not p:
+            continue
+        try:
+            wk = _date.fromisoformat(str(d)[:10]).isocalendar()[:2]
+        except (ValueError, TypeError):
+            continue
+        if wk in seen:
+            continue
+        seen.add(wk)
+        out.append((str(d)[:10], round(float(p), 2)))
+    if pts and out and out[-1][0] != str(pts[-1][0])[:10] and pts[-1][1]:
+        out.append((str(pts[-1][0])[:10], round(float(pts[-1][1]), 2)))
+    return out
+
+
 def features(series: Sequence[Sequence[Any]]) -> dict[str, Any] | None:
     """From [(date, market_price, sales_volume, avg_sales_price), ...] -> measurements.
 
@@ -178,14 +218,22 @@ def features(series: Sequence[Sequence[Any]]) -> dict[str, Any] | None:
 
     Returns None when there isn't enough history to say anything.
     """
-    pts: list[tuple[str, float, float, float | None]] = []
+    full: list[tuple[str, float, float, float | None]] = []
     for row in series:
         date = row[0]
         price = _f(row[1]) if len(row) > 1 else None
         volume = _f(row[2]) if len(row) > 2 else 0.0
         sold = _f(row[3]) if len(row) > 3 else None
         if price and price > 0:
-            pts.append((date, price, volume or 0.0, sold if sold and sold > 0 else None))
+            full.append((date, price, volume or 0.0, sold if sold and sold > 0 else None))
+    if not full:
+        return None
+    # The measurements are 90-day measurements. The stored series can run back
+    # a year at weekly resolution (the 1y chart), and feeding that in would
+    # turn "change over 90 days" into "change since launch" and break the
+    # weekly sampling below. Everything here is cut to the window by date; the
+    # long series contributes only the long-window changes.
+    pts = _window(full, WINDOW_DAYS)
     if len(pts) < 30:
         return None
 
@@ -218,6 +266,8 @@ def features(series: Sequence[Sequence[Any]]) -> dict[str, Any] | None:
         "as_of": pts[-1][0],
         **settled(pts),
         "change_90d": round((last / first - 1) * 100) if first else None,
+        "change_180d": _change_over(full, 180, tolerance=10),
+        "change_1y": _change_over(full, 365, tolerance=10),
         "drawdown_pct": round((1 - last / high) * 100, 1) if high else 0.0,
         "consistency_pct": consistency,
         "volatility_pct": volatility,

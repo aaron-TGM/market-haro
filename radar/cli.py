@@ -205,7 +205,9 @@ def cmd_invest(cfg, args) -> int:
             key = (r["card_id"], r.get("printing") or "Normal")
             hist = series.get(key, [])
             feats = invest_mod.features(hist) or {}
-            rec = {**r, **feats, "series": [(pt[0], pt[1]) for pt in hist[-90:]]}
+            rec = {**r, **feats,
+                   "series": [(pt[0], pt[1]) for pt in invest_mod._window(hist, 90)],
+                   "series_long": invest_mod.weekly_points(hist, 400)}
             measured.append(rec)
 
         # 3. Live entry price for the strongest ones only.
@@ -266,10 +268,28 @@ def cmd_invest(cfg, args) -> int:
         )
         # The release calendar, drawn on every chart. Read from the sets table
         # the sync (or the archive) filled; nothing is hand-maintained.
+        from . import index as index_mod
         from . import releases as releases_mod
+        from . import sealed as sealed_mod
 
+        all_sets = db.sets()
         calendar = releases_mod.calendar(
-            db.sets(), [dict(x) for x in db.conn.execute("SELECT number, set_id FROM cards")])
+            all_sets, [dict(x) for x in db.conn.execute("SELECT number, set_id FROM cards")])
+
+        # The GUNDECK 50 and the sealed screen read the same stored series.
+        card_meta = {str(x["id"]): dict(x) for x in db.conn.execute(
+            "SELECT id, name, set_name, product_type FROM cards")}
+        gindex = index_mod.build(cfg.path("data"), series, card_meta, obs)
+        sealed_rows = sealed_mod.evaluate(
+            [r for r in rows if r.get("product_type") == "Sealed Products"], series, all_sets, obs)
+        from . import playbook as playbook_mod
+
+        pbook = playbook_mod.build(
+            all_sets, [dict(x) for x in db.conn.execute("SELECT id, set_id, product_type FROM cards")],
+            series, obs, calendar=calendar)
+        print(f"{gindex['name']}: {gindex.get('value', '—')} "
+              f"({gindex.get('change_7d', 0) or 0:+.1f}% 7d, {len(gindex.get('constituents') or [])} members)"
+              f" · sealed screen: {len(sealed_rows)} products")
         html = haro.render(
             ranked,
             obs_date=obs,
@@ -280,6 +300,9 @@ def cmd_invest(cfg, args) -> int:
             today=today,
             prev_ranks=prev_ranks,
             releases=calendar,
+            index=gindex,
+            sealed=sealed_rows,
+            playbook=pbook,
             art_cache=cfg.path("data/images"),
             fetch_art=not getattr(args, "no_art_fetch", False),
         )

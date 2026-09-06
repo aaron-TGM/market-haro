@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .dashboard import CHECKLIST, _esc, _rejected_table, _row_payload
+from .sealed import CHECKLIST as SEALED_CHECKLIST
 
 # --------------------------------------------------------------------------
 # Styles. Tokens are the gundeck.ai palette; everything else is new.
@@ -127,9 +128,22 @@ details.panel>summary+*{margin-top:10px}
 .bigchart .bl{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
 .bigchart .bl span:last-child{color:var(--text-muted);text-transform:none;letter-spacing:.04em}
 .bigchart .chart svg{height:150px}
+.ranges{display:inline-flex;border:1px solid var(--border-2);border-radius:var(--r);overflow:hidden}
+.ranges button{background:transparent;color:var(--text-muted);border:0;padding:4px 10px;font:inherit;font-size:10px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+.ranges button.on{background:var(--accent);color:var(--bg)} .ranges button[disabled]{opacity:.4;cursor:default}
 .legend{display:flex;gap:16px;font-size:10px;color:var(--text-muted);margin-top:6px;letter-spacing:.04em}
 .legend i{display:inline-block;width:14px;border-top:1px dashed var(--accent-dim);vertical-align:middle;margin-right:5px}
 .legend b{display:inline-block;width:8px;height:8px;border:1.5px solid var(--warn);border-radius:50%;vertical-align:middle;margin-right:5px}
+.gindex{padding:14px 16px 10px}
+.gindex .chart svg{height:120px}
+.ixhead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:8px}
+.ixname{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.ixval{font-size:34px;font-weight:700;line-height:1.05;margin-top:2px;font-variant-numeric:tabular-nums}
+.ixsub{font-size:10.5px;color:var(--text-muted);letter-spacing:.04em;margin-top:3px}
+.ixchanges{display:flex;gap:8px}
+.ixc{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:6px 10px;min-width:64px;text-align:center}
+.ixc .l{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted)}
+.ixc .v{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
 .stale-feed{border-left:2px solid var(--down);font-size:13px}
 .stale-feed b{color:var(--down)}
 
@@ -208,10 +222,11 @@ a.kpi{display:block;color:inherit} a.kpi:hover{text-decoration:none;border-color
 .art{width:120px;height:168px;border-radius:4px;overflow:hidden;background:var(--surface-2);
   display:flex;align-items:center;justify-content:center;position:relative;flex:none}
 .art img{width:100%;height:100%;object-fit:cover;display:block}
-.art .ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+.art .ph,.dart .ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:6px;padding:10px;text-align:center;border:1px dashed var(--border-2);border-radius:4px;
   font-size:9px;letter-spacing:.12em;color:var(--text-muted);text-transform:uppercase;line-height:1.4}
-.art .ph b{font-size:11px;color:var(--text);letter-spacing:.04em;text-transform:none}
+.art .ph b,.dart .ph b{font-size:11px;color:var(--text);letter-spacing:.04em;text-transform:none}
+.dart .ph{font-size:10px;letter-spacing:.14em;gap:8px} .dart .ph b{font-size:14px}
 .who .nm{font-size:16px;font-weight:700;line-height:1.25}
 .who .nm a{color:var(--text)}
 .who .meta{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-top:4px}
@@ -328,6 +343,14 @@ a.kpi{display:block;color:inherit} a.kpi:hover{text-decoration:none;border-color
 .howto ol{margin:0;padding-left:20px;font-size:12.5px;line-height:1.7}
 .howto li{margin:3px 0}
 .howto b{color:var(--accent)}
+.playbook .lead{margin:0 0 10px;font-size:12.5px;line-height:1.6;color:var(--text-muted)}
+.playbook .lead b{font-size:13px}
+.playbook table{width:100%;border-collapse:collapse;font-size:12px}
+.playbook th{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);text-align:left;padding:6px;border-bottom:1px solid var(--border);font-weight:400}
+.playbook th.grp{text-align:center;color:var(--accent);border-bottom:0;padding-bottom:0}
+.playbook td{padding:7px 6px;border-bottom:1px dotted var(--border);vertical-align:top}
+.playbook td.num,.playbook th.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+.playbook td .n{display:block;font-size:9px;color:var(--text-muted);font-weight:400}
 .rej{margin-top:14px}
 .rej table{width:100%;border-collapse:collapse;font-size:12px}
 .rej th{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);text-align:left;
@@ -374,7 +397,7 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--border);color
 JS = r"""
 const DATA = JSON.parse(document.getElementById('haro-data').textContent);
 const state = {q:'', set:'', rarity:'', minPrice:null, maxPrice:null, minScore:null, minSales:null,
-               sort:'score', dir:-1, limit:30, budget:null, view:'all', open:new Set()};
+               sort:'score', dir:-1, limit:30, budget:null, view:'all', open:new Set(), range:'90'};
 
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -389,6 +412,10 @@ const key = r => r.card_id + '|' + r.printing;
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const shortDate = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d||''); return m ? `${MON[+m[2]-1]} ${+m[3]}` : (d||''); };
 const TOP_SCORE = 75;  // top quarter of what is trading, per the score's own anchoring
+const SEALED = DATA.sealed || [];
+const ALL = DATA.rows.concat(SEALED);
+const findRow = k => ALL.find(x => key(x) === k);
+const isSealed = r => r.kind === 'sealed';
 const cardURL = r => r.tcgplayer_url || (r.tcgplayer_id ? 'https://www.tcgplayer.com/product/'+r.tcgplayer_id+'?Language=English' : null);
 
 // ---- card art ------------------------------------------------------------
@@ -412,7 +439,7 @@ function bigArtHTML(r){
 document.addEventListener('error', e=>{
   const img = e.target; if (!(img instanceof HTMLImageElement) || !img.dataset.ph) return;
   if (img.dataset.fallback){ img.src = img.dataset.fallback; delete img.dataset.fallback; return; }
-  const r = DATA.rows.find(x=>key(x)===img.dataset.ph);
+  const r = findRow(img.dataset.ph);
   if (r) img.outerHTML = placeholder(r);
 }, true);
 
@@ -518,6 +545,17 @@ function renderPlanSummary(plans, rows){
 const CH = {w:300, h:80, p:6, top:12};
 const ANOMALY_PCT = 15;
 const RELEASES = DATA.releases || [];
+function seriesFor(r, range){
+  if (!r) return null;
+  if (range === '1y') return (r.series_long && r.series_long.length > 2) ? r.series_long : r.series;
+  if (range === '30' && r.series && r.series.length){
+    const last = r.series[r.series.length-1][0];
+    const cut = new Date(last + 'T00:00:00Z'); cut.setUTCDate(cut.getUTCDate() - 30);
+    const c = cut.toISOString().slice(0,10);
+    return r.series.filter(d => d[0] >= c);
+  }
+  return r.series;
+}
 function marksFor(series){
   const dates = series.map(d=>d[0]);
   const rel = RELEASES.map(m => ({...m, i: dates.findIndex(d => d >= m.date)}))
@@ -527,8 +565,10 @@ function marksFor(series){
     if (a > 0){ const c = (b-a)/a*100; if (Math.abs(c) >= ANOMALY_PCT) anomalies.push({i, pct:c}); } }
   return {rel, anomalies};
 }
-function chart(series, id, big){
+function chart(series, id, big, range){
   if (!series || series.length < 2) return '<div class="chart"><div class="empty" style="padding:22px">no history</div></div>';
+  const rangeAttr = range ? ` data-range="${esc(range)}"` : '';
+  const fmt = id === '__index' ? (v => v.toFixed(1)) : money;
   // The big chart's viewBox is wide so rings and the end dot stay round:
   // the SVG is stretched to its box, and a 300-wide box stretched to 1200px
   // turns every circle into an ellipse.
@@ -548,8 +588,8 @@ function chart(series, id, big){
   const relLabels = rel.map(m => { const f = m.i/(series.length-1); const pos = f > 0.85 ? 'end' : (f < 0.1 ? 'start' : 'mid');
     return `<span class="rl ${pos}" style="left:${(X(m.i)/w*100).toFixed(2)}%">${esc(m.label)}</span>`; }).join('');
   const anomSVG = anomalies.map(a => `<circle cx="${X(a.i).toFixed(1)}" cy="${Y(series[a.i][1]).toFixed(1)}" r="${big?5:3.5}" fill="none" stroke="var(--warn)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`).join('');
-  return `<div class="chart" data-chart="${esc(id)}">
-    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="90-day market price, ${money(first[1])} to ${money(last[1])}${rel.length?'; releases marked: '+rel.map(m=>m.label).join(', '):''}">
+  return `<div class="chart" data-chart="${esc(id)}"${rangeAttr}>
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${id==='__index'?'index level':'market price'}, ${fmt(first[1])} to ${fmt(last[1])}${rel.length?'; releases marked: '+rel.map(m=>m.label).join(', '):''}">
       <path d="${area}" fill="${stroke}" opacity=".12"/>
       ${relSVG}
       <polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
@@ -558,27 +598,30 @@ function chart(series, id, big){
       <circle class="dot" cx="${X(series.length-1).toFixed(1)}" cy="${Y(last[1]).toFixed(1)}" r="4" fill="${stroke}" stroke="var(--surface)" stroke-width="2"/>
     </svg>
     ${relLabels}
-    <div class="cap"><span>${shortDate(first[0])} ${money(first[1])} → ${shortDate(last[0])} ${money(last[1])}</span><span>high ${money(hi)}</span></div>
+    <div class="cap"><span>${shortDate(first[0])} ${fmt(first[1])} → ${shortDate(last[0])} ${fmt(last[1])}</span><span>high ${fmt(hi)}</span></div>
   </div>`;
 }
 function chartHover(e){
   const box = e.target.closest('.chart'); if (!box) return;
-  const r = DATA.rows.find(x => key(x) === box.dataset.chart); if (!r || !r.series || r.series.length < 2) return;
+  const r = box.dataset.chart === '__index' ? {series: DATA.index.levels} : findRow(box.dataset.chart);
+  const ser = box.dataset.range ? seriesFor(r, box.dataset.range) : (r && r.series);
+  if (!r || !ser || ser.length < 2) return;
   const svg = box.querySelector('svg'), rect = svg.getBoundingClientRect();
   const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-  const i = Math.round(frac * (r.series.length-1));
-  const [d, v] = r.series[i];
-  const xh = svg.querySelector('.xh'); const w = svg.viewBox.baseVal.width || CH.w, p = CH.p; const x = p + i*(w-2*p)/(r.series.length-1);
+  const i = Math.round(frac * (ser.length-1));
+  const [d, v] = ser[i];
+  const xh = svg.querySelector('.xh'); const w = svg.viewBox.baseVal.width || CH.w, p = CH.p; const x = p + i*(w-2*p)/(ser.length-1);
   xh.setAttribute('x1', x); xh.setAttribute('x2', x); xh.setAttribute('opacity', '.6');
-  const {rel, anomalies} = marksFor(r.series);
-  const prev = i > 0 ? r.series[i-1][1] : null;
+  const {rel, anomalies} = marksFor(ser);
+  const prev = i > 0 ? ser[i-1][1] : null;
   const dayPct = prev > 0 ? (v-prev)/prev*100 : null;
   const an = anomalies.find(a => a.i === i);
   const rl = rel.filter(m => Math.abs(m.i - i) <= 1);
   let extra = '';
-  if (dayPct != null) extra += `<div class="tl">${dayPct>=0?'+':''}${dayPct.toFixed(1)}% on the day${an ? ' <b style="color:var(--warn)">— big move</b>' : ''}</div>`;
+  const step = ser === r.series ? 'on the day' : 'since the previous point';
+  if (dayPct != null) extra += `<div class="tl">${dayPct>=0?'+':''}${dayPct.toFixed(1)}% ${step}${an ? ' <b style="color:var(--warn)">— big move</b>' : ''}</div>`;
   rl.forEach(m => { extra += `<div class="tl" style="color:var(--accent)">Released ${shortDate(m.date)}: ${esc(m.names.join(', '))}</div>`; });
-  tip.innerHTML = `<div class="tv">${money(v)}</div><div class="tl">${esc(d)}</div>${extra}`;
+  tip.innerHTML = `<div class="tv">${box.dataset.chart==='__index' ? v.toFixed(1) : money(v)}</div><div class="tl">${esc(d)}</div>${extra}`;
   tip.classList.add('on');
   const tw = tip.offsetWidth, th = tip.offsetHeight;
   tip.style.left = Math.max(8, Math.min(e.clientX - tw/2, window.innerWidth - tw - 8)) + 'px';
@@ -588,6 +631,25 @@ function chartLeave(e){
   const box = e.target.closest('.chart'); if (!box) return;
   const xh = box.querySelector('.xh'); if (xh) xh.setAttribute('opacity','0');
   hideTip();
+}
+
+// ---- the index ---------------------------------------------------------------
+function renderIndex(){
+  const el = document.getElementById('gindex'); const ix = DATA.index;
+  if (!el) return;
+  if (!ix || !ix.levels || ix.levels.length < 2){ el.hidden = true; return; }
+  const ch = [['1d',ix.change_1d],['7d',ix.change_7d],['30d',ix.change_30d],['90d',ix.change_90d],['1y',ix.change_1y]]
+    .filter(([,v])=>v!=null).map(([l,v])=>`<div class="ixc"><div class="l">${l}</div><div class="v">${pct(v,1)}</div></div>`).join('');
+  const br = ix.measured_7d ? `${Math.round(100*ix.up_7d/ix.measured_7d)}% of members up over 7d` : '';
+  el.innerHTML = `<div class="ixhead">
+      <div><div class="ixname" data-tip="Equal-weight index of the ${ix.members} most-traded English singles (copies sold over 90 days), base 100 on ${esc(ix.base_date)}. Members are fixed for the calendar month and rebalanced on the 1st. Descriptive: the market's own average, not a forecast.">${esc(ix.name)}<span class="info">?</span></div>
+        <div class="ixval">${ix.value.toFixed(1)}</div>
+        <div class="ixsub">${esc(ix.as_of)} · high ${ix.high.toFixed(1)} on ${shortDate(ix.high_date)}${br?' · '+br:''}</div></div>
+      <div class="ixchanges">${ch}</div>
+    </div>
+    ${chart(ix.levels, '__index', true, '1y')}
+    <div class="legend"><span><i></i>set release</span><span><b></b>${ANOMALY_PCT}%+ in a step</span><span>${ix.members} members · month of ${esc(ix.month||'')}</span></div>`;
+  el.hidden = false;
 }
 
 // ---- rows ------------------------------------------------------------------
@@ -617,6 +679,7 @@ function tagsHTML(r){
   return t.join('');
 }
 function rankDelta(r){
+  if (isSealed(r)) return '';
   const prev = DATA.prev_ranks ? DATA.prev_ranks[key(r)] : undefined;
   if (prev == null) return DATA.prev_ranks ? '<span class="d" data-tip="Not in the previous issue’s ranking.">new</span>' : '';
   const d = prev - r.rank;
@@ -638,14 +701,18 @@ function rowHTML(r, plan){
     ${chart(r.series, k)}
     <div class="stats">
       <div class="s" data-tip="${esc(DATA.tips.price)}"><div class="l">Price</div><div class="v">${money(r.market_price)}</div></div>
-      <div class="s" data-tip="${esc(DATA.tips.entry)}"><div class="l">Entry</div><div class="v">${money(r.floor_low)}</div></div>
+      ${isSealed(r) ? `<div class="s" data-tip="Change over 30 days, from stored daily closes."><div class="l">30d</div><div class="v">${pct(r.change_30d)}</div></div>`
+                     : `<div class="s" data-tip="${esc(DATA.tips.entry)}"><div class="l">Entry</div><div class="v">${money(r.floor_low)}</div></div>`}
       <div class="s" data-tip="${esc(DATA.tips.prem)}"><div class="l">vs sold</div><div class="v">${premHTML}</div></div>
       <div class="s" data-tip="${esc(DATA.tips.c7)}"><div class="l">7d</div><div class="v">${pct(r.change_7d)}</div></div>
       <div class="s" data-tip="${esc(DATA.tips.c90)}"><div class="l">90d</div><div class="v">${pct(r.change_90d)}</div></div>
       <div class="s" data-tip="${esc(DATA.tips.sales)}"><div class="l">Sales/day</div><div class="v ${(r.avg_daily_sales??0)<1?'down':''}">${r.avg_daily_sales==null?'—':r.avg_daily_sales.toFixed(1)}</div></div>
     </div>
-    <div class="score${r.invest_score>=TOP_SCORE?' top':''}" data-tip="${esc(DATA.tips.score)}"><div class="n">${r.invest_score.toFixed(0)}</div><div class="bar"><i style="width:${Math.max(3,r.invest_score)}%"></i></div><div class="l">score</div></div>
-    <div class="size" data-tip="${esc(DATA.tips.buy)}">${sized?`<span class="pill">${plan.qty} · $${plan.cost.toFixed(0)}</span>`:'<span class="pill none">—</span>'}<div class="l">size</div></div>
+    ${isSealed(r)
+      ? `<div class="score" data-tip="Change from the earliest price we hold for it${r.first_date?' ('+shortDate(r.first_date)+')':''}. Days since the set released, from the API's own calendar."><div class="n" style="font-size:20px">${r.change_since_first==null?'—':pct(r.change_since_first)}</div><div class="l">since ${r.first_date?shortDate(r.first_date):'first seen'}</div></div>
+         <div class="size"><span class="pill none">${r.days_since_release!=null?r.days_since_release+'d':'—'}</span><div class="l">since release</div></div>`
+      : `<div class="score${r.invest_score>=TOP_SCORE?' top':''}" data-tip="${esc(DATA.tips.score)}"><div class="n">${r.invest_score.toFixed(0)}</div><div class="bar"><i style="width:${Math.max(3,r.invest_score)}%"></i></div><div class="l">score</div></div>
+         <div class="size" data-tip="${esc(DATA.tips.buy)}">${sized?`<span class="pill">${plan.qty} · $${plan.cost.toFixed(0)}</span>`:'<span class="pill none">—</span>'}<div class="l">size</div></div>`}
     <button class="star" data-star="${esc(k)}" aria-label="${isWatched(r)?'Remove from':'Add to'} watchlist" title="Watchlist"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.8.8-5 4.6 1.3 6.7L12 17.5l-6 3.3 1.3-6.7-5-4.6 6.8-.8z" fill="${isWatched(r)?'currentColor':'none'}" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
   </div>` + (openNow ? detailHTML(r, plan) : '');
 }
@@ -680,7 +747,8 @@ function detailHTML(r, plan){
   const meta = [r.set_name, r.number, realRarity(r) ? r.rarity : null, r.printing && r.printing!=='Normal' ? r.printing : null].filter(Boolean).map(esc).join(' · ');
 
   let pos;
-  if (!state.budget) pos = '<p class="sub2">Enter a budget at the top and this becomes copies and a cost.</p>';
+  if (isSealed(r)) pos = '<p class="sub2">Sealed is not sized by the budget tool — it is priced per unit at the listing, not from a Near Mint shelf. Enter what you hold below.</p>';
+  else if (!state.budget) pos = '<p class="sub2">Enter a budget at the top and this becomes copies and a cost.</p>';
   else if (plan && plan.affordable) pos = `<div class="big">${plan.qty} ${plan.qty===1?'copy':'copies'} · $${plan.cost.toFixed(2)}</div>
       <div class="sub2">at $${plan.unit.toFixed(2)} shipped each · ${plan.pct.toFixed(0)}% of your budget</div>
       <div class="kv"><span class="k">Limited by</span><span class="vv">${plan.limitedBy}</span></div>
@@ -700,7 +768,11 @@ function detailHTML(r, plan){
     : '<div class="kv"><span class="k">Sold for, 14-day average</span><span class="vv flat">under 3 days of sales</span></div>';
 
   const premCls = r.ask_premium_pct==null ? '' : (r.ask_premium_pct>5 ? 'down' : (r.ask_premium_pct<-2 ? 'up' : ''));
-  const heroes = `
+  const heroes = isSealed(r) ? `
+    <div class="hero-n accent"><div class="l">Market price</div><div class="v">${money(r.market_price)}</div><div class="f">${r.total_listings!=null?r.total_listings+' listed':'daily batch'}</div></div>
+    <div class="hero-n"><div class="l">Sold for</div><div class="v">${money(r.settled_price)}</div><div class="f">14-day sales average</div></div>
+    <div class="hero-n"><div class="l">vs sold</div><div class="v ${premCls}">${r.ask_premium_pct==null?'—':(r.ask_premium_pct>0?'+':'')+r.ask_premium_pct.toFixed(1)+'%'}</div><div class="f">list against sales</div></div>
+    <div class="hero-n"><div class="l">Since ${r.first_date?shortDate(r.first_date):'first seen'}</div><div class="v">${r.change_since_first==null?'—':pct(r.change_since_first)}</div><div class="f">from ${money(r.first_price)}</div></div>` : `
     <div class="hero-n accent"><div class="l">Entry today</div><div class="v">${money(r.floor_low)}</div><div class="f">cheapest NM, shipped</div></div>
     <div class="hero-n"><div class="l">Sold for</div><div class="v">${money(r.settled_price)}</div><div class="f">14-day sales average</div></div>
     <div class="hero-n"><div class="l">vs sold</div><div class="v ${premCls}">${r.ask_premium_pct==null?'—':(r.ask_premium_pct>0?'+':'')+r.ask_premium_pct.toFixed(1)+'%'}</div><div class="f">list against sales</div></div>
@@ -726,35 +798,50 @@ function detailHTML(r, plan){
       </div>
     </div>
     <div class="bigchart">
-      <div class="bl"><span>90 days, market price</span><span>hover for the day; dashed marks are set releases, rings are days that moved ${ANOMALY_PCT}%+</span></div>
-      ${chart(r.series, k, true)}
-      <div class="legend"><span><i></i>set release</span><span><b></b>${ANOMALY_PCT}%+ in a day</span></div>
+      <div class="bl"><span>Market price</span>
+        <span class="ranges">${[['30','30 days'],['90','90 days'],['1y','1 year']].map(([v,l])=>`<button data-range="${v}" class="${state.range===v?'on':''}"${v==='1y'&&!(r.series_long&&r.series_long.length>2)?' disabled title="No weekly history yet for this card"':''}>${l}</button>`).join('')}</span>
+        <span>dashed marks are set releases, rings are ${state.range==='1y'?'weeks':'days'} that moved ${ANOMALY_PCT}%+</span></div>
+      ${chart(seriesFor(r, state.range), k, true, state.range)}
+      <div class="legend"><span><i></i>set release</span><span><b></b>${ANOMALY_PCT}%+ in a ${state.range==='1y'?'week':'day'}</span>${r.change_1y!=null?`<span>1 year: ${pct(r.change_1y)}</span>`:''}${r.change_180d!=null?`<span>6 months: ${pct(r.change_180d)}</span>`:''}</div>
     </div>
     <div class="dgrid">
-      <div class="dbox">
+      ${isSealed(r) ? `<div class="dbox">
+        <h5>Since release</h5>
+        <div class="kv"><span class="k">Set released</span><span class="vv">${r.release_date ? esc(r.release_date) : '—'}</span></div>
+        <div class="kv"><span class="k">Days on the market</span><span class="vv">${r.days_since_release ?? '—'}</span></div>
+        <div class="kv"><span class="k">Earliest price we hold</span><span class="vv">${money(r.first_price)}${r.first_date?' · '+shortDate(r.first_date):''}</span></div>
+        <div class="kv"><span class="k">Since then</span><span class="vv">${r.change_since_first==null?'—':pct(r.change_since_first)}</span></div>
+        <div class="changes">${changes}</div>
+        <div class="kv" style="margin-top:8px"><span class="k">Off its 90-day high</span><span class="vv">${r.drawdown_pct ?? '—'}%</span></div>
+        <div class="kv"><span class="k">Units sold a day</span><span class="vv">${r.avg_daily_sales ?? '—'}</span></div>
+        <p class="sub2" style="margin-top:8px">Sealed is not scored. The singles model measures rarity and copies; a box's price is print waves and time, so it gets the questions above instead of a number.</p>
+      </div>` : `<div class="dbox">
         <h5>Score <span class="sub">${r.invest_score>=TOP_SCORE?'top quarter':'of 100'}</span></h5>
         <div class="score-line${r.invest_score>=TOP_SCORE?' top':''}"><span class="n">${r.invest_score.toFixed(0)}</span><span class="t">value 20 · liquidity 25 · trend 25 · stability 20 · scarcity 10</span></div>
         ${componentBars(r.components)}
         <div class="changes">${changes}</div>
         <div class="kv" style="margin-top:8px"><span class="k">Daily volatility</span><span class="vv">${r.volatility_pct ?? '—'}%</span></div>
         <div class="kv"><span class="k">Off its 90-day high</span><span class="vv">${r.drawdown_pct ?? '—'}%</span></div>
-      </div>
+      </div>`}
       <div class="dbox">
         <h5 data-tip="${esc(DATA.tips.settled)}">The shelf today<span class="info">?</span></h5>
-        ${shelf}${soldLine}
+        ${isSealed(r) ? `<div class="kv"><span class="k">Market price</span><span class="vv">${money(r.market_price)}</span></div>
+          <div class="kv"><span class="k">Lowest listing</span><span class="vv">${money(r.low_price)}</span></div>
+          <div class="kv"><span class="k">Median listing</span><span class="vv">${money(r.median_price)}</span></div>
+          <div class="kv"><span class="k">Listings</span><span class="vv">${r.total_listings ?? '—'}</span></div>` : shelf}${soldLine}
       </div>
       <div class="dbox">
         <h5>Your money <span class="sub">saved in this browser</span></h5>
         <div class="kv" style="border:0;padding:0 0 4px"><span class="k">Size at your budget</span></div>
         ${pos}
         <div class="pos-form" style="margin-top:12px">
-          <div><label>Copies you hold</label><input type="number" min="0" step="1" data-pos="qty" data-k="${esc(k)}" value="${w.qty??''}"></div>
+          <div><label>${isSealed(r)?'Units you hold':'Copies you hold'}</label><input type="number" min="0" step="1" data-pos="qty" data-k="${esc(k)}" value="${w.qty??''}"></div>
           <div><label>Paid each</label><input type="number" min="0" step="0.01" data-pos="cost" data-k="${esc(k)}" value="${w.cost??''}"></div>
         </div>
         <div data-pnl="${esc(k)}">${pnlHTML(r)}</div>
       </div>
       <div class="dbox">
-        <h5>Before you buy</h5><ol class="checklist">${DATA.checklist.map(x=>`<li>${x}</li>`).join('')}</ol>
+        <h5>Before you buy</h5><ol class="checklist">${(isSealed(r) ? DATA.sealed_checklist : DATA.checklist).map(x=>`<li>${x}</li>`).join('')}</ol>
       </div>
     </div>
   </div>`;
@@ -765,11 +852,13 @@ const SORTERS = {
   prem:r=>r.ask_premium_pct ?? 1e9, c7:r=>r.change_7d ?? -1e9, c90:r=>r.change_90d ?? -1e9,
   sales:r=>r.avg_daily_sales ?? -1, cons:r=>r.consistency_pct ?? -1, name:r=>(r.name||'').toLowerCase(),
   moved:r=>{ const p = DATA.prev_ranks ? DATA.prev_ranks[key(r)] : null; return p==null ? 1e6 : p - r.rank; },
+  c30:r=>r.change_30d ?? -1e9, since:r=>r.change_since_first ?? -1e9, age:r=>r.days_since_release ?? 1e9,
 };
 
 function filtered(){
   const q = state.q.trim().toLowerCase();
-  return DATA.rows.filter(r=>{
+  const src = state.view==='sealed' ? SEALED : (state.view==='watch' ? ALL : DATA.rows);
+  return src.filter(r=>{
     if (state.view==='watch' && !isWatched(r)) return false;
     if (q && !((r.name||'').toLowerCase().includes(q) || (r.set_name||'').toLowerCase().includes(q) || (r.number||'').toLowerCase().includes(q))) return false;
     if (state.set && r.set_name !== state.set) return false;
@@ -861,7 +950,9 @@ window.addEventListener('scroll', ()=>{ if (tipAnchor) showTip(tipAnchor); }, {p
 // ---- clicks -------------------------------------------------------------------
 document.addEventListener('click', e=>{
   const star = e.target.closest('[data-star]');
-  if (star){ e.stopPropagation(); const r = DATA.rows.find(x=>key(x)===star.dataset.star); if (r) toggleWatch(r); return; }
+  if (star){ e.stopPropagation(); const r = findRow(star.dataset.star); if (r) toggleWatch(r); return; }
+  const rng = e.target.closest('[data-range]');
+  if (rng){ e.stopPropagation(); state.range = rng.dataset.range; apply(); return; }
   if (e.target.closest('.info')){ e.stopPropagation(); const el = e.target.closest('[data-tip]'); if (tipAnchor===el && tip.classList.contains('on')){hideTip(); tipAnchor=null;} else {tipAnchor=el; showTip(el);} return; }
   const setBtn = e.target.closest('[data-set]');
   if (setBtn){ state.set = (state.set===setBtn.dataset.set)?'':setBtn.dataset.set; state.limit=30; apply(); return; }
@@ -875,7 +966,7 @@ document.addEventListener('click', e=>{
 });
 document.addEventListener('input', e=>{
   const p = e.target.closest('[data-pos]'); if (!p) return;
-  const r = DATA.rows.find(x=>key(x)===p.dataset.k); if (!r) return;
+  const r = findRow(p.dataset.k); if (!r) return;
   const box = p.closest('.pos-form');
   const qty = Number(box.querySelector('[data-pos=qty]').value), cost = Number(box.querySelector('[data-pos=cost]').value);
   setPosition(r, qty>0?qty:null, cost>0?cost:null);
@@ -890,12 +981,18 @@ document.getElementById('q').addEventListener('input', e=>{state.q=e.target.valu
 document.getElementById('sort').addEventListener('change', e=>{ state.sort = e.target.value; state.dir = (state.sort==='name')?1:-1; document.getElementById('dir').classList.toggle('asc', state.dir===1); apply(); });
 document.getElementById('dir').addEventListener('click', ()=>{ state.dir*=-1; document.getElementById('dir').classList.toggle('asc', state.dir===1); apply(); });
 document.getElementById('budget').addEventListener('input', e=>{ const v = e.target.value===''?null:Number(e.target.value); state.budget = (v==null||Number.isNaN(v)||v<=0)?null:v; state.limit=30; apply(); });
-document.querySelectorAll('.views button').forEach(b=>b.addEventListener('click', ()=>{ state.view=b.dataset.view; state.limit=30; apply(); }));
+document.querySelectorAll('.views button').forEach(b=>b.addEventListener('click', ()=>{
+  const was = state.view; state.view=b.dataset.view; state.limit=30;
+  // Sealed has no score: the sensible default there is what is moving now.
+  if (state.view==='sealed' && state.sort==='score'){ state.sort='c30'; document.getElementById('sort').value='c30'; }
+  if (was==='sealed' && state.view!=='sealed' && state.sort==='c30'){ state.sort='score'; document.getElementById('sort').value='score'; }
+  apply(); }));
 document.getElementById('fbtn').addEventListener('click', ()=>{ const f = document.getElementById('filters'); f.hidden = !f.hidden; document.getElementById('fbtn').setAttribute('aria-expanded', String(!f.hidden)); });
 document.getElementById('clear').addEventListener('click', clearFilters);
 document.getElementById('more-all').addEventListener('click', ()=>{state.limit=1e9; apply();});
 document.getElementById('reset').addEventListener('click', reset);
 document.getElementById('csv').addEventListener('click', exportCSV);
+renderIndex();
 apply();
 """
 
@@ -926,6 +1023,57 @@ def _rarity_order(name: str) -> tuple[int, str]:
         return (RARITY_ORDER.index(name), name)
     except ValueError:
         return (len(RARITY_ORDER), name)
+
+
+def _pct_cell(v, n) -> str:
+    if v is None:
+        return '<td class="num flat">—</td>'
+    cls = "up" if v > 0 else "down" if v < 0 else "flat"
+    return f'<td class="num {cls}">{v:+d}%<span class="n">n={n}</span></td>'
+
+
+def _playbook_panel(pb: dict | None) -> str:
+    """What releases did to prices, from our own history. Counts on every cell."""
+    if not pb or not pb.get("events"):
+        return ""
+    ev = pb["events"]
+    hs = (30, 60, 90)
+    rows = []
+    for e in ev:
+        names = ", ".join(e.get("names") or [])
+        rows.append(
+            f'<tr><td><b>{_esc(e["label"])}</b><br><span class="flat">{_esc(e["date"])}'
+            f'{" · after " + _esc(e["prior_set"]) if e.get("prior_set") else ""}</span></td>'
+            + "".join(_pct_cell(e["prior"].get(f"d{h}"), e["prior"].get(f"n{h}", 0)) for h in hs)
+            + "".join(_pct_cell(e["new"].get(f"d{h}"), e["new"].get(f"n{h}", 0)) for h in hs)
+            + "".join(_pct_cell(e["market"].get(f"d{h}"), e["market"].get(f"n{h}", 0)) for h in hs)
+            + "</tr>")
+    sm = pb["summary"]
+    lead = ""
+    p30, pn = sm["prior"]["d30"]
+    m30, mn = sm["market"]["d30"]
+    if p30 is not None and m30 is not None:
+        lead = (f'Across {pn} measured {"release" if pn == 1 else "releases"}, the previous set\u2019s top '
+                f'{pb["top_n"]} were <b class="{"down" if p30 < 0 else "up"}">{p30:+d}%</b> a month later while '
+                f'the whole market was <b class="{"down" if m30 < 0 else "up"}">{m30:+d}%</b>.')
+    return f"""
+<details class="panel playbook" open>
+  <summary>What releases did to prices<span class="sc">our own history, counts on every cell</span></summary>
+  <p class="lead">{lead} Medians of per-card change; the new set is measured from a week after release, once listings settle. Blank means the window has not happened yet.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Release</th><th colspan="3" class="grp">Previous set, top {pb["top_n"]}</th><th colspan="3" class="grp">The new set, top {pb["top_n"]}</th><th colspan="3" class="grp">Whole market</th></tr>
+    <tr><th></th>{"".join(f'<th class="num">+{h}d</th>' for h in hs)}{"".join(f'<th class="num">+{h}d</th>' for h in hs)}{"".join(f'<th class="num">+{h}d</th>' for h in hs)}</tr></thead>
+    <tbody>{"".join(rows)}</tbody>
+  </table></div>
+</details>"""
+
+
+def _index_payload(ix: dict | None) -> dict | None:
+    if not ix or not ix.get("levels"):
+        return None
+    keep = ("name", "as_of", "value", "members", "base_date", "change_1d", "change_7d", "change_30d",
+            "change_90d", "change_1y", "high", "high_date", "up_7d", "measured_7d", "month")
+    return {**{k: ix.get(k) for k in keep}, "levels": [[d, v] for d, v in ix["levels"]]}
 
 
 def _freshness(obs_date: str, today: str | None) -> str:
@@ -959,6 +1107,9 @@ def render(
     art_cache: Path | None = None,
     fetch_art: bool = False,
     releases: list[dict] | None = None,
+    index: dict[str, Any] | None = None,
+    sealed: Sequence[dict] | None = None,
+    playbook: dict[str, Any] | None = None,
 ) -> str:
     """`since` and `heat` are accepted for compatibility and unused: the
     issue-to-issue comparison is the email digest's job, and the hand-kept
@@ -974,10 +1125,19 @@ def render(
         p["rank"] = i
         p["printing"] = r.get("printing") or "Normal"
         rows.append(p)
+    sealed_rows = []
+    for r in sealed or []:
+        p = _row_payload(r)
+        p["printing"] = r.get("printing") or "Normal"
+        for k in ("kind", "rank", "release_date", "days_since_release", "first_date", "first_price",
+                  "change_since_first", "low_price", "median_price", "total_listings", "thesis", "watch"):
+            p[k] = r.get(k)
+        sealed_rows.append(p)
     if art_cache is not None:
         from . import art
 
         art.embed(rows, art_cache, fetch=fetch_art)
+        art.embed(sealed_rows, art_cache, fetch=fetch_art)
     sets = sorted({r["set_name"] for r in rows if r.get("set_name")})
     rarities = sorted({r["rarity"] for r in rows if r.get("rarity") and r["rarity"] not in ("—", "None")},
                       key=_rarity_order)
@@ -1007,6 +1167,9 @@ def render(
         "prev_ranks": prev_ranks or None,
         "releases": [{"date": m["date"], "label": m["label"], "kind": m.get("kind"),
                       "names": m.get("names") or []} for m in releases],
+        "index": _index_payload(index),
+        "sealed": sealed_rows,
+        "sealed_checklist": SEALED_CHECKLIST,
     }, separators=(",", ":")).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
 
     setchips = "".join(f'<button data-set="{_esc(s)}">{_esc(s)}</button>' for s in sets)
@@ -1037,6 +1200,8 @@ def render(
 </header>
 {_freshness(obs_date, today)}
 
+<div class="panel gindex" id="gindex" hidden></div>
+
 <div class="panel budget">
   <label for="budget" data-tip="Total you are willing to put to work. Positions are sized down the ranking, capped per card.">Budget<span class="info">?</span></label>
   <span class="money-in"><input type="number" id="budget" placeholder="amount" min="0" step="50" aria-label="Budget in dollars"></span>
@@ -1053,12 +1218,12 @@ def render(
 
 <div class="toolbar">
   <input type="search" id="q" placeholder="Search card, set or number" aria-label="Search">
-  <span class="views"><button data-view="all" class="on">All</button><button data-view="sized" data-tip="Only cards that get a size at your budget.">Sized</button><button data-view="watch">Watchlist <span id="watch-count"></span></button></span>
+  <span class="views"><button data-view="all" class="on">All</button><button data-view="sized" data-tip="Only cards that get a size at your budget.">Sized</button><button data-view="watch">Watchlist <span id="watch-count"></span></button><button data-view="sealed" data-tip="Booster boxes, starter decks and deck build boxes: price against release, days on the market, what is moving. Not scored.">Sealed</button></span>
   <span class="sortbox"><span class="lbl">Sort</span>
   <select id="sort" aria-label="Sort by">
     <option value="score">Score</option><option value="moved">Rank movement</option><option value="c7">7-day change</option>
     <option value="c90">90-day change</option><option value="prem">vs sold</option><option value="price">Price</option>
-    <option value="entry">Entry price</option><option value="sales">Sales/day</option><option value="cons">Weeks up</option><option value="name">Name</option>
+    <option value="c30">30-day change</option><option value="entry">Entry price</option><option value="sales">Sales/day</option><option value="cons">Weeks up</option><option value="since">Since first seen</option><option value="age">Days since release</option><option value="name">Name</option>
   </select>
   <button class="dirbtn" id="dir" aria-label="Flip sort direction" title="Flip sort direction">{_SORT_ICON}</button></span>
   <button class="ghost" id="fbtn" aria-expanded="false" aria-controls="filters">Filters <span class="badge" hidden>0</span></button>
@@ -1079,6 +1244,8 @@ def render(
 
 <div class="rows" id="rows"></div>
 <div class="more" id="more" style="display:none"><button class="ghost" id="more-all">Show all</button></div>
+
+{_playbook_panel(playbook)}
 
 <details class="panel howto">
   <summary>How to read this<span class="sc">two minutes, once</span></summary>

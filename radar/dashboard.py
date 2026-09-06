@@ -849,6 +849,9 @@ def _row_payload(r: dict) -> dict:
         "thesis": thesis(r),
         "watch": watch_for(r),
         "series": [[d, round(v, 2)] for d, v in (r.get("series") or [])],
+        "series_long": [[d, round(v, 2)] for d, v in (r.get("series_long") or [])],
+        "change_180d": r.get("change_180d"),
+        "change_1y": r.get("change_1y"),
     }
 
 

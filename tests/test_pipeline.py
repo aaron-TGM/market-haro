@@ -1228,6 +1228,97 @@ def test_ghost_token_is_a_valid_hs256_jwt():
     assert g.base == "https://example.ghost.io/ghost/api/admin"
 
 
+def test_features_measure_the_90_day_window_even_when_the_series_runs_a_year():
+    """A year of weekly points behind the daily 90 days must not turn
+    change_90d into change-since-launch; it should only feed change_1y."""
+    from datetime import date, timedelta
+
+    from radar import invest
+
+    start = date(2025, 9, 1)
+    pts = []
+    d = start
+    # 40 weekly points at 10.0, then 95 daily points climbing 10 -> 20
+    for _ in range(40):
+        pts.append((d.isoformat(), 10.0, 1.0, 10.0)); d += timedelta(days=7)
+    for i in range(95):
+        pts.append((d.isoformat(), 10.0 + 10.0 * i / 94, 1.0, None)); d += timedelta(days=1)
+    f = invest.features(pts)
+    assert f["history_points"] <= 91                # the window, not the year
+    assert 90 <= f["change_90d"] <= 100             # ~2x inside the window
+    assert f["change_1y"] == 100.0                  # measured on the full series
+    wk = invest.weekly_points(pts, 400)
+    assert 45 <= len(wk) <= 60 and wk[-1][0] == pts[-1][0]
+
+
+def test_gundeck_index_chain_links_and_lets_members_enter_late():
+    """A member that appears mid-series joins at the current level; the base is
+    100 on the first date half the members are priced; a flat market is 100."""
+    from radar import index
+
+    mem = [{"card_id": "a", "printing": "N"}, {"card_id": "b", "printing": "N"},
+           {"card_id": "c", "printing": "N"}, {"card_id": "d", "printing": "N"}]
+    flat = {("a", "N"): [(f"2026-08-0{i}", 10.0, 1, None) for i in range(1, 8)],
+            ("b", "N"): [(f"2026-08-0{i}", 20.0, 1, None) for i in range(1, 8)],
+            ("c", "N"): [], ("d", "N"): []}
+    lv = index.compute(flat, mem, "2026-08-07")
+    assert lv and lv[0]["value"] == 100.0 and all(x["value"] == 100.0 for x in lv)
+    # b doubles on day 4, c enters on day 5 at 5.0 then doubles on day 6.
+    ser = {("a", "N"): [(f"2026-08-0{i}", 10.0, 1, None) for i in range(1, 8)],
+           ("b", "N"): [(f"2026-08-0{i}", 20.0 if i < 4 else 40.0, 1, None) for i in range(1, 8)],
+           ("c", "N"): [("2026-08-05", 5.0, 1, None), ("2026-08-06", 10.0, 1, None), ("2026-08-07", 10.0, 1, None)],
+           ("d", "N"): []}
+    lv = index.compute(ser, mem, "2026-08-07")
+    by = {x["date"]: x["value"] for x in lv}
+    assert by["2026-08-03"] == 100.0
+    assert by["2026-08-04"] == 150.0          # mean(1.0, 2.0)
+    assert by["2026-08-05"] == 150.0          # c has no previous price: enters, no step
+    assert by["2026-08-06"] == 200.0          # mean(1, 1, 2) -> x1.333.. -> 200
+    top = index.select(ser, {"a": {}, "b": {}, "c": {}}, "2026-08-07", size=2)
+    assert {m["card_id"] for m in top} == {"a", "b"}   # c traded on 3 days, a and b on 7
+
+
+def test_sealed_screen_measures_against_release_and_is_not_scored():
+    from radar import sealed
+
+    pts = [(f"2026-07-{d:02d}", 100.0 - d, 2, None) for d in range(1, 32)] + \
+          [(f"2026-08-{d:02d}", 69.0 - d * 0.5, 2, None) for d in range(1, 32)]
+    rows = [{"card_id": "x", "printing": "Normal", "name": "Freedom Ascension Booster Box",
+             "set_id": "1", "set_name": "Freedom Ascension", "product_type": "Sealed Products",
+             "market_price": 53.5, "total_listings": 12}]
+    out = sealed.evaluate(rows, {("x", "Normal"): pts}, [{"id": "1", "release_date": "2026-07-24"}], "2026-08-31")
+    r = out[0]
+    assert r["kind"] == "sealed" and r["days_since_release"] == 38 and r["first_price"] == 99.0
+    assert r["change_since_first"] == -46 and "invest_score" not in r
+    assert "booster box" in r["thesis"] and "reprint" in r["watch"].lower()
+    assert r["rank"] == 1 and r["change_30d"] is not None
+
+
+def test_release_playbook_measures_prior_new_and_market_with_counts():
+    from radar import playbook
+
+    sets = [{"id": "1", "name": "Old Set", "release_date": "2026-01-10"},
+            {"id": "2", "name": "New Set", "release_date": "2026-03-01"}]
+    cards = [{"id": str(i), "set_id": "1", "product_type": "Cards"} for i in range(10)] + \
+            [{"id": str(i), "set_id": "2", "product_type": "Cards"} for i in range(10, 20)]
+    def ser(start_price, slope, first_day):
+        from datetime import date, timedelta
+        d0 = date(2026, 1, 1) + timedelta(days=first_day)
+        return [((d0 + timedelta(days=i)).isoformat(), start_price + slope * i, 1, None) for i in range(200)]
+    series = {}
+    for i in range(10):
+        series[(str(i), "Normal")] = ser(100 + i, -0.5, 0)          # old set drifts down
+    for i in range(10, 20):
+        series[(str(i), "Normal")] = ser(50 + i, +0.2, 59)          # new set from release
+    cal = [{"date": "2026-03-01", "label": "GD02", "kind": "booster", "names": ["New Set"]}]
+    pb = playbook.build(sets, cards, series, "2026-07-01", calendar=cal)
+    ev = pb["events"][0]
+    assert ev["prior_set"] == "Old Set" and ev["prior"]["n"] == 10 and ev["new"]["n"] == 10
+    assert ev["prior"]["d30"] < 0 < ev["new"]["d30"]
+    assert ev["market"]["n"] == 20 and ev["market"]["n30"] == 20
+    assert pb["summary"]["prior"]["d30"][1] == 1
+
+
 def test_release_calendar_labels_itself_from_card_numbers():
     """GD05 from GD05-001, a wave of starters collapsed to one mark, a deck
     build box riding on its booster, promos and tokens left off, and an
@@ -1368,7 +1459,7 @@ def test_haro_page_is_the_screen_not_the_diff():
     from radar import haro
 
     html = haro.render([], obs_date="2026-08-09", since={"has_previous": True, "entered": [{"name": "x"}]})
-    assert 'class="panel since"' not in html and "Since " not in html
+    assert 'class="panel since"' not in html and "Since last issue" not in html
     assert 'id="fbtn"' in html and 'id="filters" hidden' in html
     assert 'id="inbudget"' not in html  # the Sized view already does this
     for control in ("q", "sort", "dir", "clear", "reset", "minprice", "maxprice", "minscore", "minsales"):
