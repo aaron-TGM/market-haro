@@ -10,6 +10,7 @@ data/*
 !data/history/
 !data/rankings/
 !data/cards.ndjson
+!data/sets.ndjson
 !data/market_heat.json
 !data/validation_history.json
 out/

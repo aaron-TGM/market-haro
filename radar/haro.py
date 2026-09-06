@@ -41,8 +41,10 @@ WHAT IS THERE FOR SUBSCRIBERS
 
   Rank movement. Each row shows where it sat in the previous issue.
 
-  Catalyst flags. A card from a set with a logged banlist or release event
-  wears a small flag, because those are the things the price data cannot see.
+  Release marks. Every chart carries a dashed mark where a set released --
+  GD05, a wave of starter decks -- read from the API's own release calendar,
+  so a reader can see how price responded to supply. Days that moved more
+  than 15% get a ring. Nothing here is hand-maintained (radar/releases.py).
 
 Everything the JS computes -- sizing, the plan summary, sorting -- has a Python
 twin or a Python source of truth; nothing is decided on the page that the tests
@@ -117,6 +119,17 @@ details.panel[open]>summary::before{transform:rotate(90deg)}
 details.panel>summary .sc{font-weight:400;color:var(--text-muted);letter-spacing:.1em;
   font-size:10.5px}
 details.panel>summary+*{margin-top:10px}
+.chart .rl{position:absolute;top:-1px;font-size:8.5px;letter-spacing:.06em;color:var(--text-muted);white-space:nowrap;
+  transform:translateX(-50%);pointer-events:none;line-height:1}
+.chart .rl.start{transform:none} .chart .rl.end{transform:translateX(-100%)}
+.bigchart .chart .rl{font-size:10px;top:0}
+.bigchart{margin-top:16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px 8px}
+.bigchart .bl{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.bigchart .bl span:last-child{color:var(--text-muted);text-transform:none;letter-spacing:.04em}
+.bigchart .chart svg{height:150px}
+.legend{display:flex;gap:16px;font-size:10px;color:var(--text-muted);margin-top:6px;letter-spacing:.04em}
+.legend i{display:inline-block;width:14px;border-top:1px dashed var(--accent-dim);vertical-align:middle;margin-right:5px}
+.legend b{display:inline-block;width:8px;height:8px;border:1.5px solid var(--warn);border-radius:50%;vertical-align:middle;margin-right:5px}
 .stale-feed{border-left:2px solid var(--down);font-size:13px}
 .stale-feed b{color:var(--down)}
 
@@ -499,24 +512,52 @@ function renderPlanSummary(plans, rows){
 
 // ---- the chart -------------------------------------------------------------
 // 2px line, 10% wash, 8px ringed end marker, crosshair readout on hover.
-const CH = {w:300, h:80, p:6};
-function chart(series, id){
+// Marks: a dashed line where a set released (label above it), a ring on any
+// day that moved more than ANOMALY_PCT. Releases come from the API's own
+// calendar; anomalies are computed from the series right here.
+const CH = {w:300, h:80, p:6, top:12};
+const ANOMALY_PCT = 15;
+const RELEASES = DATA.releases || [];
+function marksFor(series){
+  const dates = series.map(d=>d[0]);
+  const rel = RELEASES.map(m => ({...m, i: dates.findIndex(d => d >= m.date)}))
+    .filter(m => m.i > 0 && m.date >= dates[0] && m.date <= dates[dates.length-1]);
+  const anomalies = [];
+  for (let i=1;i<series.length;i++){ const a = series[i-1][1], b = series[i][1];
+    if (a > 0){ const c = (b-a)/a*100; if (Math.abs(c) >= ANOMALY_PCT) anomalies.push({i, pct:c}); } }
+  return {rel, anomalies};
+}
+function chart(series, id, big){
   if (!series || series.length < 2) return '<div class="chart"><div class="empty" style="padding:22px">no history</div></div>';
-  const {w,h,p} = CH, ys = series.map(d=>d[1]);
+  // The big chart's viewBox is wide so rings and the end dot stay round:
+  // the SVG is stretched to its box, and a 300-wide box stretched to 1200px
+  // turns every circle into an ellipse.
+  const w = big ? 1200 : CH.w, h = big ? 150 : CH.h, p = CH.p, top = CH.top, ys = series.map(d=>d[1]);
   const lo = Math.min(...ys), hi = Math.max(...ys), span = (hi-lo) || (hi || 1);
   const X = i => p + i*(w-2*p)/(series.length-1);
-  const Y = v => h-p - ((v-lo)/span)*(h-2*p);
+  const Y = v => h-p - ((v-lo)/span)*(h-p-top);
   const pts = series.map((d,i)=>`${X(i).toFixed(1)},${Y(d[1]).toFixed(1)}`).join(' ');
   const area = `M${X(0).toFixed(1)},${(h-p).toFixed(1)} L${pts.replace(/ /g,' L')} L${X(series.length-1).toFixed(1)},${(h-p).toFixed(1)} Z`;
   const last = series[series.length-1], first = series[0];
   const stroke = last[1] >= first[1] ? 'var(--cyan)' : 'var(--down)';
+  const {rel, anomalies} = marksFor(series);
+  // Labels are HTML, not SVG text: the SVG is stretched to fit its box and
+  // text inside it would stretch with it.
+  const relSVG = rel.map(m => { const x = X(m.i).toFixed(1);
+    return `<line x1="${x}" x2="${x}" y1="${top-2}" y2="${h-p}" stroke="var(--accent-dim)" stroke-width="1" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>`; }).join('');
+  const relLabels = rel.map(m => { const f = m.i/(series.length-1); const pos = f > 0.85 ? 'end' : (f < 0.1 ? 'start' : 'mid');
+    return `<span class="rl ${pos}" style="left:${(X(m.i)/w*100).toFixed(2)}%">${esc(m.label)}</span>`; }).join('');
+  const anomSVG = anomalies.map(a => `<circle cx="${X(a.i).toFixed(1)}" cy="${Y(series[a.i][1]).toFixed(1)}" r="${big?5:3.5}" fill="none" stroke="var(--warn)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`).join('');
   return `<div class="chart" data-chart="${esc(id)}">
-    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="90-day market price, ${money(first[1])} to ${money(last[1])}">
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="90-day market price, ${money(first[1])} to ${money(last[1])}${rel.length?'; releases marked: '+rel.map(m=>m.label).join(', '):''}">
       <path d="${area}" fill="${stroke}" opacity=".12"/>
+      ${relSVG}
       <polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+      ${anomSVG}
       <line class="xh" x1="0" x2="0" y1="0" y2="${h}" stroke="var(--text-muted)" stroke-width="1" opacity="0"/>
       <circle class="dot" cx="${X(series.length-1).toFixed(1)}" cy="${Y(last[1]).toFixed(1)}" r="4" fill="${stroke}" stroke="var(--surface)" stroke-width="2"/>
     </svg>
+    ${relLabels}
     <div class="cap"><span>${shortDate(first[0])} ${money(first[1])} → ${shortDate(last[0])} ${money(last[1])}</span><span>high ${money(hi)}</span></div>
   </div>`;
 }
@@ -527,9 +568,17 @@ function chartHover(e){
   const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
   const i = Math.round(frac * (r.series.length-1));
   const [d, v] = r.series[i];
-  const xh = svg.querySelector('.xh'); const {w,p} = CH; const x = p + i*(w-2*p)/(r.series.length-1);
+  const xh = svg.querySelector('.xh'); const w = svg.viewBox.baseVal.width || CH.w, p = CH.p; const x = p + i*(w-2*p)/(r.series.length-1);
   xh.setAttribute('x1', x); xh.setAttribute('x2', x); xh.setAttribute('opacity', '.6');
-  tip.innerHTML = `<div class="tv">${money(v)}</div><div class="tl">${esc(d)}</div>`;
+  const {rel, anomalies} = marksFor(r.series);
+  const prev = i > 0 ? r.series[i-1][1] : null;
+  const dayPct = prev > 0 ? (v-prev)/prev*100 : null;
+  const an = anomalies.find(a => a.i === i);
+  const rl = rel.filter(m => Math.abs(m.i - i) <= 1);
+  let extra = '';
+  if (dayPct != null) extra += `<div class="tl">${dayPct>=0?'+':''}${dayPct.toFixed(1)}% on the day${an ? ' <b style="color:var(--warn)">— big move</b>' : ''}</div>`;
+  rl.forEach(m => { extra += `<div class="tl" style="color:var(--accent)">Released ${shortDate(m.date)}: ${esc(m.names.join(', '))}</div>`; });
+  tip.innerHTML = `<div class="tv">${money(v)}</div><div class="tl">${esc(d)}</div>${extra}`;
   tip.classList.add('on');
   const tw = tip.offsetWidth, th = tip.offsetHeight;
   tip.style.left = Math.max(8, Math.min(e.clientX - tw/2, window.innerWidth - tw - 8)) + 'px';
@@ -560,7 +609,6 @@ function tagsHTML(r){
   const t = [];
   if (realRarity(r)) t.push(`<span class="tag">${esc(r.rarity)}</span>`);
   if (r.printing && r.printing !== 'Normal') t.push(`<span class="tag">${esc(r.printing)}</span>`);
-  if (r.catalyst) t.push(`<span class="tag flag" data-tip="${esc(r.catalyst)}">catalyst</span>`);
   if (isWatched(r)){
     const w = watch[key(r)];
     t.push(w && Number(w.qty) > 0 ? `<span class="tag pos">${w.qty} held</span>` : '<span class="tag pos">watching</span>');
@@ -673,10 +721,14 @@ function detailHTML(r, plan){
         <div class="heroes">${heroes}</div>
         <div class="callout"><span class="cl">The case</span>${esc(r.thesis||'')}</div>
         ${watchTxt ? `<div class="callout ${calm?'good':'warn'}"><span class="cl">${calm?'Nothing flashing':'What would break it'}</span>${esc(watchTxt)}</div>` : ''}
-        ${r.catalyst ? `<div class="callout bad"><span class="cl">Catalyst on this set</span>${esc(r.catalyst)}</div>` : ''}
         <div class="dbtns">${url?`<a class="cta" href="${esc(url)}" target="_blank" rel="noopener">Open on TCGplayer</a>`:''}
           <button class="cta quiet" data-star="${esc(k)}">${isWatched(r)?'Remove from watchlist':'Add to watchlist'}</button></div>
       </div>
+    </div>
+    <div class="bigchart">
+      <div class="bl"><span>90 days, market price</span><span>hover for the day; dashed marks are set releases, rings are days that moved ${ANOMALY_PCT}%+</span></div>
+      ${chart(r.series, k, true)}
+      <div class="legend"><span><i></i>set release</span><span><b></b>${ANOMALY_PCT}%+ in a day</span></div>
     </div>
     <div class="dgrid">
       <div class="dbox">
@@ -892,20 +944,6 @@ def _freshness(obs_date: str, today: str | None) -> str:
             f'market column as history until the feed catches up.</div>')
 
 
-def _catalyst_index(heat: dict | None) -> dict[str, str]:
-    """set name -> one-line catalyst, for cards from sets with a logged event.
-
-    Only sets named in a catalyst label get a flag; a generic 'banlist' with no
-    set is not attached to anything rather than to everything.
-    """
-    out: dict[str, str] = {}
-    for c in (heat or {}).get("catalysts") or []:
-        label = c.get("label") or ""
-        for s in (c.get("sets") or []):
-            out[s] = f'{c.get("date", "")} · {label}'
-    return out
-
-
 def render(
     ranked: Sequence[dict],
     *,
@@ -920,20 +958,21 @@ def render(
     heat: dict[str, Any] | None = None,
     art_cache: Path | None = None,
     fetch_art: bool = False,
+    releases: list[dict] | None = None,
 ) -> str:
-    """`since` is accepted for compatibility and unused: the issue-to-issue
-    comparison is the email digest's job, not the page's."""
+    """`since` and `heat` are accepted for compatibility and unused: the
+    issue-to-issue comparison is the email digest's job, and the hand-kept
+    catalyst list was replaced by the release calendar (`releases`)."""
     market = market or {}
     candidates = [r for r in ranked if not r.get("disqualified")]
     rejected = [r for r in ranked if r.get("disqualified")]
-    catalysts = _catalyst_index(heat)
+    releases = releases or []
 
     rows = []
     for i, r in enumerate(candidates[:top_n], 1):
         p = _row_payload(r)
         p["rank"] = i
         p["printing"] = r.get("printing") or "Normal"
-        p["catalyst"] = catalysts.get(r.get("set_name") or "")
         rows.append(p)
     if art_cache is not None:
         from . import art
@@ -948,11 +987,26 @@ def render(
         breadth = round(100 * market["up_7d"] / market["priced"])
     breadth_word = ("—" if breadth is None else "falling market" if breadth < 35
                     else "rising market" if breadth > 55 else "mixed market")
+    nxt = next((m for m in releases if m["date"] > (today or obs_date)), None)
+    next_tile = ""
+    if nxt:
+        from datetime import date as _d
+
+        try:
+            days = (_d.fromisoformat(nxt["date"]) - _d.fromisoformat(today or obs_date)).days
+            when = f"in {days} days" if days > 1 else "tomorrow"
+        except (ValueError, TypeError):
+            when = nxt["date"]
+        names = ", ".join(nxt.get("names") or [])
+        next_tile = (f'<div class="kpi cyan"><div class="l" data-tip="{_esc(names)}">Next release<span class="info">?</span></div>'
+                     f'<div class="v">{_esc(nxt["label"])}</div><div class="f">{_esc(nxt["date"])} · {when}</div></div>')
 
     payload = json.dumps({
         "rows": rows, "obs_date": obs_date, "checklist": CHECKLIST,
         "plan": plan_cfg or {"max_position_pct": 0.25}, "tips": TIPS,
         "prev_ranks": prev_ranks or None,
+        "releases": [{"date": m["date"], "label": m["label"], "kind": m.get("kind"),
+                      "names": m.get("names") or []} for m in releases],
     }, separators=(",", ":")).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
 
     setchips = "".join(f'<button data-set="{_esc(s)}">{_esc(s)}</button>' for s in sets)
@@ -994,6 +1048,7 @@ def render(
   <div class="kpi"><div class="l">Pass the screen</div><div class="v">{len(candidates)}</div><div class="f">of {len(ranked):,} screened</div></div>
   <div class="kpi up"><div class="l" data-tip="Candidates selling at least one copy a day. Below that, exiting a stack takes weeks.">Liquid enough<span class="info">?</span></div><div class="v">{liquid}</div><div class="f">1+ sales a day</div></div>
   <a class="kpi" href="#screened-out"><div class="l">Screened out</div><div class="v">{len(rejected)}</div><div class="f">every one listed with its reason</div></a>
+  {next_tile}
 </div>
 
 <div class="toolbar">
@@ -1032,6 +1087,7 @@ def render(
     <li><b>Entry, not Price.</b> Price is a daily batch a day or two behind. Entry is the cheapest Near Mint English copy on the shelf now, shipped — what you would pay.</li>
     <li><b>vs sold</b> is timing. Red: sellers asking more than buyers have paid. Green: the reverse. A great card can be listed ahead of itself.</li>
     <li><b>Budget</b> turns the ranking into positions — copies, cost, what limited it — with a per-card cap so one card cannot eat the whole thing. It is arithmetic on your number.</li>
+    <li><b>Marks on the chart.</b> A dashed line is a set release (GD05, a wave of starter decks) so you can see how price answered new supply; a ring is a day that moved 15% or more. Hover either for the detail.</li>
     <li><b>Tap a row</b> for the verdicts, the case, what would break it, the live shelf, and your position if you hold it. <b>Star</b> a card to keep it on your watchlist; enter copies and cost and the row flags the day the trend breaks.</li>
     <li><b>Screened out</b> at the bottom lists every card that failed a gate and why. Nothing is dropped silently.</li>
   </ol>

@@ -432,6 +432,12 @@ class Database:
     # of the dashboard and the basis of `latest_prices`.
     MIN_ROWS_FOR_OBS_DATE = 25
 
+    def sets(self) -> list[dict]:
+        """Every set with a release date, oldest first."""
+        return [dict(r) for r in self.conn.execute(
+            "SELECT id, name, slug, release_date, card_count FROM sets "
+            "WHERE release_date IS NOT NULL ORDER BY release_date, name")]
+
     def latest_obs_date(self) -> str | None:
         """Most recent snapshot date with enough priced rows to mean something."""
         row = self.conn.execute(

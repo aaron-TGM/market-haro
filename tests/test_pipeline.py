@@ -1228,6 +1228,34 @@ def test_ghost_token_is_a_valid_hs256_jwt():
     assert g.base == "https://example.ghost.io/ghost/api/admin"
 
 
+def test_release_calendar_labels_itself_from_card_numbers():
+    """GD05 from GD05-001, a wave of starters collapsed to one mark, a deck
+    build box riding on its booster, promos and tokens left off, and an
+    upcoming set with no cards yet keeping its name."""
+    from radar import releases
+
+    sets = [
+        {"id": "1", "name": "Freedom Ascension", "release_date": "2026-07-24"},
+        {"id": "2", "name": "Deck Build Box Freedom Ascension", "release_date": "2026-07-24"},
+        {"id": "3", "name": "Starter Deck 11: Aquatic Assault", "release_date": "2026-09-25"},
+        {"id": "4", "name": "Starter Deck 12: Raging Onslaught", "release_date": "2026-09-25"},
+        {"id": "5", "name": "Promotional EX Base Tokens", "release_date": "2025-02-25"},
+        {"id": "6", "name": "Stardust Trails", "release_date": "2026-10-30"},
+        {"id": "7", "name": "No date yet", "release_date": None},
+    ]
+    cards = [{"number": "GD05-001", "set_id": "1"}, {"number": "GD05-002", "set_id": "1"},
+             {"number": "GD01-010", "set_id": "2"}]  # the deck box reprints GD01 numbers
+    cal = releases.calendar(sets, cards)
+    assert [(m["date"], m["label"], m["kind"]) for m in cal] == [
+        ("2026-07-24", "GD05", "booster"),
+        ("2026-09-25", "ST11–12", "starter"),
+        ("2026-10-30", "Stardust Trails", "booster"),
+    ]
+    assert cal[0]["names"] == ["Deck Build Box Freedom Ascension", "Freedom Ascension"]
+    assert releases.next_after(cal, "2026-09-06")["label"] == "ST11–12"
+    assert releases.next_after(cal, "2026-12-01") is None
+
+
 def test_haro_page_carries_the_subscriber_contract():
     """The subscriber screen: budget first, rows with image and chart, no prose walls.
 
@@ -1247,10 +1275,10 @@ def test_haro_page_carries_the_subscriber_contract():
     rows = invest.evaluate(make_preview.parse(), {"min_price": 10.0})
     prev = {f"{r['card_id']}|{r.get('printing') or 'Normal'}": i + 3
             for i, r in enumerate(rows) if not r.get("disqualified")}
-    heat = {"catalysts": [{"date": "2026-07-24", "kind": "banlist",
-                           "label": "Anksha banned", "sets": ["Dual Impact"]}]}
+    releases = [{"date": "2026-07-24", "kind": "booster", "label": "GD05", "names": ["Freedom Ascension"]},
+                {"date": "2026-09-25", "kind": "starter", "label": "ST11–14", "names": ["Starter Deck 11"]}]
     html = haro.render(rows, obs_date="2026-08-09", market={"priced": 100, "up_7d": 20},
-                       plan_cfg={"max_position_pct": 0.25}, prev_ranks=prev, heat=heat,
+                       plan_cfg={"max_position_pct": 0.25}, prev_ranks=prev, releases=releases,
                        today="2026-08-10")
 
     assert "Market Haro" in html and "GUNDECK.AI" in html
@@ -1266,10 +1294,12 @@ def test_haro_page_carries_the_subscriber_contract():
     top = payload["rows"][0]
     assert top["rank"] == 1 and "series" in top and "image_url" in top
     assert payload["prev_ranks"][f"{top['card_id']}|{top['printing']}"] == 3
-    # The catalyst flag lands only on cards from the named set.
-    flagged = [r for r in payload["rows"] if r.get("catalyst")]
-    assert flagged and all(r["set_name"] == "Dual Impact" for r in flagged)
-    assert any(r["set_name"] != "Dual Impact" and not r.get("catalyst") for r in payload["rows"])
+    # The release calendar ships whole and is drawn by the chart; the next
+    # release after today is a tile. No hand-kept catalyst flag survives.
+    assert [m["label"] for m in payload["releases"]] == ["GD05", "ST11–14"]
+    assert "Next release" in html and "ST11–14" in html and "in 46 days" in html
+    assert not any("catalyst" in r for r in payload["rows"]) and "catalyst" not in haro.JS
+    assert "marksFor(" in haro.JS and "ANOMALY_PCT" in haro.JS
     # Every tooltip the JS reads is shipped.
     for k in ("price", "entry", "prem", "c7", "c90", "sales", "score", "buy", "settled"):
         assert k in payload["tips"]

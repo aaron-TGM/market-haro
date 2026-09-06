@@ -264,9 +264,12 @@ def cmd_invest(cfg, args) -> int:
              for r in prev["rows"] if r.get("rank")}
             if prev else None
         )
-        # heat is only consulted for catalyst flags here; the attention panel
-        # itself lives in `radar heat`, not on the subscriber page.
-        heat_for_flags = heat_mod.evaluate(heat_mod.load(cfg.path("data/market_heat.json")))
+        # The release calendar, drawn on every chart. Read from the sets table
+        # the sync (or the archive) filled; nothing is hand-maintained.
+        from . import releases as releases_mod
+
+        calendar = releases_mod.calendar(
+            db.sets(), [dict(x) for x in db.conn.execute("SELECT number, set_id FROM cards")])
         html = haro.render(
             ranked,
             obs_date=obs,
@@ -276,7 +279,7 @@ def cmd_invest(cfg, args) -> int:
             since=since,
             today=today,
             prev_ranks=prev_ranks,
-            heat=heat_for_flags,
+            releases=calendar,
             art_cache=cfg.path("data/images"),
             fetch_art=not getattr(args, "no_art_fetch", False),
         )

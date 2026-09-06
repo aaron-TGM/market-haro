@@ -20,6 +20,7 @@ FORMAT (tab-separated, one record per line)
   P  card_id printing market low median lowest_with_shipping total_listings
      sales_volume avg_sales_price c24 c7 c30 product_type tcgplayer_id name
      number set_id set_name image_url [last_updated_at]
+  S  id name slug release_date card_count [tcgplayer_id]
   H  card_id printing date market low avg_sales_price sales_volume
   F  card_id printing condition language low_price lowest_with_shipping
      median_with_shipping sample_count last_updated_at
@@ -83,6 +84,7 @@ def load(path: Path, cfg, updated: Path | None = None) -> dict:
     hist: list[dict] = []
     listings: dict[tuple[str, str], int] = {}
     shelf: dict[str, list[dict]] = {}
+    sets: list[dict] = []
 
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line:
@@ -92,6 +94,11 @@ def load(path: Path, cfg, updated: Path | None = None) -> dict:
 
         if tag == "#OBS":
             obs = p[1]
+
+        elif tag == "S":
+            sets.append({"id": p[1], "name": _v(p, 2) or "", "slug": _v(p, 3),
+                         "release_date": _v(p, 4),
+                         "card_count": int(p[5]) if _v(p, 5) else None})
 
         elif tag == "C":
             if _v(p, 10):
@@ -174,6 +181,8 @@ def load(path: Path, cfg, updated: Path | None = None) -> dict:
 
     # /sets/:id/prices carries name and image, so it can create cards the
     # /cards page missed. Same order as ingest.sync: metadata first.
+    if sets:
+        db.upsert_sets(sets, cfg.game_slug)
     n_cards = db.upsert_cards(cards)
     n_cards += db.upsert_cards(
         [_norm_card(r, r.pop("_set_id"), r.pop("_set_name")) for r in list(points)]

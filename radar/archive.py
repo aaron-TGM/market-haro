@@ -67,6 +67,7 @@ FIELDS = (
 )
 
 # Card metadata changes rarely, so it lives in one file rather than per month.
+SET_FIELDS = ("id", "name", "slug", "abbreviation", "release_date", "card_count", "game_name", "game_slug")
 CARD_FIELDS = (
     "id",
     "tcgplayer_id",
@@ -144,6 +145,17 @@ def export(db, root: str | Path) -> dict[str, Any]:
         cpath.write_text(cbody, encoding="utf-8")
         written.append(cpath.name)
 
+    # Sets carry release dates, which the page draws on every chart. Small,
+    # and the one table `radar sync` fills that nothing else would restore.
+    sets = [dict(r) for r in db.conn.execute(
+        f"SELECT {', '.join(SET_FIELDS)} FROM sets ORDER BY id"
+    )]
+    spath = root / "sets.ndjson"
+    sbody = "\n".join(_line(x, SET_FIELDS) for x in sets) + "\n"
+    if sets and (not spath.exists() or spath.read_text(encoding="utf-8") != sbody):
+        spath.write_text(sbody, encoding="utf-8")
+        written.append(spath.name)
+
     return {
         "months": len(by_month),
         "points": points,
@@ -164,6 +176,9 @@ def restore(db, root: str | Path, *, batch: int = 20000) -> dict[str, Any]:
     cards = list(_read_ndjson(root / "cards.ndjson"))
     if cards:
         db.upsert_cards(cards)
+    sets = list(_read_ndjson(root / "sets.ndjson"))
+    if sets:
+        db.upsert_sets(sets, "")
 
     months = sorted((root / "history").glob("*.ndjson")) if (root / "history").exists() else []
     points = 0

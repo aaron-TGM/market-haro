@@ -295,7 +295,7 @@ rich rows, and a detail panel on tap. Copy lives in tooltips and one collapsed
 "how to read"; the page is meant to be looked at, not read.
 
 Each row: rank with movement since the last issue · card image · name, set,
-rarity, and flags · a 90-day chart with a hover readout · price, entry, vs sold,
+rarity, and flags · a 90-day chart with release marks and a hover readout · price, entry, vs sold,
 7d, 90d, sales/day · score · size at your budget · watchlist star.
 
 **Budget** sizes positions down the ranking with a per-card cap; sized rows get a
@@ -303,9 +303,8 @@ left bar and a copies·cost pill, and the summary at the top warns when one set
 takes more than half. **Watchlist** is the reader's browser only: star a card,
 enter copies and cost in the detail panel, and the row shows unrealised P&L
 against today's price and flags **trend broke** (weeks-up under 50% or a 7-day
-fall past 10%) — the exit signal a hold screen can give. **Catalyst** flags mark
-cards from a set with a logged banlist or release, because those are the things
-price data cannot see. Search, the three views and sort are one row; set,
+fall past 10%) — the exit signal a hold screen can give. Search, the three
+views and sort are one row; set,
 rarity, price, score and sales filters sit behind one **Filters** button that
 shows how many are on.
 
@@ -314,6 +313,15 @@ three verdict chips (is it listed ahead of itself, is the climb intact, can you
 get out), four hero numbers (entry, sold-for, vs sold, 90 days), the case and
 what would break it as callouts, then score / the shelf / your money / the
 checklist as four boxes. Colour appears only where a verdict is made.
+
+**Marks on every chart** (`radar/releases.py`). A dashed line where a set
+released — GD05, EB01 + ST10, a wave of starter decks collapsed to ST11–14 —
+so a reader can see how price answered new supply; a ring on any day that
+moved 15% or more. The calendar is the API's own set list (release dates,
+codes taken from the card numbers), stored in `data/sets.ndjson` and drawn
+past and upcoming; the next release is a tile at the top. Nothing is
+hand-maintained — this replaced the earlier "catalyst" flag, which needed a
+person to keep a list and explained nothing on the chart.
 
 **Card art is embedded in the file** (`radar/art.py`). TCGplayer's CDN serves
 to any origin; what breaks images is sandboxed previews and mail clients that
