@@ -5,7 +5,7 @@ report carries.
 
 ## 2026-09-06 — the $35 build
 
-- **Market Haro 50** (labelled "GUNDECK 50" on this build): equal-weight, chain-linked
+- **Market Haro 50**: equal-weight, chain-linked
   index of the fifty most-traded singles $5+, base 100, members fixed per month, a year
   of history with release marks. First panel on the page. `data/index.ndjson`.
 - **Your holdings**: positions, cost in, value now, P&L, trend-broke count at the top of

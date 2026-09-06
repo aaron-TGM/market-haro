@@ -165,7 +165,7 @@ def build() -> tuple[str, str]:
     </div>"""
 
     features = [
-        ("Market Haro 50", "One number for the market: equal-weight, chain-linked, fifty most-traded singles $5+, base 100, a year of history with release marks.", "built", "rename from “GUNDECK 50” scoped"),
+        ("Market Haro 50", "One number for the market: equal-weight, chain-linked, fifty most-traded singles $5+, base 100, a year of history with release marks.", "built", ""),
         ("Your holdings", "Positions, cost in, value now, P&L, trend-broke count at the top; follows the member across devices once the Worker is live.", "built", "Worker deploy needed for sync"),
         ("Weekly note", "A person’s few hundred words, shown ten days on the page and the email. First note is in.", "built", "you write them"),
         ("Hold screen", "127 singles scored 0–100, gated, with art, release-marked charts, verdicts, budget sizing, watchlist.", "built", ""),

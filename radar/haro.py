@@ -152,6 +152,7 @@ details.panel>summary+*{margin-top:10px}
 .gindex .chart svg{height:120px}
 .ixhead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:8px}
 .ixname{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.ixwhat{font-size:11.5px;color:var(--text-muted);margin-top:2px}
 .ixval{font-size:34px;font-weight:700;line-height:1.05;margin-top:2px;font-variant-numeric:tabular-nums}
 .ixsub{font-size:10.5px;color:var(--text-muted);letter-spacing:.04em;margin-top:3px}
 .ixchanges{display:flex;gap:8px}
@@ -719,7 +720,8 @@ function renderIndex(){
     .filter(([,v])=>v!=null).map(([l,v])=>`<div class="ixc"><div class="l">${l}</div><div class="v">${pct(v,1)}</div></div>`).join('');
   const br = ix.measured_7d ? `${Math.round(100*ix.up_7d/ix.measured_7d)}% of members up over 7d` : '';
   el.innerHTML = `<div class="ixhead">
-      <div><div class="ixname" data-tip="Equal-weight index of the ${ix.members} most-traded English singles (copies sold over 90 days), base 100 on ${esc(ix.base_date)}. Members are fixed for the calendar month and rebalanced on the 1st. Descriptive: the market's own average, not a forecast.">${esc(ix.name)}<span class="info">?</span></div>
+      <div><div class="ixname" data-tip="Equal-weight index of the ${ix.members} most-traded English singles priced $5+ (copies sold over 90 days), base 100 on ${esc(ix.base_date)}. Members are fixed for the calendar month and rebalanced on the 1st. Descriptive: the market's own average, not a forecast.">${esc(ix.name)}<span class="info">?</span></div>
+        <div class="ixwhat">The ${ix.members} most traded, most investable Gundam singles, as one number.</div>
         <div class="ixval">${ix.value.toFixed(1)}</div>
         <div class="ixsub">${esc(ix.as_of)} · high ${ix.high.toFixed(1)} on ${shortDate(ix.high_date)}${br?' · '+br:''}</div></div>
       <div class="ixchanges">${ch}</div>

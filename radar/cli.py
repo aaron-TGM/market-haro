@@ -276,7 +276,7 @@ def cmd_invest(cfg, args) -> int:
         calendar = releases_mod.calendar(
             all_sets, [dict(x) for x in db.conn.execute("SELECT number, set_id FROM cards")])
 
-        # The GUNDECK 50 and the sealed screen read the same stored series.
+        # The Market Haro 50 and the sealed screen read the same stored series.
         card_meta = {str(x["id"]): dict(x) for x in db.conn.execute(
             "SELECT id, name, set_name, product_type FROM cards")}
         gindex = index_mod.build(cfg.path("data"), series, card_meta, obs)

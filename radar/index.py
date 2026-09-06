@@ -1,4 +1,4 @@
-"""The GUNDECK 50: one number for the market.
+"""The Market Haro 50: one number for the market.
 
 WHAT IT IS
 
@@ -39,7 +39,7 @@ SIZE = 50
 MIN_PRICE = 5.0
 COVERAGE = 0.50
 LOOKBACK_DAYS = 400
-NAME = "GUNDECK 50"
+NAME = "MARKET HARO 50"
 
 Series = dict[tuple[str, str], list[tuple[str, float, float, Any]]]
 

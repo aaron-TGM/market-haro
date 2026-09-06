@@ -22,9 +22,8 @@ Prices through 2026-09-05 · 127 cards pass the screen · 207 screened
 
 **Market Haro 50.** One number for the market: an equal-weight, chain-linked index of the
 fifty most-traded singles priced $5+, base 100, members fixed per calendar month. A year
-of history with every set release marked on it. *(On the current build this is still
-labelled "GUNDECK 50"; the rename and a second, most-played index are scoped in
-`docs/SOW-two-fifties.md`.)*
+of history with every set release marked on it. *(A second index, the GUNDECK 50 — the
+fifty most played cards, every version priced — is scoped in `docs/SOW-two-fifties.md`.)*
 
 **Your holdings.** Star a card, enter copies and cost, and the page opens with positions,
 cost in, value now, P&L and how many broke trend. With the sync Worker deployed the list
