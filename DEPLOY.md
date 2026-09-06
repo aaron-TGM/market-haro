@@ -96,8 +96,9 @@ put the key in `config.yaml` — that file is committed.
 after TCGplayer's overnight batch has settled, and you can trigger it by hand
 from the Actions tab any time.
 
-Each run: restore → sync → build dashboard → export → run the test suite →
-commit → publish. The tests run *before* the commit on purpose, so a broken run
+Each run: restore → sync → build the issue (report, digest, track record,
+issue.json) → export → run the test suite → commit → publish to Ghost and the
+Worker. The tests run *before* the commit on purpose, so a broken run
 can't push a corrupted history.
 
 On the 1st of each month it also runs `radar validate` and commits the result, so

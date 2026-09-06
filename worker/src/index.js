@@ -174,7 +174,7 @@ async function runAlerts(env) {
 }
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-function mailHTML(iss, alerts, p) {
+export function mailHTML(iss, alerts, p) {
   const money = v => '$' + Math.abs(v).toFixed(2);
   const pnlLine = p ? `<p style="margin:0 0 14px;font-size:15px"><b>Your ${p.positions} ${p.positions === 1 ? 'position' : 'positions'}:</b> ${money(p.value)} now against ${money(p.basis)} in — <b style="color:${p.pnl >= 0 ? '#2e9e4f' : '#c43a2f'}">${p.pnl >= 0 ? '+' : '−'}${money(p.pnl)} (${p.pct >= 0 ? '+' : ''}${p.pct.toFixed(1)}%)</b></p>` : '';
   const items = alerts.map(a => `<li style="margin:6px 0">${esc(a.text)}</li>`).join('');
