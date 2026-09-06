@@ -134,6 +134,13 @@ details.panel>summary+*{margin-top:10px}
 .legend{display:flex;gap:16px;font-size:10px;color:var(--text-muted);margin-top:6px;letter-spacing:.04em}
 .legend i{display:inline-block;width:14px;border-top:1px dashed var(--accent-dim);vertical-align:middle;margin-right:5px}
 .legend b{display:inline-block;width:8px;height:8px;border:1.5px solid var(--warn);border-radius:50%;vertical-align:middle;margin-right:5px}
+.portfolio{padding:10px 16px}
+.pf{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:13px}
+.pfl{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.pfv{font-weight:700;font-variant-numeric:tabular-nums} .pfv.muted{color:var(--text-muted);font-weight:400}
+.pfv.pnl{font-size:16px}
+.pf .ghost{margin-left:auto}
+.sync{font-size:10.5px;letter-spacing:.06em;color:var(--text-muted);margin-top:6px} .sync.on{color:var(--up)}
 .gindex{padding:14px 16px 10px}
 .gindex .chart svg{height:120px}
 .ixhead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:8px}
@@ -448,9 +455,49 @@ document.addEventListener('error', e=>{
 // thumbnail renderers all throw, and the page must work with nothing saved.
 const WATCH_KEY = 'haro.watch.v1';
 function loadWatch(){ try { return JSON.parse(localStorage.getItem(WATCH_KEY) || '{}') || {}; } catch(e){ return {}; } }
-function saveWatch(w){ try { localStorage.setItem(WATCH_KEY, JSON.stringify(w)); } catch(e){} }
+function saveWatch(w){ try { localStorage.setItem(WATCH_KEY, JSON.stringify(w)); } catch(e){} if (typeof syncQueue === 'function') syncQueue(); }
 let watch = loadWatch();
 const isWatched = r => !!watch[key(r)];
+
+// ---- account sync ----------------------------------------------------------
+// Off by default, and off entirely unless this page is served from the
+// members' site with a sync URL configured. Then, and only then: ask Ghost
+// for the signed session token it issues to the logged-in member, and use
+// it to read and write the same watchlist at the sync service. Nothing goes
+// anywhere else, and a reader who is not signed in keeps a browser-only
+// list exactly as before. Two fetches, both named here, nowhere else.
+const SYNC_URL = (DATA.sync_url || '').replace(/\/$/, '');
+const sync = {token:null, state: SYNC_URL ? 'idle' : 'off', timer:null};
+function syncStatus(msg, cls){
+  const el = document.getElementById('sync-status'); if (!el) return;
+  el.textContent = msg; el.className = 'sync ' + (cls||''); el.hidden = !msg;
+}
+async function syncInit(){
+  if (!SYNC_URL || !/^https?:$/.test(location.protocol)) return;
+  try {
+    const t = await fetch('/members/api/session', {credentials:'same-origin'});
+    if (!t.ok) { syncStatus('Sign in on the site to keep your watchlist across devices.', 'muted'); return; }
+    sync.token = (await t.text()).trim();
+    const r = await fetch(SYNC_URL + '/positions', {headers:{Authorization:'Bearer ' + sync.token}});
+    if (!r.ok) throw new Error('positions ' + r.status);
+    const remote = await r.json();
+    const localCount = Object.keys(watch).length, remoteCount = Object.keys(remote.positions||{}).length;
+    if (remoteCount || !localCount){ watch = remote.positions || {}; saveWatch(watch); apply(); }
+    else { await syncPush(); }  // first sign-in with a local list: it becomes the account's
+    sync.state = 'on'; syncStatus('Watchlist synced to your account.', 'on');
+  } catch(e){ sync.state = 'error'; syncStatus('Could not reach the sync service; using this browser\u2019s copy.', 'muted'); }
+}
+async function syncPush(){
+  if (!sync.token) return;
+  const r = await fetch(SYNC_URL + '/positions', {method:'PUT', headers:{Authorization:'Bearer ' + sync.token, 'Content-Type':'application/json'},
+    body: JSON.stringify({positions: watch})});
+  if (!r.ok) throw new Error('push ' + r.status);
+}
+function syncQueue(){
+  if (sync.state !== 'on') return;
+  clearTimeout(sync.timer);
+  sync.timer = setTimeout(()=>{ syncPush().catch(()=>syncStatus('Last change did not sync; it is saved in this browser.', 'muted')); }, 800);
+}
 function toggleWatch(r){
   const k = key(r);
   if (watch[k]) delete watch[k]; else watch[k] = {qty:null, cost:null, since:DATA.obs_date};
@@ -631,6 +678,29 @@ function chartLeave(e){
   const box = e.target.closest('.chart'); if (!box) return;
   const xh = box.querySelector('.xh'); if (xh) xh.setAttribute('opacity','0');
   hideTip();
+}
+
+// ---- your holdings, at the top --------------------------------------------------
+function renderPortfolio(){
+  const el = document.getElementById('portfolio'); if (!el) return;
+  let n=0, basis=0, value=0, broke=[], watching=0;
+  for (const [k, w] of Object.entries(watch)){
+    const r = findRow(k); if (!r) continue;
+    const q = Number(w.qty), c = Number(w.cost);
+    if (q>0 && c>0 && r.market_price!=null){ n++; basis += q*c; value += q*r.market_price; if (trendBroke(r)) broke.push(r.name); }
+    else watching++;
+  }
+  if (!n && !watching){ el.hidden = true; return; }
+  const d = value - basis, p = basis ? d/basis*100 : 0;
+  el.innerHTML = n
+    ? `<div class="pf"><span class="pfl">Your holdings</span><span class="pfv">${n} ${n===1?'position':'positions'}</span>
+        <span class="pfv">$${basis.toFixed(2)} in</span><span class="pfv">$${value.toFixed(2)} now</span>
+        <span class="pfv pnl ${d>=0?'up':'down'}">${d>=0?'+':'−'}$${Math.abs(d).toFixed(2)} (${p>=0?'+':''}${p.toFixed(1)}%)</span>
+        ${broke.length?`<span class="pfv down"><b>${broke.length}</b> trend broke: ${esc(broke.slice(0,3).join(', '))}${broke.length>3?'…':''}</span>`:''}
+        ${watching?`<span class="pfv muted">${watching} watching</span>`:''}
+        <button class="ghost" data-view-jump="watch">Open watchlist</button></div>`
+    : `<div class="pf"><span class="pfl">Watching</span><span class="pfv">${watching} ${watching===1?'card':'cards'}</span><span class="pfv muted">Enter copies and cost in a card\u2019s detail to track the position.</span><button class="ghost" data-view-jump="watch">Open watchlist</button></div>`;
+  el.hidden = false;
 }
 
 // ---- the index ---------------------------------------------------------------
@@ -899,6 +969,7 @@ function apply(){
   fb.querySelector('.badge').textContent = n; fb.querySelector('.badge').hidden = !n;
   fb.classList.toggle('on', !!n);
   window.__view = rows;
+  renderPortfolio();
 }
 
 function clearFilters(){
@@ -951,6 +1022,8 @@ window.addEventListener('scroll', ()=>{ if (tipAnchor) showTip(tipAnchor); }, {p
 document.addEventListener('click', e=>{
   const star = e.target.closest('[data-star]');
   if (star){ e.stopPropagation(); const r = findRow(star.dataset.star); if (r) toggleWatch(r); return; }
+  const jump = e.target.closest('[data-view-jump]');
+  if (jump){ state.view = jump.dataset.viewJump; state.limit = 30; apply(); document.getElementById('rows').scrollIntoView({behavior:'smooth'}); return; }
   const rng = e.target.closest('[data-range]');
   if (rng){ e.stopPropagation(); state.range = rng.dataset.range; apply(); return; }
   if (e.target.closest('.info')){ e.stopPropagation(); const el = e.target.closest('[data-tip]'); if (tipAnchor===el && tip.classList.contains('on')){hideTip(); tipAnchor=null;} else {tipAnchor=el; showTip(el);} return; }
@@ -994,6 +1067,7 @@ document.getElementById('reset').addEventListener('click', reset);
 document.getElementById('csv').addEventListener('click', exportCSV);
 renderIndex();
 apply();
+syncInit();
 """
 
 TIPS = {
@@ -1110,6 +1184,7 @@ def render(
     index: dict[str, Any] | None = None,
     sealed: Sequence[dict] | None = None,
     playbook: dict[str, Any] | None = None,
+    sync_url: str | None = None,
 ) -> str:
     """`since` and `heat` are accepted for compatibility and unused: the
     issue-to-issue comparison is the email digest's job, and the hand-kept
@@ -1170,6 +1245,7 @@ def render(
         "index": _index_payload(index),
         "sealed": sealed_rows,
         "sealed_checklist": SEALED_CHECKLIST,
+        "sync_url": sync_url or "",
     }, separators=(",", ":")).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
 
     setchips = "".join(f'<button data-set="{_esc(s)}">{_esc(s)}</button>' for s in sets)
@@ -1201,6 +1277,8 @@ def render(
 {_freshness(obs_date, today)}
 
 <div class="panel gindex" id="gindex" hidden></div>
+<div class="panel portfolio" id="portfolio" hidden></div>
+<div class="sync" id="sync-status" hidden></div>
 
 <div class="panel budget">
   <label for="budget" data-tip="Total you are willing to put to work. Positions are sized down the ranking, capped per card.">Budget<span class="info">?</span></label>
@@ -1263,7 +1341,7 @@ def render(
 <div class="rej" id="screened-out">{_rejected_table(rejected)}</div>
 
 <footer>
-  <p><b>Market Haro</b> is published by GUNDECK.AI for its subscribers. Every number on this page describes what a card has already done. Nothing here is a forecast, a recommendation, or financial advice, and nothing knows <em>why</em> a price is moving — bans, reprints, rotation and tournament results end runs and are invisible in price data. Trading cards can lose value. Your watchlist and positions are saved only in this browser. Prices from tcgapi.dev under commercial licence · © GUNDECK.AI</p>
+  <p><b>Market Haro</b> is published by GUNDECK.AI for its subscribers. Every number on this page describes what a card has already done. Nothing here is a forecast, a recommendation, or financial advice, and nothing knows <em>why</em> a price is moving — bans, reprints, rotation and tournament results end runs and are invisible in price data. Trading cards can lose value. Your watchlist and positions are saved in this browser, and to your account when you are signed in on the site — nowhere else. Prices from tcgapi.dev under commercial licence · © GUNDECK.AI</p>
 </footer>
 </div>
 <div id="tip" role="tooltip"></div>

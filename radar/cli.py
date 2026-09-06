@@ -303,6 +303,7 @@ def cmd_invest(cfg, args) -> int:
             index=gindex,
             sealed=sealed_rows,
             playbook=pbook,
+            sync_url=(cfg.raw.get("publish") or {}).get("sync_url") or None,
             art_cache=cfg.path("data/images"),
             fetch_art=not getattr(args, "no_art_fetch", False),
         )
@@ -310,9 +311,20 @@ def cmd_invest(cfg, args) -> int:
         haro.write(html, out)
         print(f"\nDashboard -> {out}")
 
+        # The compact issue the alert service reads: today's and the previous
+        # issue's state for every ranked card, keyed like the page keys rows.
+        from . import alerts as alerts_mod
+
+        report_url = cfg.raw.get("publish", {}).get("report_url") or None
+        ranked_rows = [dict(r, rank=i) for i, r in enumerate(
+            [x for x in ranked if not x.get("disqualified")], 1)]
+        iss = alerts_mod.issue(ranked_rows, obs_date=obs, prev_rows=(prev or {}).get("rows"),
+                               releases=calendar, sealed=sealed_rows, report_url=report_url or "")
+        out_issue = out.parent / "issue.json"
+        out_issue.write_text(json.dumps(iss, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+
         # The digest alongside, in both shapes, so `radar publish` and a human
         # reading the run log see the same thing.
-        report_url = cfg.raw.get("publish", {}).get("report_url") or None
         (out.parent / "digest.html").write_text(
             digest_mod.to_html(since, report_url=report_url), encoding="utf-8")
         (out.parent / "digest.md").write_text(
@@ -487,6 +499,21 @@ def cmd_publish(cfg, args) -> int:
     print(f"Digest post -> {post.get('url') or post.get('slug')}"
           f"{'  (emailed to ' + pcfg.get('email_segment', 'status:-free') + ')' if not args.no_email else '  (not emailed)'}")
     print(f"{g.requests_made} Ghost requests.")
+
+    # The alert service gets today's issue. Optional: no URL, no push.
+    sync_url = (pcfg.get("sync_url") or "").rstrip("/")
+    secret = os.getenv("HARO_ADMIN_SECRET")
+    issue_path = out_dir / "issue.json"
+    if sync_url and secret and issue_path.exists():
+        import requests
+
+        r = requests.put(f"{sync_url}/admin/issue", data=issue_path.read_bytes(),
+                         headers={"X-Admin-Secret": secret, "Content-Type": "application/json"}, timeout=30)
+        print(f"Issue -> {sync_url}/admin/issue  ({r.status_code})")
+        if not r.ok:
+            return 1
+    elif sync_url:
+        print("sync_url is set but HARO_ADMIN_SECRET is not; the alert service was not updated.")
     return 0
 
 

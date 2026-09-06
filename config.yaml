@@ -147,9 +147,10 @@ watchlist:
 publish:
   brand: Market Haro
   # Pricing is set in Ghost (Settings -> Membership), not here. Recorded so the
-  # repo says what the product is: one paid tier, $15/month or $125/year, no
-  # free tier, no founding discount. Everything published is visibility `paid`.
-  pricing_note: "$15/mo or $125/yr, single paid tier, no free tier"
+  # repo says what the product is: one paid tier, $35/month or $300/year, a
+  # 7-day trial, no free tier, no founding discount. Everything published is
+  # visibility `paid`.
+  pricing_note: "$35/mo or $300/yr, single paid tier, 7-day trial, no free tier"
   # The members-only page that always holds the latest report. Same slug every
   # day, so yesterday's email opens today's report.
   report_slug: market-haro
@@ -157,6 +158,11 @@ publish:
   digest_slug_prefix: market-haro
   # Ghost member filter for the email send. status:-free = every paying member.
   email_segment: "status:-free"
+  # The sync + alerts Worker (worker/). Leave empty and the page keeps the
+  # watchlist in the browser only; set it and signed-in members get their
+  # watchlist across devices and the daily alert email. The admin secret the
+  # pipeline pushes with comes from the environment (HARO_ADMIN_SECRET).
+  sync_url: ""
   # Absolute URL of the report page, for the button in the email. Set once the
   # Ghost site exists, e.g. https://gundeck.ai/market-haro/
   report_url: ""

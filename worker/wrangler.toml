@@ -1,0 +1,30 @@
+# Market Haro sync + alerts. Deploy: `cd worker && npx wrangler deploy`.
+#
+# What this Worker is: the one small server behind an otherwise static
+# product. It keeps each subscriber's watchlist and holdings so they follow
+# the member across devices, and it sends the daily alert email. It trusts
+# Ghost for identity -- a member proves who they are with the signed JWT
+# Ghost hands out at /members/api/session, verified here against the site's
+# published keys -- so there is no login, no password, nothing to leak.
+#
+# Secrets (set with `npx wrangler secret put NAME`):
+#   ADMIN_SECRET      shared with the pipeline; guards /admin/*
+#   RESEND_API_KEY    optional; without it alerts are computed but not sent
+# Vars (below): GHOST_URL is the members' site and the only allowed origin.
+
+name = "market-haro"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+
+[vars]
+GHOST_URL = "https://your-site.ghost.io"
+MAIL_FROM = "Market Haro <haro@gundeck.ai>"
+REPORT_URL = "https://your-site.ghost.io/market-haro/"
+
+[[kv_namespaces]]
+binding = "HARO"
+id = "replace-with-your-kv-namespace-id"
+
+[triggers]
+# 13:40 UTC: the pipeline runs at 13:10 and pushes the issue when it is done.
+crons = ["40 13 * * *"]

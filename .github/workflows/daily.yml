@@ -12,6 +12,7 @@
 #   secrets.TCGAPI_KEY             your tcgapi.dev key                  required
 #   secrets.GHOST_URL              https://your-site.ghost.io           optional
 #   secrets.GHOST_ADMIN_KEY        Ghost Admin API key, "<id>:<secret>"  optional
+#   secrets.HARO_ADMIN_SECRET      the sync/alerts Worker's admin secret  optional
 #   secrets.CLOUDFLARE_API_TOKEN   scoped to "Cloudflare Pages: Edit"   optional
 #   secrets.CLOUDFLARE_ACCOUNT_ID  from the Cloudflare dashboard URL    optional
 #
@@ -60,6 +61,7 @@ jobs:
       CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       GHOST_URL: ${{ secrets.GHOST_URL }}
       GHOST_ADMIN_KEY: ${{ secrets.GHOST_ADMIN_KEY }}
+      HARO_ADMIN_SECRET: ${{ secrets.HARO_ADMIN_SECRET }}
 
     steps:
       - uses: actions/checkout@v4
