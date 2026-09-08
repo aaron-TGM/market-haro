@@ -13,7 +13,8 @@
 #   secrets.GHOST_URL              https://your-site.ghost.io           optional
 #   secrets.GHOST_ADMIN_KEY        Ghost Admin API key, "<id>:<secret>"  optional
 #   secrets.HARO_ADMIN_SECRET      the sync/alerts Worker's admin secret  optional
-#   secrets.ANTHROPIC_API_KEY      writes the prose; templates without it   optional
+#   secrets.OPENAI_API_KEY         writes the prose (gpt-5.6-sol); templates without it   optional
+#   secrets.ANTHROPIC_API_KEY      the alternative provider, if config says so   optional
 #   secrets.CLOUDFLARE_API_TOKEN   scoped to "Cloudflare Pages: Edit"   optional
 #   secrets.CLOUDFLARE_ACCOUNT_ID  from the Cloudflare dashboard URL    optional
 #
@@ -63,6 +64,7 @@ jobs:
       GHOST_URL: ${{ secrets.GHOST_URL }}
       GHOST_ADMIN_KEY: ${{ secrets.GHOST_ADMIN_KEY }}
       HARO_ADMIN_SECRET: ${{ secrets.HARO_ADMIN_SECRET }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
     steps:

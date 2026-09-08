@@ -170,5 +170,7 @@ publish:
 commentary:
   # The model that writes each card's case, the email's opening and the note
   # draft, from measured facts only (radar/commentary.py, docs/VOICE.md).
-  # ANTHROPIC_API_KEY comes from the environment; without it the templates run.
-  model: claude-haiku-4-5
+  # provider: openai (OPENAI_API_KEY) or anthropic (ANTHROPIC_API_KEY). The key
+  # comes from the environment; without it the templates run.
+  provider: openai
+  model: gpt-5.6-sol

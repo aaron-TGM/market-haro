@@ -9,7 +9,8 @@ report carries.
   draft of the weekly note come from a model that is given only measured facts and
   `docs/VOICE.md`; every number in its output is checked against the facts and a refused
   sentence falls back to the template (`radar/commentary.py`, `radar note-draft`). Cached
-  per issue in `data/commentary/`. `ANTHROPIC_API_KEY` optional.
+  per issue in `data/commentary/`. GPT-5.6 Sol via `OPENAI_API_KEY` by default; Anthropic
+  as the alternative provider.
 - Issue 2026-09-07: the first batch fully stamped on its own day since the rebuild.
 
 ## 2026-09-06 — the $35 build

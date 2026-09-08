@@ -295,7 +295,7 @@ def cmd_invest(cfg, args) -> int:
         # number by number; the template stands wherever it did not.
         from . import commentary as comm_mod
 
-        llm = comm_mod.Client(model=(cfg.raw.get("commentary") or {}).get("model", comm_mod.DEFAULT_MODEL))
+        llm = comm_mod.from_config(cfg.raw.get("commentary"))
         use_llm = llm.available and not getattr(args, "no_llm", False)
         written = {}
         if use_llm:
@@ -566,9 +566,9 @@ def cmd_note_draft(cfg, args) -> int:
     from . import releases as releases_mod
     from .invest import _change_over
 
-    llm = comm_mod.Client(model=(cfg.raw.get("commentary") or {}).get("model", comm_mod.DEFAULT_MODEL))
+    llm = comm_mod.from_config(cfg.raw.get("commentary"))
     if not llm.available:
-        print("ANTHROPIC_API_KEY is not set. Nothing drafted.")
+        print(f"{comm_mod.PROVIDERS[llm.provider]['env']} is not set. Nothing drafted.")
         return 2
     db = Database(cfg.db_path)
     try:
@@ -857,7 +857,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--no-art-fetch", action="store_true",
                    help="embed only card art already cached under data/images; never call the image CDN")
     r.add_argument("--no-llm", action="store_true",
-                   help="keep the template prose even when ANTHROPIC_API_KEY is set")
+                   help="keep the template prose even when the commentary API key is set")
 
     nd = sub.add_parser("note-draft", help="draft the weekly note from the week's facts (out/note-draft.md)")
     nd.add_argument("--date", help="issue date to draft from, default = latest")

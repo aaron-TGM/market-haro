@@ -31,8 +31,12 @@ hash of the facts, so re-rendering an issue costs nothing and an unchanged
 card is never rewritten. Roughly a dollar a day on the small model. No API
 key, no network, a refused sentence: the template. The issue always goes out.
 
-The API is called with `requests`; no SDK. ANTHROPIC_API_KEY from the
-environment only, never from config.
+PROVIDERS
+
+OpenAI is the default (`commentary.provider: openai`, model gpt-5.6-sol --
+the one that writes best, and the reason this exists); Anthropic is the
+alternative. Both are called with `requests`, no SDK. Keys come from the
+environment only -- OPENAI_API_KEY or ANTHROPIC_API_KEY -- never from config.
 """
 
 from __future__ import annotations
@@ -45,9 +49,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-API_URL = "https://api.anthropic.com/v1/messages"
-API_VERSION = "2023-06-01"
-DEFAULT_MODEL = "claude-haiku-4-5"
+PROVIDERS = {
+    "openai": {"url": "https://api.openai.com/v1/chat/completions", "env": "OPENAI_API_KEY", "model": "gpt-5.6-sol"},
+    "anthropic": {"url": "https://api.anthropic.com/v1/messages", "env": "ANTHROPIC_API_KEY", "model": "claude-haiku-4-5"},
+}
+DEFAULT_PROVIDER = "openai"
+DEFAULT_MODEL = PROVIDERS[DEFAULT_PROVIDER]["model"]
+ANTHROPIC_VERSION = "2023-06-01"
 MAX_WORKERS = 6
 
 _VOICE_PATH = Path(__file__).resolve().parent.parent / "docs" / "VOICE.md"
@@ -176,9 +184,15 @@ def lead_facts(diff: dict, *, index: dict | None, releases: Sequence[dict], obs_
 
 # ---------------------------------------------------------------- the model
 class Client:
-    def __init__(self, api_key: str | None = None, *, model: str = DEFAULT_MODEL, timeout: float = 60.0):
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-        self.model = model
+    """One thin call per provider. `complete(system, user)` -> text."""
+
+    def __init__(self, api_key: str | None = None, *, provider: str = DEFAULT_PROVIDER,
+                 model: str | None = None, timeout: float = 90.0):
+        if provider not in PROVIDERS:
+            raise ValueError(f"unknown commentary provider {provider!r}; one of {sorted(PROVIDERS)}")
+        self.provider = provider
+        self.api_key = api_key or os.getenv(PROVIDERS[provider]["env"])
+        self.model = model or PROVIDERS[provider]["model"]
         self.timeout = timeout
         self.calls = 0
         self.tokens_in = 0
@@ -191,8 +205,24 @@ class Client:
     def complete(self, system: str, user: str, *, max_tokens: int = 400) -> str:
         import requests
 
-        r = requests.post(API_URL, timeout=self.timeout, headers={
-            "x-api-key": self.api_key, "anthropic-version": API_VERSION, "content-type": "application/json"},
+        url = PROVIDERS[self.provider]["url"]
+        if self.provider == "openai":
+            r = requests.post(url, timeout=self.timeout,
+                              headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                              json={"model": self.model, "max_completion_tokens": max_tokens,
+                                    "messages": [{"role": "system", "content": system},
+                                                 {"role": "user", "content": user}]})
+            r.raise_for_status()
+            out = r.json()
+            self.calls += 1
+            u = out.get("usage") or {}
+            self.tokens_in += int(u.get("prompt_tokens") or 0)
+            self.tokens_out += int(u.get("completion_tokens") or 0)
+            choice = (out.get("choices") or [{}])[0]
+            return str(((choice.get("message") or {}).get("content")) or "").strip()
+
+        r = requests.post(url, timeout=self.timeout, headers={
+            "x-api-key": self.api_key, "anthropic-version": ANTHROPIC_VERSION, "content-type": "application/json"},
             json={"model": self.model, "max_tokens": max_tokens, "system": system,
                   "messages": [{"role": "user", "content": user}]})
         r.raise_for_status()
@@ -202,6 +232,13 @@ class Client:
         self.tokens_in += int(u.get("input_tokens") or 0)
         self.tokens_out += int(u.get("output_tokens") or 0)
         return "".join(b.get("text", "") for b in out.get("content") or [] if b.get("type") == "text").strip()
+
+
+def from_config(cfg_block: dict | None) -> Client:
+    """The client the pipeline uses, from the `commentary:` block of config.yaml."""
+    c = cfg_block or {}
+    provider = c.get("provider") or DEFAULT_PROVIDER
+    return Client(provider=provider, model=c.get("model") or PROVIDERS.get(provider, {}).get("model"))
 
 
 def _system(task: str) -> str:

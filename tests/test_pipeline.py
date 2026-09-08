@@ -1476,7 +1476,11 @@ def test_commentary_writes_from_facts_caches_and_falls_back():
                              releases=[{"date": "2026-07-24", "label": "GD05"}])
         assert got2 == got and fake2.seen == ["Liar"]
         # No key: nothing is asked, nothing written, and the caller keeps the template.
+        import os
+        os.environ.pop("OPENAI_API_KEY", None); os.environ.pop("ANTHROPIC_API_KEY", None)
         assert c.write_cards(rows, root=Path(d), date="2026-09-01", client=c.Client(api_key=None)) == {}
+        assert c.from_config({"provider": "openai", "model": "gpt-5.6-sol"}).model == "gpt-5.6-sol"
+        assert c.from_config({"provider": "anthropic"}).model == "claude-haiku-4-5"
         # The lead has the same guard.
         lf = {"index": {"value": 141.0, "change_7d": -2.5}, "candidates": 131, "breadth_now_pct": 33}
         class Lead(Fake):

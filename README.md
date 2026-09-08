@@ -32,8 +32,9 @@ follows the member across devices; without it, it lives in the browser.
 **The words.** Each card's case and watch, the email's opening paragraph and a draft of the
 weekly note are written by a model that sees only the card's measured facts and the house
 voice (`docs/VOICE.md`), and whose every number is checked against those facts before it is
-published (`radar/commentary.py`). No key, no network, a refused sentence: the template
-runs instead, so the issue always goes out.
+published (`radar/commentary.py`). GPT-5.6 Sol by default (`OPENAI_API_KEY`); Anthropic
+as the alternative. No key, no network, a refused sentence: the template runs instead, so
+the issue always goes out.
 
 **The weekly note.** A person's few hundred words from `data/notes/YYYY-MM-DD.md`, shown
 for ten days on the page and at the top of the email. `radar note-draft` writes a first
