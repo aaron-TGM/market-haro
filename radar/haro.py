@@ -148,7 +148,11 @@ details.panel>summary+*{margin-top:10px}
 .pfv.pnl{font-size:16px}
 .pf .ghost{margin-left:auto}
 .sync{font-size:10.5px;letter-spacing:.06em;color:var(--text-muted);margin-top:6px} .sync.on{color:var(--up)}
-.gindex{padding:14px 16px 10px}
+.gindex{padding:12px 16px 10px}
+.gindex[open]{padding-bottom:10px}
+.gindex>summary .sc{color:var(--text);letter-spacing:.04em;text-transform:none;font-size:12px}
+.gindex>summary .ixsv{font-size:15px;color:var(--text);margin-right:2px}
+.gindex .ixhead{margin-top:12px}
 .gindex .chart svg{height:120px}
 .ixhead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:8px}
 .ixname{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
@@ -719,9 +723,8 @@ function renderIndex(){
   const ch = [['1d',ix.change_1d],['7d',ix.change_7d],['30d',ix.change_30d],['90d',ix.change_90d],['1y',ix.change_1y]]
     .filter(([,v])=>v!=null).map(([l,v])=>`<div class="ixc"><div class="l">${l}</div><div class="v">${pct(v,1)}</div></div>`).join('');
   const br = ix.measured_7d ? `${Math.round(100*ix.up_7d/ix.measured_7d)}% of members up over 7d` : '';
-  el.innerHTML = `<div class="ixhead">
-      <div><div class="ixname" data-tip="Equal-weight index of the ${ix.members} most-traded English singles priced $5+ (copies sold over 90 days), base 100 on ${esc(ix.base_date)}. Members are fixed for the calendar month and rebalanced on the 1st. Descriptive: the market's own average, not a forecast.">${esc(ix.name)}<span class="info">?</span></div>
-        <div class="ixwhat">The ${ix.members} most traded, most investable Gundam singles, as one number.</div>
+  el.innerHTML = `<summary>${esc(ix.name)}<span class="sc"><b class="ixsv">${ix.value.toFixed(1)}</b>${ix.change_7d!=null?` · 7d <span class="${ix.change_7d>0?'up':(ix.change_7d<0?'down':'flat')}">${pct(ix.change_7d,1)}</span>`:''}${ix.change_30d!=null?` · 30d <span class="${ix.change_30d>0?'up':(ix.change_30d<0?'down':'flat')}">${pct(ix.change_30d,1)}</span>`:''} · ${ix.members} singles, one number</span></summary><div class="ixhead">
+      <div><div class="ixwhat" data-tip="Equal-weight index of the ${ix.members} most-traded English singles priced $5+ (copies sold over 90 days), base 100 on ${esc(ix.base_date)}. Members are fixed for the calendar month and rebalanced on the 1st. Descriptive: the market's own average, not a forecast.">The ${ix.members} most traded, most investable Gundam singles, as one number.<span class="info">?</span></div>
         <div class="ixval">${ix.value.toFixed(1)}</div>
         <div class="ixsub">${esc(ix.as_of)} · high ${ix.high.toFixed(1)} on ${shortDate(ix.high_date)}${br?' · '+br:''}</div></div>
       <div class="ixchanges">${ch}</div>
@@ -1306,7 +1309,7 @@ def render(
 </header>
 {_freshness(obs_date, today)}
 
-<div class="panel gindex" id="gindex" hidden></div>
+<details class="panel gindex" id="gindex" hidden></details>
 <div class="panel portfolio" id="portfolio" hidden></div>
 {_note_panel(note)}
 <div class="sync" id="sync-status" hidden></div>
