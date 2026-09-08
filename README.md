@@ -29,8 +29,15 @@ fifty most played cards, every version priced — is scoped in `docs/SOW-two-fif
 cost in, value now, P&L and how many broke trend. With the sync Worker deployed the list
 follows the member across devices; without it, it lives in the browser.
 
+**The words.** Each card's case and watch, the email's opening paragraph and a draft of the
+weekly note are written by a model that sees only the card's measured facts and the house
+voice (`docs/VOICE.md`), and whose every number is checked against those facts before it is
+published (`radar/commentary.py`). No key, no network, a refused sentence: the template
+runs instead, so the issue always goes out.
+
 **The weekly note.** A person's few hundred words from `data/notes/YYYY-MM-DD.md`, shown
-for ten days on the page and at the top of the email.
+for ten days on the page and at the top of the email. `radar note-draft` writes a first
+draft from the week's facts for you to edit.
 
 **The hold screen.** Every English single priced $10+ and up over 30 days, measured on 90
 days of daily price and sales history, scored 0–100 on value, liquidity, trend, stability
@@ -107,6 +114,7 @@ points across 13 months, so a fresh clone does not need to.
 | `radar backfill --range quarter\|year` | history for cards that lack it |
 | `radar invest [--date] [--today] [--no-fetch] [--no-art-fetch]` | the whole issue: report, digest, issue.json, track record, CSV |
 | `radar run` | sync then invest (what the workflow calls) |
+| `radar note-draft [--date]` | draft the weekly note from the week's facts to out/note-draft.md |
 | `radar publish [--dry-run] [--no-email]` | Ghost pages + email, Worker issue push |
 | `radar export` / `radar restore` | the NDJSON archive, both directions |
 | `radar validate [--horizon]` | walk-forward: does the score still separate winners? |
@@ -124,6 +132,7 @@ data/rankings/    every issue's ranking, as published; the track record is built
 data/notes/       the weekly note, one Markdown file per date
 data/index.ndjson the Market Haro 50, daily
 tests/            python tests/test_pipeline.py
+docs/VOICE.md     the voice every generated sentence is held to, with samples
 docs/METHOD.md    how the score, gates, settled price and validation were measured
 docs/ARCHITECTURE.md   modules, data flow, what is a cache and what is an asset
 docs/SOW-two-fifties.md   next: Market Haro 50 rename + the GUNDECK 50 (most played)

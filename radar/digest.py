@@ -189,7 +189,7 @@ def _esc(x: Any) -> str:
 
 
 def to_html(d: dict, *, report_url: str | None = None, brand: str = "Market Haro",
-            note: dict | None = None) -> str:
+            note: dict | None = None, lead: str | None = None) -> str:
     """The email body. Plain, table-based, safe for every mail client."""
     A = "#f0a030"
     MUTED = "#8a8f98"
@@ -206,6 +206,9 @@ def to_html(d: dict, *, report_url: str | None = None, brand: str = "Market Haro
         return f'<b>{nm}</b> <span {st_m}>{_esc(r.get("set_name") or "")}</span>'
 
     parts = []
+
+    if lead:
+        parts.append(f'<p style="margin:0 0 16px;font:17px/1.55 -apple-system,Segoe UI,Helvetica,Arial,sans-serif">{_esc(lead)}</p>')
 
     if note and note.get("html"):
         parts.append(f'<h3 {st_h}>This week</h3><div style="font:15px/1.6 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
@@ -294,9 +297,11 @@ def to_html(d: dict, *, report_url: str | None = None, brand: str = "Market Haro
     return "\n".join(parts)
 
 
-def to_markdown(d: dict, *, report_url: str | None = None) -> str:
+def to_markdown(d: dict, *, report_url: str | None = None, lead: str | None = None) -> str:
     """Same content, for a plain-text preview or a second channel."""
     L = []
+    if lead:
+        L.append(lead + "\n")
     if d["feed_late"]:
         L.append(f"**Price feed is {d['feed_age_days']} days behind** — built on prices through {d['date']}.\n")
     L.append(f"{d['candidates']} candidates from {d['candidates'] + d['screened']} screened, prices through {d['date']}."

@@ -86,6 +86,7 @@ The point count should match `python -m radar stats` against your real database.
 | Name | Value |
 |---|---|
 | `TCGAPI_KEY` | your tcgapi.dev key |
+| `ANTHROPIC_API_KEY` | optional; writes the prose (radar/commentary.py). Templates without it |
 
 Secrets are write-only once saved and are not exposed to forked-PR runs. Do not
 put the key in `config.yaml` — that file is committed.

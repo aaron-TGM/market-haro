@@ -3,6 +3,15 @@
 Newest first. Dates are the day the work landed; issue dates are the price date the
 report carries.
 
+## 2026-09-08 — the voice
+
+- **Written, not templated**: each card's case and watch, the email's opening paragraph and a
+  draft of the weekly note come from a model that is given only measured facts and
+  `docs/VOICE.md`; every number in its output is checked against the facts and a refused
+  sentence falls back to the template (`radar/commentary.py`, `radar note-draft`). Cached
+  per issue in `data/commentary/`. `ANTHROPIC_API_KEY` optional.
+- Issue 2026-09-07: the first batch fully stamped on its own day since the rebuild.
+
 ## 2026-09-06 — the $35 build
 
 - **Market Haro 50**: equal-weight, chain-linked

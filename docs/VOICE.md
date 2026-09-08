@@ -76,3 +76,42 @@ Given: the card's measured facts (prices, changes, weeks up, sales a day, drawdo
 sold, shelf, copies, rank movement), the release calendar around it, and the playbook's
 medians. Never given: news, rumours, tournament results, reprints. If the writer wants to
 mention any of those, it can't — and the note should say the price data can't see them.
+
+## Four samples from the issue of 2026-09-07, written to the guard
+
+Each of these was checked against the card's facts the way the pipeline checks the model's
+output: every number below is in the facts, and none of the banned words appear.
+
+**Wing Gundam Zero (LR+) — #1**
+> Listed 3% under what it has been selling for, on the steadiest big card on the screen: up
+> 83% of weeks since June, 1.4% off its high, and $338 against $186 when the window opened.
+> Two a day change hands, so a stack of four is a week to exit, not a month.
+>
+> *Watch:* a week that closes down more than 10% ends the pattern this rests on; so does the
+> ask running ahead of sales into the Sep 25 starter wave, when the previous set's top 20 has
+> lost a median 10% in 30 days across the eight releases on record.
+
+**Gundam Barbatos Adapt (SP) (R+) — #2**
+> Every week since June has closed up and it is sitting on its high, with the ask 2% under
+> sales and three and a half copies a day changing hands — the most liquid card in the top
+> ten. Nine copies on the shelf is the thin part.
+>
+> *Watch:* with 9 copies listed, one seller dumping a playset moves the price; watch for the
+> median listing, now $198, closing the gap to the $155 entry — that is the shelf agreeing
+> with the buyers.
+
+**Unforeseen Incident (Store Tournament Winner Pack 01) — #3**
+> Up 148% over the window and 65% in the last month, but the ask is now 10% above what copies
+> have actually sold for — sellers are pricing the run, buyers are paying last month. Under
+> two a day trade, and it traded on only half the days.
+>
+> *Watch:* if the ask keeps running 10% over sales, the next sale sets the price, not the
+> listing; a week that gives back more than the last month's 65% climb can afford is the tell.
+
+**Starter Deck 03: Zeon's Rush — sealed #1**
+> A 423-day-old starter deck that has climbed 60% in a month, from $43 in June to $68, on
+> three units a day — out-of-print starters are the sealed product that is actually moving.
+> Half of its weeks closed up, so the climb is a step, not a line.
+>
+> *Watch:* sealed runs end on a reprint or a new wave, and the price data cannot see either;
+> the Sep 25 starter wave is the first place to look.

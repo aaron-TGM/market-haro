@@ -1418,6 +1418,97 @@ def test_track_record_scores_each_issue_against_its_pool_and_keeps_losers():
         assert "2026-07-01" in html and "Nothing is removed" in html and "financial advice" in html
 
 
+def test_commentary_guard_rejects_numbers_the_facts_do_not_contain():
+    """The one rule that makes model-written prose publishable unread: every
+    number in the output is in the input, allowing ordinary rounding."""
+    from radar import commentary as c
+
+    facts = {"market_price": 69.22, "change_90d": 99, "consistency_pct": 86, "avg_daily_sales": 2.0,
+             "ask_premium_pct": -2.3, "window": {"high": 71.37}, "next_release": {"date": "2026-09-25"}}
+    ok, bad = c.guard("Up 99% over the window and 86% of weeks, at $69 with the ask 2% under sales.", facts)
+    assert ok and not bad
+    ok, bad = c.guard("It sells two a day and is 3% off its $71.37 high; ST11-14 land Sep 25.", facts)
+    assert ok, bad                                  # 3 = 71.37-69.22 rounded? no: small integers are allowed
+    ok, bad = c.guard("A 42% climb since spring.", facts)
+    assert not ok and bad == ["42%"]
+    ok, bad = c.guard("Sold 1,201 copies.", facts)
+    assert not ok and bad == ["1,201"]
+    assert c.tone_ok("The ask sits under sales.") and not c.tone_ok("Investors should buy!")
+    assert not c.tone_ok("This will likely run.")
+
+
+def test_commentary_writes_from_facts_caches_and_falls_back():
+    """A fake model: one card gets an acceptable case, one invents a number
+    and keeps the template, one is cached and never re-asked."""
+    import json
+    import tempfile
+
+    from radar import commentary as c
+
+    class Fake(c.Client):
+        def __init__(self):
+            super().__init__(api_key="fake"); self.seen = []
+        def complete(self, system, user, *, max_tokens=400):
+            self.calls += 1
+            facts = json.loads(user.split("FACTS\n", 1)[1])
+            self.seen.append(facts["name"])
+            assert "Lead with the point" in system      # the voice is the system prompt
+            if facts["name"] == "Honest":
+                return json.dumps({"case": f"Listed at ${facts['market_price']} and climbing {facts['change_90d']}% over the window.",
+                                   "watch": "The first week that closes down ends the pattern."})
+            return json.dumps({"case": "Up 400% since the dawn of time.", "watch": "Nothing."})
+
+    rows = [{"card_id": 1, "printing": "Normal", "name": "Honest", "market_price": 20.5, "change_90d": 40,
+             "series": [["2026-06-01", 15.0], ["2026-08-30", 20.5]]},
+            {"card_id": 2, "printing": "Normal", "name": "Liar", "market_price": 9.0, "change_90d": 10,
+             "series": [["2026-06-01", 8.0], ["2026-08-30", 9.0]]}]
+    with tempfile.TemporaryDirectory() as d:
+        fake = Fake()
+        got = c.write_cards(rows, root=Path(d), date="2026-08-30", client=fake,
+                            releases=[{"date": "2026-07-24", "label": "GD05"}])
+        assert set(got) == {"1|Normal"} and "$20.5" in got["1|Normal"]["case"]
+        cache = json.loads((Path(d) / "commentary" / "2026-08-30.json").read_text())
+        assert cache["1|Normal"]["case"] == got["1|Normal"]["case"]
+        assert "400%" in cache["_rejected"]["2|Normal"]
+        # Second run: the honest card is served from cache; only the liar is re-asked.
+        fake2 = Fake()
+        got2 = c.write_cards(rows, root=Path(d), date="2026-08-30", client=fake2,
+                             releases=[{"date": "2026-07-24", "label": "GD05"}])
+        assert got2 == got and fake2.seen == ["Liar"]
+        # No key: nothing is asked, nothing written, and the caller keeps the template.
+        assert c.write_cards(rows, root=Path(d), date="2026-09-01", client=c.Client(api_key=None)) == {}
+        # The lead has the same guard.
+        lf = {"index": {"value": 141.0, "change_7d": -2.5}, "candidates": 131, "breadth_now_pct": 33}
+        class Lead(Fake):
+            def complete(self, system, user, *, max_tokens=400):
+                self.calls += 1
+                return ("The market gave back 2.5% this week and the Market Haro 50 sits at 141.0 with breadth at 33%. "
+                        "Of the 131 cards that pass, the middle of the ranking moved most, and the alt-art parallels "
+                        "did the moving while the base printings sat still through the whole week of trading.")
+        assert c.write_lead(lf, root=Path(d), date="2026-08-30", client=Lead()).startswith("The market")
+
+
+def test_the_page_prefers_written_prose_and_keeps_the_template_otherwise():
+    import json
+    import re
+
+    from radar import haro
+
+    rows = [{"card_id": 1, "printing": "Normal", "name": "A", "set_name": "S", "number": "S-001", "rarity": "R",
+             "market_price": 20.0, "invest_score": 70.0, "avg_daily_sales": 1.5,
+             "series": [["2026-08-01", 10.0], ["2026-08-02", 11.0]]},
+            {"card_id": 2, "printing": "Normal", "name": "B", "set_name": "S", "number": "S-002", "rarity": "R",
+             "market_price": 20.0, "invest_score": 60.0, "avg_daily_sales": 1.5,
+             "series": [["2026-08-01", 10.0], ["2026-08-02", 11.0]]}]
+    html = haro.render(rows, obs_date="2026-08-09",
+                       commentary={"1|Normal": {"case": "A written case.", "watch": "A written watch."}})
+    payload = json.loads(re.search(r'id="haro-data">(.*?)</script>', html, re.S).group(1)
+                         .replace("\\u003c", "<").replace("\\u003e", ">").replace("\\u0026", "&"))
+    a, b = payload["rows"]
+    assert a["thesis"] == "A written case." and a["watch"] == "A written watch." and a.get("written")
+    assert b["thesis"] != "A written case." and not b.get("written")
+
+
 def test_release_calendar_labels_itself_from_card_numbers():
     """GD05 from GD05-001, a wave of starters collapsed to one mark, a deck
     build box riding on its booster, promos and tokens left off, and an

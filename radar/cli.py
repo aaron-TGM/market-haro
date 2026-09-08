@@ -291,6 +291,19 @@ def cmd_invest(cfg, args) -> int:
         pbook = playbook_mod.build(
             all_sets, [dict(x) for x in db.conn.execute("SELECT id, set_id, product_type FROM cards")],
             series, obs, calendar=calendar)
+        # The words. A model writes each card's case from its facts, guarded
+        # number by number; the template stands wherever it did not.
+        from . import commentary as comm_mod
+
+        llm = comm_mod.Client(model=(cfg.raw.get("commentary") or {}).get("model", comm_mod.DEFAULT_MODEL))
+        use_llm = llm.available and not getattr(args, "no_llm", False)
+        written = {}
+        if use_llm:
+            live = [r for r in ranked if not r.get("disqualified")]
+            written = comm_mod.write_cards(live + list(sealed_rows), root=cfg.path("data"), date=obs,
+                                           client=llm, releases=calendar, playbook=pbook)
+            print(f"Commentary: {len(written)} of {len(live) + len(sealed_rows)} cases written "
+                  f"({llm.calls} calls, {llm.tokens_in + llm.tokens_out:,} tokens)")
         print(f"{gindex['name']}: {gindex.get('value', '—')} "
               f"({gindex.get('change_7d', 0) or 0:+.1f}% 7d, {len(gindex.get('constituents') or [])} members)"
               f" · sealed screen: {len(sealed_rows)} products")
@@ -309,6 +322,7 @@ def cmd_invest(cfg, args) -> int:
             playbook=pbook,
             sync_url=(cfg.raw.get("publish") or {}).get("sync_url") or None,
             note=weekly_note,
+            commentary=written,
             art_cache=cfg.path("data/images"),
             fetch_art=not getattr(args, "no_art_fetch", False),
         )
@@ -330,15 +344,23 @@ def cmd_invest(cfg, args) -> int:
 
         # The digest alongside, in both shapes, so `radar publish` and a human
         # reading the run log see the same thing.
+        lead = None
+        if use_llm:
+            lead = comm_mod.write_lead(
+                comm_mod.lead_facts(since, index=gindex, releases=calendar, obs_date=obs, today=today),
+                root=cfg.path("data"), date=obs, client=llm)
+            print("Email lead: " + ("written" if lead else "template"))
         (out.parent / "digest.html").write_text(
-            digest_mod.to_html(since, report_url=report_url, note=weekly_note), encoding="utf-8")
+            digest_mod.to_html(since, report_url=report_url, note=weekly_note, lead=lead), encoding="utf-8")
+        (out.parent / "lead.txt").write_text(lead or "", encoding="utf-8")
+        (out.parent / "playbook.json").write_text(json.dumps(pbook.get("summary"), sort_keys=True), encoding="utf-8")
 
         # The public track record, rebuilt every issue from the stored rankings.
         track_html, _ = track_mod.build(cfg.path("data"), series, obs, report_url=report_url or "",
                                         index=gindex)
         (out.parent / "track-record.html").write_text(track_html, encoding="utf-8")
         (out.parent / "digest.md").write_text(
-            digest_mod.to_markdown(since, report_url=report_url), encoding="utf-8")
+            digest_mod.to_markdown(since, report_url=report_url, lead=lead), encoding="utf-8")
         (out.parent / "digest.json").write_text(
             json.dumps({"subject": digest_mod.subject(since), "date": obs, "run_date": today,
                         "feed_late": since["feed_late"], "has_previous": since["has_previous"]}),
@@ -531,6 +553,62 @@ def cmd_publish(cfg, args) -> int:
     elif sync_url:
         print("sync_url is set but HARO_ADMIN_SECRET is not; the alert service was not updated.")
     return 0
+
+
+def cmd_note_draft(cfg, args) -> int:
+    """Draft the weekly note from the week's facts, for a person to edit.
+
+    Reads the stored rankings, the index and the last issue's playbook
+    summary; never publishes anything. Writes out/note-draft.md.
+    """
+    from . import commentary as comm_mod
+    from . import digest as digest_mod
+    from . import releases as releases_mod
+    from .invest import _change_over
+
+    llm = comm_mod.Client(model=(cfg.raw.get("commentary") or {}).get("model", comm_mod.DEFAULT_MODEL))
+    if not llm.available:
+        print("ANTHROPIC_API_KEY is not set. Nothing drafted.")
+        return 2
+    db = Database(cfg.db_path)
+    try:
+        obs = args.date or db.latest_obs_date()
+        today = getattr(args, "today", None) or _today()
+        cur = digest_mod.previous(cfg.path("data"), (obs or "9999") + "z")
+        week_ago = digest_mod.previous(cfg.path("data"), _shift(obs, -6)) if obs else None
+        diff = digest_mod.diff(cur, week_ago, run_date=today) if cur else {}
+        ix = {}
+        ipath = cfg.path("data/index.ndjson")
+        if ipath.exists():
+            pts = [(lv["date"], lv["value"]) for lv in (json.loads(l) for l in ipath.read_text().splitlines() if l.strip())]
+            if pts:
+                ix = {"name": "Market Haro 50", "value": pts[-1][1], "change_7d": _change_over(pts, 7),
+                      "change_30d": _change_over(pts, 30), "high": max(v for _, v in pts),
+                      "high_date": max(pts, key=lambda p: p[1])[0]}
+        calendar = releases_mod.calendar(
+            db.sets(), [dict(x) for x in db.conn.execute("SELECT number, set_id FROM cards")])
+        facts = comm_mod.lead_facts(diff, index=ix, releases=calendar, obs_date=obs or today, today=today)
+        facts["window"] = "the last seven days"
+        pb = cfg.path("out/playbook.json")
+        if pb.exists():
+            facts["playbook_medians"] = json.loads(pb.read_text())
+        text = comm_mod.write_note_draft(facts, client=llm)
+        if not text:
+            print("The model did not return a draft.")
+            return 1
+        out = cfg.path("out/note-draft.md")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text + "\n", encoding="utf-8")
+        print(f"Draft -> {out}  ({llm.tokens_in + llm.tokens_out:,} tokens). Edit it, then save it as data/notes/{today}.md")
+        return 0
+    finally:
+        db.close()
+
+
+def _shift(d: str, days: int) -> str:
+    from datetime import date as _d
+    from datetime import timedelta
+    return (_d.fromisoformat(d) + timedelta(days=days)).isoformat()
 
 
 def cmd_run(cfg, args) -> int:
@@ -778,6 +856,12 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--today", help="override the run date (for reproducing a past issue)")
     r.add_argument("--no-art-fetch", action="store_true",
                    help="embed only card art already cached under data/images; never call the image CDN")
+    r.add_argument("--no-llm", action="store_true",
+                   help="keep the template prose even when ANTHROPIC_API_KEY is set")
+
+    nd = sub.add_parser("note-draft", help="draft the weekly note from the week's facts (out/note-draft.md)")
+    nd.add_argument("--date", help="issue date to draft from, default = latest")
+    nd.add_argument("--today", help="override the run date")
 
     pb = sub.add_parser("publish", help="push today's report and digest to Ghost")
     pb.add_argument("--out", help="where radar invest wrote the dashboard")
@@ -831,6 +915,7 @@ COMMANDS = {
     "backfill": cmd_backfill,
     "snipe": cmd_snipe,
     "invest": cmd_invest,
+    "note-draft": cmd_note_draft,
     "run": cmd_run,
     "stats": cmd_stats,
     "export": cmd_export,

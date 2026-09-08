@@ -1203,6 +1203,7 @@ def render(
     playbook: dict[str, Any] | None = None,
     sync_url: str | None = None,
     note: dict[str, Any] | None = None,
+    commentary: dict[str, dict] | None = None,
 ) -> str:
     """`since` and `heat` are accepted for compatibility and unused: the
     issue-to-issue comparison is the email digest's job, and the hand-kept
@@ -1218,6 +1219,13 @@ def render(
         p["rank"] = i
         p["printing"] = r.get("printing") or "Normal"
         rows.append(p)
+    # The model's case and watch replace the template's wherever it wrote one
+    # the guard accepted (radar/commentary.py). Absent key: the template stands.
+    for p in rows:
+        c = (commentary or {}).get(f"{p['card_id']}|{p['printing']}")
+        if c:
+            p["thesis"], p["watch"] = c["case"], c["watch"]
+            p["written"] = True
     sealed_rows = []
     for r in sealed or []:
         p = _row_payload(r)
@@ -1225,6 +1233,10 @@ def render(
         for k in ("kind", "rank", "release_date", "days_since_release", "first_date", "first_price",
                   "change_since_first", "low_price", "median_price", "total_listings", "thesis", "watch"):
             p[k] = r.get(k)
+        c = (commentary or {}).get(f"{p['card_id']}|{p['printing']}")
+        if c:
+            p["thesis"], p["watch"] = c["case"], c["watch"]
+            p["written"] = True
         sealed_rows.append(p)
     if art_cache is not None:
         from . import art

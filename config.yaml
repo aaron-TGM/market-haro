@@ -166,3 +166,9 @@ publish:
   # Absolute URL of the report page, for the button in the email. Set once the
   # Ghost site exists, e.g. https://gundeck.ai/market-haro/
   report_url: ""
+
+commentary:
+  # The model that writes each card's case, the email's opening and the note
+  # draft, from measured facts only (radar/commentary.py, docs/VOICE.md).
+  # ANTHROPIC_API_KEY comes from the environment; without it the templates run.
+  model: claude-haiku-4-5

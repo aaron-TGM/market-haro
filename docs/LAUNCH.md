@@ -31,8 +31,10 @@ Decide once, before Phase 2: **monthly $35, yearly $300, 7-day trial, no free ti
    git push -u origin main
    git ls-files | grep -i "\.env$"     # must print nothing
    ```
-2. **Repo secret** — Settings → Secrets and variables → Actions → New repository secret:
-   `TCGAPI_KEY` = your tcgapi.dev key.
+2. **Repo secrets** — Settings → Secrets and variables → Actions → New repository secret:
+   `TCGAPI_KEY` = your tcgapi.dev key, and `ANTHROPIC_API_KEY` = a key from
+   console.anthropic.com, which writes each card's case, the email's opening and the
+   weekly-note draft (about a dollar a day; without it the templates run).
 3. **Run it once by hand** — Actions → *daily* → Run workflow. Watch it: restore → sync → build → export → test → commit. Green means the archive committed a new day and `out/` was kept as a run artifact. Download the artifact and open `index.html`; it should be today's report.
 4. **Turn on failure email** — your GitHub profile → Settings → Notifications → Actions → *Send notifications for failed workflows*. This is the only monitoring you need: the issue goes out even on a late feed, so the failure you care about is the run itself.
 

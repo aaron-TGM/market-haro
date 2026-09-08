@@ -14,6 +14,7 @@ data/*
 !data/index.ndjson
 !data/index_members.json
 !data/notes/
+!data/commentary/
 !data/market_heat.json
 !data/validation_history.json
 out/
