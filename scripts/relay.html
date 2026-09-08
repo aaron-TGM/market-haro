@@ -1,0 +1,69 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Market Haro · commentary relay</title>
+<style>
+  body{font:14px/1.5 system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;color:#222}
+  input,button{font:inherit;padding:.4rem .6rem}
+  #key{width:100%}
+  pre{background:#f4f4f4;padding:.75rem;white-space:pre-wrap;max-height:16rem;overflow:auto}
+  .row{margin:.75rem 0}
+</style>
+<h1>Commentary relay</h1>
+<p>For a machine that cannot reach the API. <code>radar invest --relay out/relay</code> writes
+<code>out/relay/requests.json</code>; this page sends each request to the model from your browser and
+downloads <code>responses.json</code> for you to put back in <code>out/relay/</code>. Then run invest again.
+The key stays in this tab; nothing else is contacted.</p>
+<div class="row"><label>API key<br><input id="key" type="password" placeholder="sk-…" autocomplete="off"></label></div>
+<div class="row"><label>requests.json <input id="file" type="file" accept=".json"></label></div>
+<div class="row"><button id="go" disabled>Send</button> <span id="status"></span></div>
+<pre id="log"></pre>
+<script>
+const $ = id => document.getElementById(id);
+let reqs = null, provider = "openai";
+$("file").onchange = async e => {
+  const d = JSON.parse(await e.target.files[0].text());
+  reqs = d.requests; provider = d.provider || "openai";
+  $("status").textContent = `${reqs.length} requests for ${d.model} (${provider})`;
+  $("go").disabled = !reqs.length;
+};
+async function one(r, key) {
+  if (provider === "anthropic") {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {method: "POST", headers: {
+      "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json",
+      "anthropic-dangerous-direct-browser-access": "true"},
+      body: JSON.stringify({model: r.model, max_tokens: r.max_tokens, system: r.system,
+        messages: [{role: "user", content: r.user}]})});
+    if (!res.ok) throw new Error(res.status + " " + (await res.text()).slice(0, 200));
+    const j = await res.json();
+    return (j.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+  }
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {method: "POST", headers: {
+    "Authorization": "Bearer " + key, "Content-Type": "application/json"},
+    body: JSON.stringify({model: r.model, max_completion_tokens: r.max_tokens,
+      messages: [{role: "system", content: r.system}, {role: "user", content: r.user}]})});
+  if (!res.ok) throw new Error(res.status + " " + (await res.text()).slice(0, 200));
+  const j = await res.json();
+  return ((j.choices || [{}])[0].message || {}).content || "";
+}
+$("go").onclick = async () => {
+  const key = $("key").value.trim(); if (!key) return alert("Paste the key first.");
+  $("go").disabled = true;
+  const out = {}, errors = {}; let done = 0, i = 0;
+  const log = m => { $("log").textContent += m + "\n"; $("log").scrollTop = 1e9; };
+  async function worker() {
+    while (i < reqs.length) {
+      const r = reqs[i++];
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try { out[r.id] = await one(r, key); break; }
+        catch (e) { errors[r.id] = String(e); if (attempt < 2) await new Promise(s => setTimeout(s, 2000 * (attempt + 1))); }
+      }
+      done++; $("status").textContent = `${done}/${reqs.length}` + (Object.keys(errors).length ? ` · ${Object.keys(errors).length} failed` : "");
+    }
+  }
+  await Promise.all(Array.from({length: 6}, worker));
+  for (const [id, e] of Object.entries(errors)) if (!out[id]) log(id + ": " + e);
+  const blob = new Blob([JSON.stringify(out, null, 0)], {type: "application/json"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "responses.json"; a.click();
+  log(`Done: ${Object.keys(out).length} answered. Save responses.json into out/relay/ and run radar invest --relay out/relay again.`);
+};
+</script>

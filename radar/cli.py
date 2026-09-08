@@ -295,7 +295,8 @@ def cmd_invest(cfg, args) -> int:
         # number by number; the template stands wherever it did not.
         from . import commentary as comm_mod
 
-        llm = comm_mod.from_config(cfg.raw.get("commentary"))
+        relay = getattr(args, "relay", None)
+        llm = comm_mod.from_config(cfg.raw.get("commentary"), relay=relay)
         use_llm = llm.available and not getattr(args, "no_llm", False)
         written = {}
         if use_llm:
@@ -350,6 +351,10 @@ def cmd_invest(cfg, args) -> int:
                 comm_mod.lead_facts(since, index=gindex, releases=calendar, obs_date=obs, today=today),
                 root=cfg.path("data"), date=obs, client=llm)
             print("Email lead: " + ("written" if lead else "template"))
+        if isinstance(llm, comm_mod.RelayClient):
+            n = llm.flush()
+            print(f"Relay: {llm.answered} answered from {llm.dir / 'responses.json'}; "
+                  f"{n} request(s) waiting in {llm.dir / 'requests.json'}")
         (out.parent / "digest.html").write_text(
             digest_mod.to_html(since, report_url=report_url, note=weekly_note, lead=lead), encoding="utf-8")
         (out.parent / "lead.txt").write_text(lead or "", encoding="utf-8")
@@ -566,7 +571,7 @@ def cmd_note_draft(cfg, args) -> int:
     from . import releases as releases_mod
     from .invest import _change_over
 
-    llm = comm_mod.from_config(cfg.raw.get("commentary"))
+    llm = comm_mod.from_config(cfg.raw.get("commentary"), relay=getattr(args, "relay", None))
     if not llm.available:
         print(f"{comm_mod.PROVIDERS[llm.provider]['env']} is not set. Nothing drafted.")
         return 2
@@ -593,6 +598,10 @@ def cmd_note_draft(cfg, args) -> int:
         if pb.exists():
             facts["playbook_medians"] = json.loads(pb.read_text())
         text = comm_mod.write_note_draft(facts, client=llm)
+        if isinstance(llm, comm_mod.RelayClient) and not text:
+            n = llm.flush()
+            print(f"Relay: {n} request(s) waiting in {llm.dir / 'requests.json'}; answer them and run again.")
+            return 1
         if not text:
             print("The model did not return a draft.")
             return 1
@@ -858,10 +867,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="embed only card art already cached under data/images; never call the image CDN")
     r.add_argument("--no-llm", action="store_true",
                    help="keep the template prose even when the commentary API key is set")
+    r.add_argument("--relay", metavar="DIR",
+                   help="no network here: answer from DIR/responses.json, queue the rest to DIR/requests.json")
 
     nd = sub.add_parser("note-draft", help="draft the weekly note from the week's facts (out/note-draft.md)")
     nd.add_argument("--date", help="issue date to draft from, default = latest")
     nd.add_argument("--today", help="override the run date")
+    nd.add_argument("--relay", metavar="DIR", help="as for invest")
 
     pb = sub.add_parser("publish", help="push today's report and digest to Ghost")
     pb.add_argument("--out", help="where radar invest wrote the dashboard")

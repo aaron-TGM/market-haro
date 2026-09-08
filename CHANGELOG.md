@@ -10,7 +10,8 @@ report carries.
   `docs/VOICE.md`; every number in its output is checked against the facts and a refused
   sentence falls back to the template (`radar/commentary.py`, `radar note-draft`). Cached
   per issue in `data/commentary/`. GPT-5.6 Sol via `OPENAI_API_KEY` by default; Anthropic
-  as the alternative provider.
+  as the alternative provider. `--relay DIR` for machines without network: requests are queued
+  to a file and `scripts/relay.html` answers them from a browser tab; the next run reads them.
 - Issue 2026-09-07: the first batch fully stamped on its own day since the rebuild.
 
 ## 2026-09-06 — the $35 build

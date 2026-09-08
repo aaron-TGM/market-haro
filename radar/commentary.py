@@ -234,11 +234,68 @@ class Client:
         return "".join(b.get("text", "") for b in out.get("content") or [] if b.get("type") == "text").strip()
 
 
-def from_config(cfg_block: dict | None) -> Client:
+class RelayPending(Exception):
+    """The relay has no answer for this request yet; it has been queued."""
+
+
+class RelayClient(Client):
+    """A client for machines that cannot reach the API.
+
+    `complete()` answers from `<dir>/responses.json` ({request id: text}) when the
+    answer is there, and otherwise appends the request to `<dir>/requests.json`
+    and raises RelayPending, so the template stands for that row. Something
+    with network -- a browser page, another machine -- turns requests into
+    responses (scripts/relay.html does it from a browser tab), and the next run
+    finds them. Request ids are the hash of (model, system, user), so the same
+    facts always map to the same answer.
+    """
+
+    def __init__(self, directory: Path | str, *, model: str | None = None, provider: str = DEFAULT_PROVIDER):
+        super().__init__("relay", provider=provider, model=model)
+        self.dir = Path(directory)
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.responses = self._read("responses.json")
+        self.queued: dict[str, dict] = {r["id"]: r for r in self._read("requests.json").get("requests", [])}
+        self.answered = 0
+
+    def _read(self, name: str) -> dict:
+        p = self.dir / name
+        try:
+            return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+        except (ValueError, OSError):
+            return {}
+
+    @staticmethod
+    def request_id(model: str, system: str, user: str) -> str:
+        return hashlib.sha256("\x00".join((model, system, user)).encode()).hexdigest()[:16]
+
+    def complete(self, system: str, user: str, *, max_tokens: int = 400) -> str:
+        rid = self.request_id(self.model, system, user)
+        hit = self.responses.get(rid)
+        if isinstance(hit, str) and hit.strip():
+            self.calls += 1
+            self.answered += 1
+            return hit.strip()
+        self.queued[rid] = {"id": rid, "model": self.model, "system": system, "user": user, "max_tokens": max_tokens}
+        raise RelayPending(rid)
+
+    def flush(self) -> int:
+        """Write the queue (deduplicated, system prompts shared) and return its size."""
+        reqs = sorted(self.queued.values(), key=lambda r: r["id"])
+        (self.dir / "requests.json").write_text(
+            json.dumps({"provider": self.provider, "model": self.model, "requests": reqs},
+                       ensure_ascii=False) + "\n", encoding="utf-8")
+        return len(reqs)
+
+
+def from_config(cfg_block: dict | None, *, relay: str | None = None) -> Client:
     """The client the pipeline uses, from the `commentary:` block of config.yaml."""
     c = cfg_block or {}
     provider = c.get("provider") or DEFAULT_PROVIDER
-    return Client(provider=provider, model=c.get("model") or PROVIDERS.get(provider, {}).get("model"))
+    model = c.get("model") or PROVIDERS.get(provider, {}).get("model")
+    if relay:
+        return RelayClient(relay, provider=provider, model=model)
+    return Client(provider=provider, model=model)
 
 
 def _system(task: str) -> str:

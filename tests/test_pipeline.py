@@ -1862,6 +1862,29 @@ def test_tcgplayer_links_carry_the_english_filter():
     assert card["tcgplayer_url"].endswith("/product/645344?Language=English")
 
 
+
+def test_relay_client_queues_what_it_cannot_answer_and_answers_from_the_file():
+    import json
+    from radar import commentary as c
+    with tempfile.TemporaryDirectory() as d:
+        relay = c.RelayClient(d, model="gpt-5.6-sol")
+        assert relay.available
+        rid = c.RelayClient.request_id("gpt-5.6-sol", "sys", "user")
+        try:
+            relay.complete("sys", "user")
+            assert False, "pending request must raise"
+        except c.RelayPending as e:
+            assert str(e) == rid
+        assert relay.flush() == 1
+        q = json.loads((Path(d) / "requests.json").read_text())
+        assert q["requests"][0] == {"id": rid, "model": "gpt-5.6-sol", "system": "sys", "user": "user", "max_tokens": 400}
+        (Path(d) / "responses.json").write_text(json.dumps({rid: " answered "}))
+        again = c.RelayClient(d, model="gpt-5.6-sol")
+        assert again.complete("sys", "user") == "answered" and again.answered == 1
+        # a different model is a different request
+        assert c.RelayClient.request_id("other", "sys", "user") != rid
+
+
 if __name__ == "__main__":
     passed = 0
     for name, fn in sorted(globals().items()):

@@ -116,6 +116,7 @@ points across 13 months, so a fresh clone does not need to.
 | `radar invest [--date] [--today] [--no-fetch] [--no-art-fetch]` | the whole issue: report, digest, issue.json, track record, CSV |
 | `radar run` | sync then invest (what the workflow calls) |
 | `radar note-draft [--date]` | draft the weekly note from the week's facts to out/note-draft.md |
+| `radar invest --relay out/relay` | no network here: queue the model's requests; `scripts/relay.html` answers them from a browser |
 | `radar publish [--dry-run] [--no-email]` | Ghost pages + email, Worker issue push |
 | `radar export` / `radar restore` | the NDJSON archive, both directions |
 | `radar validate [--horizon]` | walk-forward: does the score still separate winners? |
