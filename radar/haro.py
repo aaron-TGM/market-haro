@@ -1382,9 +1382,9 @@ def render(
 
 <div class="kpis">
   <div class="kpi{' down' if breadth is not None and breadth < 35 else ' up' if breadth is not None and breadth > 55 else ' cyan'}"><div class="l" data-tip="Share of every priced product in the game that is up over 7 days. Whether your candidates are rising with the market or against it.">Market breadth<span class="info">?</span></div><div class="v">{f'{breadth}%' if breadth is not None else '—'}</div><div class="f">{breadth_word} · {market.get('up_7d', 0):,} of {market.get('priced', 0):,} up over 7d</div></div>
-  <div class="kpi"><div class="l">Pass the screen</div><div class="v">{len(candidates)}</div><div class="f">of {len(ranked):,} screened</div></div>
+  <div class="kpi"><div class="l" data-tip="The pool is every English single priced $10+ and up over 30 days. Five gates then take a card out: down over 90 days, no recorded sale in 90 days, under 45 days of history, daily swings over 8%, or no history yet. What is left is scored and ranked; the score never removes a card, it only orders them.">Pass the screen<span class="info">?</span></div><div class="v">{len(candidates)}</div><div class="f">of {len(ranked):,} screened</div></div>
   <div class="kpi up"><div class="l" data-tip="Candidates selling at least one copy a day. Below that, exiting a stack takes weeks.">Liquid enough<span class="info">?</span></div><div class="v">{liquid}</div><div class="f">1+ sales a day</div></div>
-  <a class="kpi" href="#screened-out"><div class="l">Screened out</div><div class="v">{len(rejected)}</div><div class="f">every one listed with its reason</div></a>
+  <a class="kpi" href="#screened-out"><div class="l" data-tip="Cards in the pool that failed a gate today. Click to jump to the list at the bottom of the page: every one is named with the gate it failed, so nothing is dropped silently.">Screened out<span class="info">?</span></div><div class="v">{len(rejected)}</div><div class="f">every one listed with its reason \u00b7 see the list \u2193</div></a>
   {next_tile}{record_tile}
 </div>
 

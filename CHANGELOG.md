@@ -3,6 +3,14 @@
 Newest first. Dates are the day the work landed; issue dates are the price date the
 report carries.
 
+## 2026-09-09 — before hosting
+
+- **Pricing**: $8 a month, $88 a year.
+- Tooltips on the *Pass the screen* and *Screened out* tiles (the pool, the five gates; the
+  second tile links to the list at the bottom of the page).
+- The workflow no longer deploys the report to Cloudflare Pages — Ghost is the only host
+  of the paid page — and caches card art between runs.
+
 ## 2026-09-09 — the page opens on the ranking
 
 - The **weekly note** panel and the **Market Haro 50** panel are gone from the page and the

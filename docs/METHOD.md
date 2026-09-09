@@ -420,9 +420,8 @@ so a day's run appends ~1,700 lines and changes nothing else. Roughly **85 MB of
 text a year**, and re-exporting an unchanged database is byte-identical, which is
 what makes "commit only if changed" safe.
 
-The dashboard publishes to Cloudflare Pages behind Cloudflare Access, so the URL
-needs an email login rather than being merely unguessable. Without the Cloudflare
-secrets the workflow still builds it and keeps it as a run artifact.
+The report publishes to a members-only Ghost page and nowhere else. Without the
+Ghost secrets the workflow still builds it and keeps it as a run artifact.
 
 ## Notes and gotchas
 

@@ -18,7 +18,7 @@ From the repo you have to a paying subscriber opening the report with a magic li
 | GitHub | Private repo, Actions enabled | The daily run. Free tier covers it. |
 | tcgapi.dev | Pro plan, the key already in your `.env` | ~60 requests a day of 10,000. |
 
-Decide once, before Phase 2: **monthly $9.99, yearly $89, 7-day trial, no free tier, no founding discount, no member coupon.** One price for everyone; the 7-day trial is the offer.
+Decide once, before Phase 2: **monthly $8, yearly $88, 7-day trial, no free tier, no founding discount, no member coupon.** One price for everyone; the 7-day trial is the offer.
 
 ---
 
@@ -52,7 +52,7 @@ Settings → Membership → *Connect with Stripe* → authorise. Use live mode. 
 
 **2c. The tier.**
 Settings → Membership → Tiers → the default paid tier → rename to **Market Haro** →
-Monthly **$9.99**, Yearly **$89**, *Free trial days* **7**, *Welcome page* `/market-haro/`.
+Monthly **$8**, Yearly **$88**, *Free trial days* **7**, *Welcome page* `/market-haro/`.
 Benefits (these print on the signup card — keep them to what the product does):
 - The daily report: every English single ranked, gated and explained
 - Market Haro 50, sealed screen, release playbook
@@ -140,7 +140,7 @@ You have paying GUNDECK.AI customers (30-day Pro at $3, lifetime at $29). They a
 >
 > Every morning Market Haro measures the whole English Gundam market and tells you which cards are worth holding, which are listed ahead of themselves, what every set release did to prices, and what changed on the cards *you* follow. It scores its own past calls in public.
 >
-> It's $9.99 a month or $89 a year, and the first week is free — you'll see seven issues before you're charged anything.
+> It's $8 a month or $88 a year, and the first week is free — you'll see seven issues before you're charged anything.
 >
 > [Start the trial] · [See the public track record first]
 >
@@ -172,7 +172,7 @@ Backups: the archive is in git; that is the backup. Ghost(Pro) backs up the site
 
 ## Money and terms, stated once
 
-- **Price:** $9.99/month, $89/year, 7-day trial, no free tier, no discounts.
+- **Price:** $8/month, $88/year, 7-day trial, no free tier, no discounts.
 - **Refunds:** 14 days, no questions, from Stripe. Say it on the signup page; it lowers the barrier more than it costs.
 - **Terms:** two paragraphs on a public `/terms/` page: information only, not financial advice, cards can lose value, data from tcgapi.dev under commercial licence, you may cancel any time, we store your email and your watchlist and nothing else. The report footer already says the substantive part.
 - **Privacy:** the Worker stores the member's email (to send alerts) and watchlist, keyed by a hash. Ghost stores the membership. Stripe stores the card. Nothing is sold or shared.
@@ -184,7 +184,7 @@ Backups: the archive is in git; that is the backup. Ghost(Pro) backs up the site
 
 - [ ] 0 · Decide the domain; confirm Ghost plan allows custom integrations
 - [ ] 1 · Repo pushed, `TCGAPI_KEY` set, one green run, failure notifications on
-- [ ] 2 · Site, domain, Stripe, tier ($9.99/$89/7 days), paid-only access, free tier hidden, newsletter sender verified, integration key, `report_url`, publish dry-run then `--no-email`, then a real send to yourself
+- [ ] 2 · Site, domain, Stripe, tier ($8/$88/7 days), paid-only access, free tier hidden, newsletter sender verified, integration key, `report_url`, publish dry-run then `--no-email`, then a real send to yourself
 - [ ] 3 · Worker deployed, KV created, `ADMIN_SECRET` + `RESEND_API_KEY`, Resend domain verified, `sync_url` + `HARO_ADMIN_SECRET`, "synced to your account" seen, alert run answered
 - [ ] 4 · Full rehearsal with a second email on a phone: trial → report → watchlist → email → sign out → magic link → cancel
 - [ ] 5 · Offer created, comped seats given, GUNDECK email sent, in-app line live, track record as the front door

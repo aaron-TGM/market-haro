@@ -15,13 +15,10 @@
 #   secrets.HARO_ADMIN_SECRET      the sync/alerts Worker's admin secret  optional
 #   secrets.OPENAI_API_KEY         writes the prose (gpt-5.6-sol); templates without it   optional
 #   secrets.ANTHROPIC_API_KEY      the alternative provider, if config says so   optional
-#   secrets.CLOUDFLARE_API_TOKEN   scoped to "Cloudflare Pages: Edit"   optional
-#   secrets.CLOUDFLARE_ACCOUNT_ID  from the Cloudflare dashboard URL    optional
 #
 # With the Ghost pair set, every run emails the digest to paying members and
-# refreshes the members-only report page. Without it -- or without Cloudflare
-# -- the dashboard is still built and kept as a workflow artifact; nothing
-# fails, the publish steps are skipped.
+# refreshes the members-only report page. Without it the report is still built
+# and kept as a workflow artifact; nothing fails, the publish step is skipped.
 #
 # THE PROMISE TO SUBSCRIBERS
 # An issue goes out every day the workflow runs, including days the price feed
@@ -60,7 +57,6 @@ jobs:
       TCGAPI_KEY: ${{ secrets.TCGAPI_KEY }}
       # Hoisted so the publish steps can test them -- `secrets` is not available
       # in a step-level `if`, but `env` is.
-      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       GHOST_URL: ${{ secrets.GHOST_URL }}
       GHOST_ADMIN_KEY: ${{ secrets.GHOST_ADMIN_KEY }}
       HARO_ADMIN_SECRET: ${{ secrets.HARO_ADMIN_SECRET }}
@@ -76,6 +72,14 @@ jobs:
           cache: pip
 
       - run: pip install -r requirements.txt
+      # Card art is embedded in the report. The cache keeps the ~200 fetched
+      # images between runs so a daily build touches the image CDN only for
+      # cards it has not seen before.
+      - uses: actions/cache@v4
+        with:
+          path: data/images
+          key: card-art-${{ github.run_id }}
+          restore-keys: card-art-
 
       - name: Rebuild the database from the archive
         run: python -m radar restore
@@ -93,6 +97,12 @@ jobs:
       - name: Build the hold screen
         run: python -m radar invest --out out/index.html
 
+      - name: Keep today's build as a run artifact (7 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-${{ github.run_id }}
+          path: out/
+          retention-days: 7
       - name: Write the archive
         run: python -m radar export
 
@@ -129,27 +139,3 @@ jobs:
       - name: Publish to Ghost (email the digest, refresh the report page)
         if: env.GHOST_URL != '' && env.GHOST_ADMIN_KEY != ''
         run: python -m radar publish
-
-      - name: Publish the dashboard to Cloudflare Pages
-        if: env.CF_TOKEN != ''
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy out --project-name=gundam-radar --commit-dirty=true
-
-      - name: Keep the dashboard as an artifact regardless
-        uses: actions/upload-artifact@v4
-        with:
-          name: dashboard-${{ github.run_number }}
-          path: out/
-          retention-days: 30
-
-      - name: Summary
-        if: always()
-        run: |
-          {
-            echo "### Gundam radar — $(date -u +%Y-%m-%d)"
-            echo ""
-            python -m radar stats 2>/dev/null || echo "stats unavailable"
-          } >> "$GITHUB_STEP_SUMMARY"

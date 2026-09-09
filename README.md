@@ -5,7 +5,7 @@ measures the whole English market on tcgapi.dev, ranks the singles worth holding
 sealed product, marks every chart with the set calendar, scores its own past calls in
 public, and mails each subscriber what changed on the cards they follow.
 
-One paid tier: **$9.99 a month or $89 a year, 7-day trial, no free tier.** Published through
+One paid tier: **$8 a month or $88 a year, 7-day trial, no free tier.** Published through
 Ghost; built and sent by GitHub Actions; watchlists and alerts on one Cloudflare Worker.
 
 ```

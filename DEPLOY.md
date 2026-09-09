@@ -123,8 +123,8 @@ Stripe memberships, member-only content, the email send, and magic-link sign-in.
 
    | | |
    |---|---|
-   | Monthly | **$9.99** |
-   | Yearly | **$89** |
+   | Monthly | **$8** |
+   | Yearly | **$88** |
    | Free trial | **7 days** (Settings → Membership → the tier → "Free trial days") |
    | Free tier | off |
    | Founding / launch discount | none |
@@ -207,45 +207,17 @@ Worker never sees a Ghost admin key. The alert rules live in `radar/alerts.py`
 and are mirrored in the Worker; `python tests/test_pipeline.py` writes the
 cases and `cd worker && npm test` replays them, so the two cannot drift.
 
-**The weekly note.** Drop a file at `data/notes/YYYY-MM-DD.md` (a few hundred
-words, small Markdown) and it appears at the top of the page and the email for
-ten days. No file, no slot. This is the one thing in the product a person
-writes, and it is the thing subscribers forward.
+**The weekly note** is no longer shown on the page or in the email; `data/notes/`
+and `radar note-draft` remain for a later version.
 
-### 6. The private URL without Ghost (optional)
+### 6. Where the report lives
 
-GitHub Pages on a private repo requires a paid plan, so the free path is
-Cloudflare — and Cloudflare Access is genuinely better for this anyway, since it
-puts an email login in front of the page rather than relying on an unguessable
-address.
-
-1. Cloudflare dashboard → **Workers & Pages → Create → Pages → Direct Upload**.
-   Name it `gundam-radar`. Don't upload anything; the workflow does that.
-2. **My Profile → API Tokens → Create Token → Custom token**, one permission:
-   *Account → Cloudflare Pages → Edit*.
-3. Grab your account ID from the dashboard URL:
-   `dash.cloudflare.com/<account-id>/...`
-4. Back in GitHub, add two more secrets:
-
-| Name | Value |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | the token from step 2 |
-| `CLOUDFLARE_ACCOUNT_ID` | the ID from step 3 |
-
-5. **Lock it down** — this is the step that makes the URL private, and it is easy
-   to skip: Cloudflare dashboard → **Zero Trust → Access → Applications → Add an
-   application → Self-hosted**. Point it at `gundam-radar.pages.dev`, add a policy
-   of *Allow → Emails → aaron@tuffghostmedia.com*, choose the one-time-PIN login
-   method. Free tier covers up to 50 users.
-
-Without step 5 the page is world-readable at a guessable address. With it, you
-get an email code on first visit and a session cookie after.
-
-If you skip Cloudflare entirely, the workflow still builds the dashboard and
-uploads it as a run artifact — the publish step is conditional on the token being
-present, so nothing fails. You just have to download it from the Actions tab.
-
----
+Ghost, and only Ghost. `radar publish` puts the report on the members-only page
+and mails the digest; nothing else hosts it. An earlier version of this workflow
+could also push the built page to Cloudflare Pages behind Cloudflare Access; that
+step is gone, because a paid report published to a second host is one skipped
+Access policy away from being public. Without the Ghost secrets the workflow
+still builds everything and keeps `out/` as a run artifact for you to download.
 
 ## Verifying it actually works
 
@@ -275,8 +247,6 @@ what stops the repo filling with no-op commits.
 |---|---|
 | GitHub Actions, private repo | 2,000 min/month free; this uses ~3 min/day ≈ **90 min** |
 | GitHub storage | ~85 MB/year of text |
-| Cloudflare Pages | free, unlimited requests |
-| Cloudflare Access | free up to 50 users |
 | Cloudflare Worker + KV | free tier: 100k requests/day, 1 GB KV |
 | Resend | free tier: 3,000 emails/month; one email per member per day at most |
 | tcgapi.dev Pro | your existing plan; a daily run costs ~60 requests of 10,000 |

@@ -91,7 +91,7 @@ def build() -> tuple[str, str]:
   <iframe data-tab="email" class="light" title="Today’s email" srcdoc="{e(email_doc)}" sandbox="allow-same-origin" hidden></iframe>
   <iframe data-tab="track" title="Track record" srcdoc="{e(track)}" sandbox="allow-same-origin" hidden></iframe>
 </div>
-<div class="note">This is Market Haro as a subscriber sees it: the members-only report, the email that links to it, and the public track record. $9.99 a month or $89 a year, 7-day trial. Watchlist changes made here stay in this browser.</div>
+<div class="note">This is Market Haro as a subscriber sees it: the members-only report, the email that links to it, and the public track record. $8 a month or $88 a year, 7-day trial. Watchlist changes made here stay in this browser.</div>
 <script>{JS}</script>
 """
     head_end = body.index("</style>") + len("</style>")
