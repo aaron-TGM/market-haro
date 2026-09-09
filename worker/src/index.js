@@ -4,6 +4,7 @@
 //   GET  /                 the report, if the caller is a signed-in GUNDECK
 //                          user with a Market Haro subscription; otherwise the
 //                          splash (sign in / subscribe)
+//   GET  /me               {signed_in, entitled} for the page's own scripts
 //   GET  /track-record     the public track record
 //   GET  /positions        the caller's watchlist + holdings   (signed in)
 //   PUT  /positions        replace them                        (signed in)
@@ -18,9 +19,8 @@
 // the entitlement Stripe wrote onto the user (via the gundeck.ai webhook).
 // No password, no session store, no call to Clerk or Stripe at request time.
 //
-// Vars (wrangler.toml): CLERK_ISSUER, CLERK_PUBLISHABLE_KEY, SIGN_IN_URL,
-//   CHECKOUT_MONTHLY_URL, CHECKOUT_ANNUAL_URL, MANAGE_URL, ENTITLEMENT_PATH,
-//   ENTITLEMENT_VALUES, ENTITLEMENT_PLAN
+// Vars (wrangler.toml): CLERK_ISSUER, CLERK_PUBLISHABLE_KEY, CHECKOUT_URL,
+//   MANAGE_URL, ENTITLEMENT_PATH, ENTITLEMENT_VALUES, ENTITLEMENT_PLAN
 // Secret (`npx wrangler secret put ADMIN_SECRET`): shared with the pipeline.
 
 const MAX_BODY = 64 * 1024;
@@ -117,10 +117,13 @@ function clerkScript(env) {
 
 function splash(env, state) {
   // state: 'anon' (no valid session) | 'noplan' (signed in, not subscribed)
+  // The one route on gundeck.ai that starts a subscription for the signed-in
+  // user: CHECKOUT_URL + ?plan=monthly|annual opens Stripe Checkout and, on
+  // success, returns to this page with ?checkout=success. Sign-up happens
+  // here, in Clerk's own modal, before that hand-off.
   const track = '/track-record';
-  const signIn = env.SIGN_IN_URL || `https://gundeck.ai/sign-in?redirect_url=${encodeURIComponent('https://marketharo.gundeck.ai/')}`;
-  const monthly = env.CHECKOUT_MONTHLY_URL || 'https://gundeck.ai/pricing#market-haro';
-  const annual = env.CHECKOUT_ANNUAL_URL || 'https://gundeck.ai/pricing#market-haro';
+  const checkout = env.CHECKOUT_URL || 'https://gundeck.ai/market-haro/subscribe';
+  const monthly = `${checkout}?plan=monthly`, annual = `${checkout}?plan=annual`;
   const manage = env.MANAGE_URL || 'https://gundeck.ai/account';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Market Haro — from GUNDECK.AI</title>
@@ -150,14 +153,15 @@ footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);color:v
 <p class="tag">Today's Gundam Card Game market, ranked. Rebuilt every morning from the whole English market on TCGplayer.</p>
 <p>Every single worth holding, scored 0–100 on value, liquidity, trend, stability and scarcity and gated on the things that make a card un-holdable. Every box and deck measured against what is inside it. A 90-day chart on every row with every set release marked. Your watchlist and holdings, with P&amp;L, following your GUNDECK account across devices. And a public record of every call, scored 30 days later, losers kept.</p>
 <ul><li>~130 singles pass the screen each day, from ~200 that qualify</li><li>Sealed: boxes, decks, cases against release and against the set beneath them</li><li>What every release did to prices, on our own record</li><li>No newsletter, no hot takes. Numbers, and you draw the conclusion.</li></ul>
-<div class="plans">
-  <div class="plan"><div class="l">Monthly</div><div class="v">$8<small> / month</small></div><div class="f">7-day free trial · cancel any time</div><a class="btn" href="${esc(monthly)}">Start monthly</a></div>
-  <div class="plan"><div class="l">Annual</div><div class="v">$88<small> / year</small></div><div class="f">7-day free trial · eleven months for twelve</div><a class="btn" href="${esc(annual)}">Start annual</a></div>
+<div id="pending" class="plan" hidden><div class="l">One moment</div><div class="v" style="font-size:18px">Finishing your subscription…</div><div class="f" id="pending-f">Stripe is telling your GUNDECK account about it. This usually takes a few seconds.</div></div>
+<div class="plans" id="plans">
+  <div class="plan"><div class="l">Monthly</div><div class="v">$8<small> / month</small></div><div class="f">7-day free trial · cancel any time</div><a class="btn" href="${esc(monthly)}" data-plan="monthly">Start monthly</a></div>
+  <div class="plan"><div class="l">Annual</div><div class="v">$88<small> / year</small></div><div class="f">7-day free trial · eleven months for twelve</div><a class="btn" href="${esc(annual)}" data-plan="annual">Start annual</a></div>
 </div>
-<p class="tag">An add-on to GUNDECK.AI, billed separately to your GUNDECK account. Prices from tcgapi.dev under commercial licence.</p>
+<p class="tag">Card entered at sign-up, nothing charged for seven days. An add-on to GUNDECK.AI — one account for both, billed separately. Prices from tcgapi.dev under commercial licence.</p>
 <div class="row" id="auth">${state === 'noplan'
   ? `<span class="who" id="who">Signed in. This account has no Market Haro subscription yet — pick a plan above.</span> <a class="btn quiet" href="${esc(manage)}">Manage account</a> <a class="btn quiet" href="#" id="signout">Sign out</a>`
-  : `<a class="btn quiet" href="${esc(signIn)}" id="signin">Already subscribed? Sign in</a>`}</div>
+  : `<a class="btn quiet" href="#" id="signin">Already subscribed? Sign in</a>`}</div>
 <div class="row"><a class="btn quiet" href="${track}">See the public track record</a></div>
 <footer>Market Haro is published by GUNDECK.AI. Every number describes what a card has already done. Nothing here is a forecast, a recommendation or financial advice; trading cards can lose value.</footer>
 </div>
@@ -165,8 +169,34 @@ ${clerkScript(env)}
 <script>
 (function(){
   var state = ${JSON.stringify(state)};
+  var params = new URLSearchParams(location.search);
+  var afterCheckout = params.get('checkout') === 'success';
+  function $(id){ return document.getElementById(id); }
+
+  // Back from Stripe: the webhook that writes the entitlement onto the
+  // account can land a few seconds after the browser does. Ask Clerk for a
+  // fresh token, ask this server whether it now sees the subscription, and
+  // open the report the moment it does. Give up after a minute, kindly.
+  function waitForEntitlement(C){
+    $('pending').hidden = false; $('plans').hidden = true;
+    var tries = 0;
+    (function poll(){
+      tries++;
+      var p = (C && C.session) ? C.session.getToken({ skipCache: true }).catch(function(){ return null; }) : Promise.resolve(null);
+      p.then(function(tok){
+        var h = tok ? { Authorization: 'Bearer ' + tok } : {};
+        return fetch('/me', { credentials: 'same-origin', headers: h }).then(function(r){ return r.json(); });
+      }).then(function(me){
+        if (me && me.entitled) { location.replace('/'); return; }
+        if (tries < 20) setTimeout(poll, 3000);
+        else $('pending-f').textContent = 'This is taking longer than usual. Your payment is safe; reload this page in a minute, or check your GUNDECK account page.';
+      }).catch(function(){ if (tries < 20) setTimeout(poll, 3000); });
+    })();
+  }
+
   document.addEventListener('clerk:loaded', function(){
     var C = window.Clerk;
+    if (afterCheckout) { waitForEntitlement(C); return; }
     if (state === 'anon' && C.user) {
       // Signed in on gundeck.ai: Clerk has just set this domain's session
       // cookie, so one reload lets the server read it. Guarded: once.
@@ -174,12 +204,23 @@ ${clerkScript(env)}
       if (Date.now() - t > 30000) { try { sessionStorage.setItem(k, String(Date.now())); } catch(e){} location.reload(); return; }
     }
     if (state === 'noplan' && C.user) {
-      var who = document.getElementById('who'); var em = C.user.primaryEmailAddress && C.user.primaryEmailAddress.emailAddress;
+      var who = $('who'); var em = C.user.primaryEmailAddress && C.user.primaryEmailAddress.emailAddress;
       if (who && em) who.innerHTML = 'Signed in as <b>' + em.replace(/[<>&]/g, '') + '</b>. This account has no Market Haro subscription yet — pick a plan above.';
     }
-    var so = document.getElementById('signout'); if (so) so.onclick = function(e){ e.preventDefault(); C.signOut().then(function(){ location.reload(); }); };
-    var si = document.getElementById('signin'); if (si && !C.user) si.onclick = function(e){ e.preventDefault(); C.redirectToSignIn({ redirectUrl: location.href }); };
+    // The plan buttons: a stranger creates the GUNDECK account right here,
+    // in Clerk's modal, and lands on checkout when it is done; someone
+    // already signed in goes straight to checkout.
+    document.querySelectorAll('a[data-plan]').forEach(function(a){
+      a.onclick = function(e){
+        e.preventDefault();
+        if (C.user) { location.href = a.href; return; }
+        C.openSignUp({ forceRedirectUrl: a.href, signInForceRedirectUrl: a.href });
+      };
+    });
+    var so = $('signout'); if (so) so.onclick = function(e){ e.preventDefault(); C.signOut().then(function(){ location.reload(); }); };
+    var si = $('signin'); if (si) si.onclick = function(e){ e.preventDefault(); if (C.user) { location.reload(); return; } C.openSignIn({ forceRedirectUrl: location.origin + '/' }); };
   });
+  if (afterCheckout) { setTimeout(function(){ if (!window.__clerkLoaded) waitForEntitlement(null); }, 8000); }
 })();
 </script>
 </body></html>`;
@@ -216,6 +257,11 @@ export default {
       await env.HARO.put(key, body);
       await env.HARO.put(key + ':meta', JSON.stringify({ bytes: body.length, at: new Date().toISOString() }));
       return json({ ok: true, key, bytes: body.length });
+    }
+
+    if (path === '/me') {
+      const who = await whoami(req, env);
+      return json({ signed_in: !!who, entitled: !!who && entitled(who, env) });
     }
 
     if (path === '/track-record') {

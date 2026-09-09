@@ -128,7 +128,8 @@ the KV namespace — `npx wrangler kv namespace create HARO` — and paste the i
 it prints into `wrangler.toml`. Set the one secret: `npx wrangler secret put
 ADMIN_SECRET` (make it long and random; the same value goes into the GitHub
 secret `HARO_ADMIN_SECRET`). Fill in `CLERK_PUBLISHABLE_KEY` (the `pk_live_…`
-from the Clerk dashboard; it is public) and the four gundeck.ai URLs in
+from the Clerk dashboard; it is public), `CHECKOUT_URL` (the gundeck.ai
+subscribe route, appendix item A2 in docs/LAUNCH.md) and `MANAGE_URL` in
 `[vars]`. `npx wrangler deploy`. The `routes` line attaches the custom domain:
 if the DNS record does not exist, wrangler creates it; if you manage DNS by
 hand, add `marketharo CNAME market-haro.<your-subdomain>.workers.dev`, proxied.
@@ -166,7 +167,8 @@ preserve query string. Say `marketharo.io` everywhere people read; the redirect 
 the product ever needs to stand alone, that is the day to make the .io a satellite
 domain and move the Worker's route.
 
-**5e. Check it.** `curl https://marketharo.gundeck.ai/health` → `{"ok":true}`.
+**5e. Check it.** `curl https://marketharo.gundeck.ai/health` → `{"ok":true}`;
+`/me` → `{"signed_in":false,"entitled":false}`.
 Locally, `HARO_ADMIN_SECRET=… python -m radar publish` pushes the report and
 the track record; open the site signed out (splash), signed in without a
 subscription (splash, "no Market Haro subscription yet"), and signed in with one

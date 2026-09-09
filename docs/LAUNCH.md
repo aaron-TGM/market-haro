@@ -4,6 +4,8 @@ From the repo you have to a GUNDECK customer opening the report with the account
 
 **How access works, in one paragraph, so you can explain it to customers:** Market Haro is an add-on to a GUNDECK.AI account. You sign in with the same account, on a subdomain of the same site; Clerk — the login gundeck.ai already uses — hands the browser a short-lived signed token, and the Market Haro server checks that signature and reads one field on your account: whether Stripe says you have an active Market Haro subscription. That field is written by Stripe's webhook on gundeck.ai when you subscribe, cancel or lapse. No second password, no second account, no email newsletter. The report is the product.
 
+**The stranger's path, end to end.** Someone types `marketharo.io` (or clicks it in a video) → lands on `marketharo.gundeck.ai`, the splash → taps *Start monthly* → Clerk's sign-up opens right there (email + password or Google; this creates their GUNDECK account) → they land on `gundeck.ai/market-haro/subscribe?plan=monthly`, which opens Stripe Checkout with the 7-day trial (card entered, nothing charged) → Stripe returns them to `marketharo.gundeck.ai/?checkout=success` → the splash shows "Finishing your subscription…" and polls for a few seconds while Stripe's webhook writes the entitlement onto their account → the report opens. Next time: `marketharo.io` → already signed in → the report. Someone who already has a GUNDECK account taps *Already subscribed? Sign in* or the plan button; Clerk recognises them and skips sign-up.
+
 ---
 
 ## Phase 0 — Accounts and decisions (15 minutes)
@@ -77,7 +79,7 @@ Backups: the archive is in git; that is the backup. Clerk holds accounts, Stripe
 
 - [ ] 1 · Repo pushed, `TCGAPI_KEY` set, one green run, artifact opened, failure notifications on
 - [ ] 2 · Worker deployed on `marketharo.gundeck.ai`, KV id and publishable key in `wrangler.toml`, `ADMIN_SECRET` set both sides, Clerk session token carries `public_metadata`, `/health` ok, splash shows signed out
-- [ ] 3 · gundeck.ai: Product + two Prices, webhook writing `publicMetadata.marketHaro`, nav item, pricing card, account line (appendix)
+- [ ] 3 · gundeck.ai: Product + two Prices, the `/market-haro/subscribe` route with success/cancel URLs, webhook writing `publicMetadata.marketHaro`, nav item, pricing card, account line (appendix)
 - [ ] 4 · Rehearsal on a second account: trial → report → watchlist survives sign out → cancel → splash. Then the email.
 
 ---
@@ -86,7 +88,9 @@ Backups: the archive is in git; that is the backup. Clerk holds accounts, Stripe
 
 Market Haro is a separate subscription sold as an add-on. gundeck.ai keeps owning identity (Clerk) and billing (Stripe); the Market Haro server only reads one field on the Clerk user. Four pieces of work.
 
-**A. Stripe.** One Product, "Market Haro", with two recurring Prices: `$8.00 / month` and `$88.00 / year`, both with a 7-day trial and no setup fee. Checkout Sessions for these two Prices must set `subscription_data.metadata.clerkUserId` (and `client_reference_id`) to the signed-in user's Clerk id, and use the existing Stripe Customer for that user if there is one (`customer` on the session) so one customer record holds the lifetime purchase and the subscription. `cancel_at_period_end` is the cancel path, through the existing customer portal.
+**A. Stripe.** One Product, "Market Haro", with two recurring Prices: `$8.00 / month` and `$88.00 / year`, both with a 7-day trial (`trial_period_days: 7`, card collected) and no setup fee. Checkout Sessions for these two Prices must set `subscription_data.metadata.clerkUserId` (and `client_reference_id`) to the signed-in user's Clerk id, and use the existing Stripe Customer for that user if there is one (`customer` on the session) so one customer record holds the lifetime purchase and the subscription. `cancel_at_period_end` is the cancel path, through the existing customer portal.
+
+**A2. The subscribe route** — the one URL the Market Haro splash sends people to: `GET https://gundeck.ai/market-haro/subscribe?plan=monthly|annual`. If the visitor is not signed in, send them through Clerk sign-in/sign-up with `redirect_url` back to this same URL (the splash normally completes sign-up first, so this is the safety net). If signed in, create the Checkout Session for the matching Price as in (A) with `success_url = https://marketharo.gundeck.ai/?checkout=success` and `cancel_url = https://marketharo.gundeck.ai/`, and redirect to it. If the user already has an active or trialing Market Haro subscription, skip Checkout and redirect to `https://marketharo.gundeck.ai/`. That is the whole route.
 
 **B. The webhook.** On `customer.subscription.created`, `customer.subscription.updated` and `customer.subscription.deleted` for subscriptions whose Price belongs to the Market Haro Product, read `clerkUserId` from the subscription metadata (fall back to the customer's metadata) and set the Clerk user's public metadata:
 
@@ -109,7 +113,7 @@ Market Haro is a separate subscription sold as an add-on. gundeck.ai keeps ownin
 - Nav: a top-level item **Market Haro** → `https://marketharo.gundeck.ai/`.
 - Pricing page: a fourth card beside the existing three, marked *add-on*. Copy: **Market Haro** — *Today's Gundam market, ranked.* $8/month or $88/year, 7-day free trial. "A daily dashboard of every Gundam single worth holding and every box measured against the cards inside it, with a public record of every call. Separate subscription, billed monthly or yearly in addition to your GUNDECK plan; cancel any time." Two buttons → the two Checkout Sessions (A). Someone with no GUNDECK plan may still buy it.
 - Account page: a line **Market Haro · active until {date} · Manage** that opens the Stripe customer portal; *Not subscribed · Start a trial* otherwise.
-- Sign-in redirect: the splash sends people to `https://gundeck.ai/sign-in?redirect_url=https://marketharo.gundeck.ai/`; make sure the sign-in page honours `redirect_url` for that origin.
+- Sign-up and sign-in happen on the Market Haro splash itself, in Clerk's modal (same instance, same root domain); nothing to build for that. Do make sure the Clerk instance allows sign-ups (email + password or the social providers gundeck.ai already offers) — the splash opens the standard sign-up, so whatever is enabled there is what strangers get.
 - Terms: the two paragraphs under "Money and terms" above, appended to the existing terms.
 
 What Market Haro will never do: write to Clerk or Stripe, store an email address, or send mail. If a subscriber can't see the report, the first three checks are: the token carries `public_metadata` (C), the webhook wrote `marketHaro.status` (B), and the status is `active` or `trialing`.

@@ -67,18 +67,25 @@ test('the front door: splash for strangers, splash for the unsubscribed, the rep
     assert.equal(r.headers.get('cache-control'), 'private, no-store');
     r = await worker.fetch(new Request('https://marketharo.gundeck.ai/track-record'), e);
     assert.match(await r.text(), /TRACK/);
+    assert.match(body, /subscribe\?plan=monthly/); assert.match(body, /openSignUp/); assert.match(body, /checkout.*success/);
+    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/me'), e);
+    assert.deepEqual(await r.json(), { signed_in: false, entitled: false });
 
     const noplan = await sign(priv, { iss: env.CLERK_ISSUER, sub: 'user_2', exp: now() + 60, public_metadata: {} });
     r = await worker.fetch(new Request('https://marketharo.gundeck.ai/', { headers: { Cookie: `__session=${noplan}` } }), e);
     body = await r.text(); assert.match(body, /no Market Haro subscription/); assert.doesNotMatch(body, /REPORT/);
     r = await worker.fetch(new Request('https://marketharo.gundeck.ai/positions', { headers: { Cookie: `__session=${noplan}` } }), e);
     assert.equal(r.status, 403);
+    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/me', { headers: { Cookie: `__session=${noplan}` } }), e);
+    assert.deepEqual(await r.json(), { signed_in: true, entitled: false });
 
     const sub = await sign(priv, { iss: env.CLERK_ISSUER, sub: 'user_1', exp: now() + 60, public_metadata: { marketHaro: { status: 'trialing', plan: 'monthly' } } });
     r = await worker.fetch(new Request('https://marketharo.gundeck.ai/', { headers: { Cookie: `__session=${sub}` } }), e);
     body = await r.text(); assert.match(body, /REPORT/); assert.match(body, /clerk.browser.js/);
     r = await worker.fetch(new Request('https://marketharo.gundeck.ai/', { headers: { Authorization: `Bearer ${sub}` } }), e);
     assert.match(await r.text(), /REPORT/);
+    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/me', { headers: { Authorization: `Bearer ${sub}` } }), e);
+    assert.deepEqual(await r.json(), { signed_in: true, entitled: true });
 
     r = await worker.fetch(new Request('https://marketharo.gundeck.ai/positions', { method: 'PUT', headers: { Cookie: `__session=${sub}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ positions: { '1|Normal': { qty: 2, cost: 10.5, since: '2026-09-01T00:00:00Z' }, bad: 'x', '2|Normal': { qty: -1, cost: 'no' } } }) }), e);

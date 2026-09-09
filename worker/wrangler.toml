@@ -23,10 +23,11 @@ routes = [{ pattern = "marketharo.gundeck.ai", custom_domain = true }]
 # Clerk. The issuer is the Frontend API host; the publishable key is public.
 CLERK_ISSUER = "https://clerk.gundeck.ai"
 CLERK_PUBLISHABLE_KEY = "pk_live_replace-me"
-# Where the splash sends people. All on gundeck.ai.
-SIGN_IN_URL = "https://gundeck.ai/sign-in?redirect_url=https%3A%2F%2Fmarketharo.gundeck.ai%2F"
-CHECKOUT_MONTHLY_URL = "https://gundeck.ai/pricing#market-haro"
-CHECKOUT_ANNUAL_URL = "https://gundeck.ai/pricing#market-haro"
+# The one gundeck.ai route that starts a subscription for the signed-in user
+# (?plan=monthly|annual -> Stripe Checkout -> back here with ?checkout=success),
+# and the account page where it is managed. Sign-up and sign-in happen on the
+# splash itself, in Clerk's modal.
+CHECKOUT_URL = "https://gundeck.ai/market-haro/subscribe"
 MANAGE_URL = "https://gundeck.ai/account"
 # The entitlement, as Stripe's webhook writes it onto the Clerk user and
 # Clerk's session-token template copies it into the token. Defaults look at
