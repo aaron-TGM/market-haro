@@ -21,6 +21,8 @@ From the repo you have to a GUNDECK customer opening the report with the account
 
 Decided: **$8 a month, $88 a year, 7-day trial, no free tier, no discounts, no coupon.** One price for everyone; the trial is the offer.
 
+**How it sits beside GUNDECK.** The account is free and is the hub; GUNDECK Pass ($3, 30 days) and GUNDECK Lifetime ($29) are one-time purchases of a tool; Market Haro is a subscription to a daily feed, and the pricing page says why in one line — *GUNDECK is a tool, you buy it once; Market Haro is a daily market feed, it's a subscription because the data costs us every day.* Nothing requires anything else. The ladder runs one way: **a Market Haro subscription includes GUNDECK while it is active**, so Pass → Lifetime → Market Haro is a climb and "do I need both?" never comes up. Lifetime holders get a **30-day trial instead of 7** — time, not a discount; the price stays one price.
+
 ---
 
 ## Phase 1 — The pipeline runs by itself (Day 1, ~45 minutes)
@@ -90,6 +92,8 @@ Market Haro is a separate subscription sold as an add-on. gundeck.ai keeps ownin
 
 **A. Stripe.** One Product, "Market Haro", with two recurring Prices: `$8.00 / month` and `$88.00 / year`, both with a 7-day trial (`trial_period_days: 7`, card collected) and no setup fee. Checkout Sessions for these two Prices must set `subscription_data.metadata.clerkUserId` (and `client_reference_id`) to the signed-in user's Clerk id, and use the existing Stripe Customer for that user if there is one (`customer` on the session) so one customer record holds the lifetime purchase and the subscription. `cancel_at_period_end` is the cancel path, through the existing customer portal.
 
+**A1. Lifetime perk.** In the subscribe route, if the user's account carries the GUNDECK Lifetime flag, create the Checkout Session with `trial_period_days: 30` instead of 7. Same Prices, same everything else.
+
 **A2. The subscribe route** — the one URL the Market Haro splash sends people to: `GET https://gundeck.ai/market-haro/subscribe?plan=monthly|annual`. If the visitor is not signed in, send them through Clerk sign-in/sign-up with `redirect_url` back to this same URL (the splash normally completes sign-up first, so this is the safety net). If signed in, create the Checkout Session for the matching Price as in (A) with `success_url = https://marketharo.gundeck.ai/?checkout=success` and `cancel_url = https://marketharo.gundeck.ai/`, and redirect to it. If the user already has an active or trialing Market Haro subscription, skip Checkout and redirect to `https://marketharo.gundeck.ai/`. That is the whole route.
 
 **B. The webhook.** On `customer.subscription.created`, `customer.subscription.updated` and `customer.subscription.deleted` for subscriptions whose Price belongs to the Market Haro Product, read `clerkUserId` from the subscription metadata (fall back to the customer's metadata) and set the Clerk user's public metadata:
@@ -109,9 +113,11 @@ Market Haro is a separate subscription sold as an add-on. gundeck.ai keeps ownin
 
 **C. Clerk dashboard (one setting).** *Sessions → Customize session token*: add `"public_metadata": "{{user.public_metadata}}"`. Without it the token does not carry the field and every subscriber sees the splash. `marketharo.gundeck.ai` is a subdomain of the primary domain, so no satellite-domain setup is expected; if the splash shows "sign in" to a signed-in user, add it as a satellite under *Domains*.
 
+**C2. GUNDECK includes with Market Haro.** Wherever gundeck.ai checks whether a user may use GUNDECK's paid features, treat `publicMetadata.marketHaro.status` in `active` or `trialing` as equivalent to an active Pass or Lifetime. One condition; nothing else changes.
+
 **D. gundeck.ai app.**
 - Nav: a top-level item **Market Haro** → `https://marketharo.gundeck.ai/`.
-- Pricing page: a fourth card beside the existing three, marked *add-on*. Copy: **Market Haro** — *Today's Gundam market, ranked.* $8/month or $88/year, 7-day free trial. "A daily dashboard of every Gundam single worth holding and every box measured against the cards inside it, with a public record of every call. Separate subscription, billed monthly or yearly in addition to your GUNDECK plan; cancel any time." Two buttons → the two Checkout Sessions (A). Someone with no GUNDECK plan may still buy it.
+- Pricing page: three cards in a row — **GUNDECK Pass** $3 / 30 days · **GUNDECK Lifetime** $29 once · **Market Haro** $8/month or $88/year, 7-day free trial (30 days for Lifetime members), *includes GUNDECK while active*. Under the row, one line: "GUNDECK is a tool — you buy it once. Market Haro is a daily market feed — it's a subscription because the data costs us every day." Market Haro copy: *Today's Gundam market, ranked.* "A daily dashboard of every Gundam single worth holding and every box measured against the cards inside it, with a public record of every call. Cancel any time." Two buttons → the subscribe route (A2). Nothing requires anything else.
 - Account page: a line **Market Haro · active until {date} · Manage** that opens the Stripe customer portal; *Not subscribed · Start a trial* otherwise.
 - Sign-up and sign-in happen on the Market Haro splash itself, in Clerk's modal (same instance, same root domain); nothing to build for that. Do make sure the Clerk instance allows sign-ups (email + password or the social providers gundeck.ai already offers) — the splash opens the standard sign-up, so whatever is enabled there is what strangers get.
 - Terms: the two paragraphs under "Money and terms" above, appended to the existing terms.
