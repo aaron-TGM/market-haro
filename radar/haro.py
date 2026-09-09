@@ -134,13 +134,6 @@ details.panel>summary+*{margin-top:10px}
 .legend{display:flex;gap:16px;font-size:10px;color:var(--text-muted);margin-top:6px;letter-spacing:.04em}
 .legend i{display:inline-block;width:14px;border-top:1px dashed var(--accent-dim);vertical-align:middle;margin-right:5px}
 .legend b{display:inline-block;width:8px;height:8px;border:1.5px solid var(--warn);border-radius:50%;vertical-align:middle;margin-right:5px}
-.note .nh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
-.note .nl{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
-.note .nd{font-size:10.5px;color:var(--text-muted);letter-spacing:.06em}
-.note .nb{font-size:14px;line-height:1.65;max-width:76ch}
-.note .nb p{margin:0 0 10px} .note .nb p:last-child{margin-bottom:0}
-.note .nb h3,.note .nb h4,.note .nb h5{margin:12px 0 4px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
-.note .nb ul{margin:0 0 10px;padding-left:20px}
 .portfolio{padding:10px 16px}
 .pf{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:13px}
 .pfl{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
@@ -148,21 +141,6 @@ details.panel>summary+*{margin-top:10px}
 .pfv.pnl{font-size:16px}
 .pf .ghost{margin-left:auto}
 .sync{font-size:10.5px;letter-spacing:.06em;color:var(--text-muted);margin-top:6px} .sync.on{color:var(--up)}
-.gindex{padding:12px 16px 10px}
-.gindex[open]{padding-bottom:10px}
-.gindex>summary .sc{color:var(--text);letter-spacing:.04em;text-transform:none;font-size:12px}
-.gindex>summary .ixsv{font-size:15px;color:var(--text);margin-right:2px}
-.gindex .ixhead{margin-top:12px}
-.gindex .chart svg{height:120px}
-.ixhead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:8px}
-.ixname{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
-.ixwhat{font-size:11.5px;color:var(--text-muted);margin-top:2px}
-.ixval{font-size:34px;font-weight:700;line-height:1.05;margin-top:2px;font-variant-numeric:tabular-nums}
-.ixsub{font-size:10.5px;color:var(--text-muted);letter-spacing:.04em;margin-top:3px}
-.ixchanges{display:flex;gap:8px}
-.ixc{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:6px 10px;min-width:64px;text-align:center}
-.ixc .l{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted)}
-.ixc .v{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
 .stale-feed{border-left:2px solid var(--down);font-size:13px}
 .stale-feed b{color:var(--down)}
 
@@ -662,7 +640,7 @@ function chart(series, id, big, range){
 }
 function chartHover(e){
   const box = e.target.closest('.chart'); if (!box) return;
-  const r = box.dataset.chart === '__index' ? {series: DATA.index.levels} : findRow(box.dataset.chart);
+  const r = findRow(box.dataset.chart);
   const ser = box.dataset.range ? seriesFor(r, box.dataset.range) : (r && r.series);
   if (!r || !ser || ser.length < 2) return;
   const svg = box.querySelector('svg'), rect = svg.getBoundingClientRect();
@@ -712,25 +690,6 @@ function renderPortfolio(){
         ${watching?`<span class="pfv muted">${watching} watching</span>`:''}
         <button class="ghost" data-view-jump="watch">Open watchlist</button></div>`
     : `<div class="pf"><span class="pfl">Watching</span><span class="pfv">${watching} ${watching===1?'card':'cards'}</span><span class="pfv muted">Enter copies and cost in a card\u2019s detail to track the position.</span><button class="ghost" data-view-jump="watch">Open watchlist</button></div>`;
-  el.hidden = false;
-}
-
-// ---- the index ---------------------------------------------------------------
-function renderIndex(){
-  const el = document.getElementById('gindex'); const ix = DATA.index;
-  if (!el) return;
-  if (!ix || !ix.levels || ix.levels.length < 2){ el.hidden = true; return; }
-  const ch = [['1d',ix.change_1d],['7d',ix.change_7d],['30d',ix.change_30d],['90d',ix.change_90d],['1y',ix.change_1y]]
-    .filter(([,v])=>v!=null).map(([l,v])=>`<div class="ixc"><div class="l">${l}</div><div class="v">${pct(v,1)}</div></div>`).join('');
-  const br = ix.measured_7d ? `${Math.round(100*ix.up_7d/ix.measured_7d)}% of members up over 7d` : '';
-  el.innerHTML = `<summary>${esc(ix.name)}<span class="sc"><b class="ixsv">${ix.value.toFixed(1)}</b>${ix.change_7d!=null?` · 7d <span class="${ix.change_7d>0?'up':(ix.change_7d<0?'down':'flat')}">${pct(ix.change_7d,1)}</span>`:''}${ix.change_30d!=null?` · 30d <span class="${ix.change_30d>0?'up':(ix.change_30d<0?'down':'flat')}">${pct(ix.change_30d,1)}</span>`:''} · ${ix.members} singles, one number</span></summary><div class="ixhead">
-      <div><div class="ixwhat" data-tip="Equal-weight index of the ${ix.members} most-traded English singles priced $5+ (copies sold over 90 days), base 100 on ${esc(ix.base_date)}. Members are fixed for the calendar month and rebalanced on the 1st. Descriptive: the market's own average, not a forecast.">The ${ix.members} most traded, most investable Gundam singles, as one number.<span class="info">?</span></div>
-        <div class="ixval">${ix.value.toFixed(1)}</div>
-        <div class="ixsub">${esc(ix.as_of)} · high ${ix.high.toFixed(1)} on ${shortDate(ix.high_date)}${br?' · '+br:''}</div></div>
-      <div class="ixchanges">${ch}</div>
-    </div>
-    ${chart(ix.levels, '__index', true, '1y')}
-    <div class="legend"><span><i></i>set release</span><span><b></b>${ANOMALY_PCT}%+ in a step</span><span>${ix.members} members · month of ${esc(ix.month||'')}</span></div>`;
   el.hidden = false;
 }
 
@@ -1094,7 +1053,6 @@ document.getElementById('clear').addEventListener('click', clearFilters);
 document.getElementById('more-all').addEventListener('click', ()=>{state.limit=1e9; apply();});
 document.getElementById('reset').addEventListener('click', reset);
 document.getElementById('csv').addEventListener('click', exportCSV);
-renderIndex();
 apply();
 syncInit();
 """
@@ -1207,22 +1165,6 @@ def _depth_panel(depth: list[dict] | None) -> str:
 </details>"""
 
 
-def _note_panel(note: dict | None) -> str:
-    """A person's note, shown while it is fresh. See radar/note.py."""
-    if not note or not note.get("html"):
-        return ""
-    return (f'<div class="panel note"><div class="nh"><span class="nl">This week</span>'
-            f'<span class="nd">{_esc(note["date"])}</span></div><div class="nb">{note["html"]}</div></div>')
-
-
-def _index_payload(ix: dict | None) -> dict | None:
-    if not ix or not ix.get("levels"):
-        return None
-    keep = ("name", "as_of", "value", "members", "base_date", "change_1d", "change_7d", "change_30d",
-            "change_90d", "change_1y", "high", "high_date", "up_7d", "measured_7d", "month")
-    return {**{k: ix.get(k) for k in keep}, "levels": [[d, v] for d, v in ix["levels"]]}
-
-
 def _freshness(obs_date: str, today: str | None) -> str:
     if not today:
         return ""
@@ -1254,13 +1196,10 @@ def render(
     art_cache: Path | None = None,
     fetch_art: bool = False,
     releases: list[dict] | None = None,
-    index: dict[str, Any] | None = None,
     sealed: Sequence[dict] | None = None,
     playbook: dict[str, Any] | None = None,
     depth: list[dict] | None = None,
     sync_url: str | None = None,
-    note: dict[str, Any] | None = None,
-    commentary: dict[str, dict] | None = None,
     record: dict[str, Any] | None = None,
     track_url: str = "",
 ) -> str:
@@ -1278,13 +1217,6 @@ def render(
         p["rank"] = i
         p["printing"] = r.get("printing") or "Normal"
         rows.append(p)
-    # The model's case and watch replace the template's wherever it wrote one
-    # the guard accepted (radar/commentary.py). Absent key: the template stands.
-    for p in rows:
-        c = (commentary or {}).get(f"{p['card_id']}|{p['printing']}")
-        if c:
-            p["thesis"], p["watch"] = c["case"], c["watch"]
-            p["written"] = True
     sealed_rows = []
     for r in sealed or []:
         p = _row_payload(r)
@@ -1292,10 +1224,6 @@ def render(
         for k in ("kind", "rank", "release_date", "days_since_release", "first_date", "first_price",
                   "change_since_first", "low_price", "median_price", "total_listings", "thesis", "watch"):
             p[k] = r.get(k)
-        c = (commentary or {}).get(f"{p['card_id']}|{p['printing']}")
-        if c:
-            p["thesis"], p["watch"] = c["case"], c["watch"]
-            p["written"] = True
         sealed_rows.append(p)
     if art_cache is not None:
         from . import art
@@ -1336,7 +1264,6 @@ def render(
         "prev_ranks": prev_ranks or None,
         "releases": [{"date": m["date"], "label": m["label"], "kind": m.get("kind"),
                       "names": m.get("names") or []} for m in releases],
-        "index": _index_payload(index),
         "sealed": sealed_rows,
         "sealed_checklist": SEALED_CHECKLIST,
         "sync_url": sync_url or "",
@@ -1370,7 +1297,6 @@ def render(
 </header>
 {_freshness(obs_date, today)}
 
-<details class="panel gindex" id="gindex" hidden></details>
 <div class="panel portfolio" id="portfolio" hidden></div>
 <div class="sync" id="sync-status" hidden></div>
 

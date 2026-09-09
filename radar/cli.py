@@ -254,12 +254,11 @@ def cmd_invest(cfg, args) -> int:
         )
         market = db.market_breadth(obs)
 
-        # Today's ranking is kept so tomorrow can diff against it. The diff is
-        # the newsletter and the "since yesterday" panel on the page.
+        # Today's ranking is kept (data/rankings) so tomorrow can show rank
+        # movement and the track record can score it later.
         today = getattr(args, "today", None) or _today()
         snap = digest_mod.snapshot(ranked, obs_date=obs, market=market)
         digest_mod.save(snap, cfg.path("data"))
-        since = digest_mod.diff(snap, digest_mod.previous(cfg.path("data"), obs), run_date=today)
 
         from . import haro
 
@@ -271,7 +270,6 @@ def cmd_invest(cfg, args) -> int:
         )
         # The release calendar, drawn on every chart. Read from the sets table
         # the sync (or the archive) filled; nothing is hand-maintained.
-        from . import index as index_mod
         from . import releases as releases_mod
         from . import sealed as sealed_mod
 
@@ -279,21 +277,11 @@ def cmd_invest(cfg, args) -> int:
         calendar = releases_mod.calendar(
             all_sets, [dict(x) for x in db.conn.execute("SELECT number, set_id FROM cards")])
 
-        # The Market Haro 50 and the sealed screen read the same stored series.
-        card_meta = {str(x["id"]): dict(x) for x in db.conn.execute(
-            "SELECT id, name, set_name, product_type FROM cards")}
-        gindex = index_mod.build(cfg.path("data"), series, card_meta, obs)
         sealed_rows = sealed_mod.evaluate(
             [r for r in rows if r.get("product_type") == "Sealed Products"], series, all_sets, obs,
             shelves=shelves)
-        from . import note as note_mod
         from . import playbook as playbook_mod
         from . import track as track_mod
-
-        # The weekly note and the Market Haro 50 are computed but no longer shown:
-        # the page opens on the ranking. The index still writes data/index.ndjson
-        # (the playbook's "whole market" column and the track record read it).
-        weekly_note = None
 
         pbook = playbook_mod.build(
             all_sets, [dict(x) for x in db.conn.execute("SELECT id, set_id, product_type FROM cards")],
@@ -304,31 +292,14 @@ def cmd_invest(cfg, args) -> int:
         depth = depth_mod.build(rows, series, all_sets, as_of=obs)
         for sr in sealed_rows:
             sr["set_depth"] = depth_mod.for_set(depth, sr.get("set_id"))
-        # The words. A model writes each card's case from its facts, guarded
-        # number by number; the template stands wherever it did not.
-        from . import commentary as comm_mod
-
-        relay = getattr(args, "relay", None)
-        llm = comm_mod.from_config(cfg.raw.get("commentary"), relay=relay, relay_replace=True)
-        use_llm = llm.available and not getattr(args, "no_llm", False)
-        written = {}
-        if use_llm:
-            live = [r for r in ranked if not r.get("disqualified")]
-            written = comm_mod.write_cards(live + list(sealed_rows), root=cfg.path("data"), date=obs,
-                                           client=llm, releases=calendar, playbook=pbook)
-            print(f"Commentary: {len(written)} of {len(live) + len(sealed_rows)} cases written "
-                  f"({llm.calls} calls, {llm.tokens_in + llm.tokens_out:,} tokens)")
-        print(f"{gindex['name']}: {gindex.get('value', '—')} "
-              f"({gindex.get('change_7d', 0) or 0:+.1f}% 7d, {len(gindex.get('constituents') or [])} members)"
-              f" · sealed screen: {len(sealed_rows)} products")
+        print(f"sealed screen: {len(sealed_rows)} products")
         # The public track record, rebuilt every issue from the stored rankings,
-        # and its one-sentence summary, which the page and the email carry.
+        # and its one-sentence summary, which the page carries.
         pub_cfg = cfg.raw.get("publish") or {}
         report_url = pub_cfg.get("report_url") or None
         track_url = pub_cfg.get("track_record_url") or (
             report_url.rstrip("/").rsplit("/", 1)[0] + "/track-record/" if report_url else "track-record.html")
-        track_html, track_recs = track_mod.build(cfg.path("data"), series, obs, report_url=report_url or "",
-                                                 index=None)
+        track_html, track_recs = track_mod.build(cfg.path("data"), series, obs, report_url=report_url or "")
         track_sm = track_mod.summary(track_recs)
         track_sm["headline"] = track_mod.headline(track_sm)
         if track_sm["headline"]:
@@ -339,17 +310,13 @@ def cmd_invest(cfg, args) -> int:
             stats=db.stats(),
             market=market,
             plan_cfg=cfg.raw.get("plan") or {},
-            since=since,
             today=today,
             prev_ranks=prev_ranks,
             releases=calendar,
-            index=None,
             sealed=sealed_rows,
             playbook=pbook,
             depth=depth,
             sync_url=(cfg.raw.get("publish") or {}).get("sync_url") or None,
-            note=weekly_note,
-            commentary=written,
             record=track_sm,
             track_url=track_url,
             art_cache=cfg.path("data/images"),
@@ -372,32 +339,7 @@ def cmd_invest(cfg, args) -> int:
         out_issue = out.parent / "issue.json"
         out_issue.write_text(json.dumps(iss, separators=(",", ":"), sort_keys=True), encoding="utf-8")
 
-        # The digest alongside, in both shapes, so `radar publish` and a human
-        # reading the run log see the same thing.
-        lead = None
-        if use_llm:
-            lead = comm_mod.write_lead(
-                comm_mod.lead_facts(since, index=None, releases=calendar, obs_date=obs, today=today,
-                                    depth=depth_mod.facts_for_lead(depth)),
-                root=cfg.path("data"), date=obs, client=llm)
-            print("Email lead: " + ("written" if lead else "template"))
-        if isinstance(llm, comm_mod.RelayClient):
-            n = llm.flush()
-            print(f"Relay: {llm.answered} answered from {llm.dir / 'responses.json'}; "
-                  f"{n} request(s) waiting in {llm.dir / 'requests.json'}")
-        (out.parent / "digest.html").write_text(
-            digest_mod.to_html(since, report_url=report_url, note=weekly_note, lead=lead), encoding="utf-8")
-        (out.parent / "lead.txt").write_text(lead or "", encoding="utf-8")
         (out.parent / "playbook.json").write_text(json.dumps(pbook.get("summary"), sort_keys=True), encoding="utf-8")
-
-        # The public track record, rebuilt every issue from the stored rankings.
-        (out.parent / "digest.md").write_text(
-            digest_mod.to_markdown(since, report_url=report_url, lead=lead), encoding="utf-8")
-        (out.parent / "digest.json").write_text(
-            json.dumps({"subject": digest_mod.subject(since), "date": obs, "run_date": today,
-                        "feed_late": since["feed_late"], "has_previous": since["has_previous"]}),
-            encoding="utf-8")
-        print(f"Digest    -> {out.parent / 'digest.html'}  ({digest_mod.subject(since)})")
 
         keep = [r for r in ranked if not r.get("disqualified")]
         drop = [r for r in ranked if r.get("disqualified")]
@@ -585,66 +527,6 @@ def cmd_publish(cfg, args) -> int:
     elif sync_url:
         print("sync_url is set but HARO_ADMIN_SECRET is not; the alert service was not updated.")
     return 0
-
-
-def cmd_note_draft(cfg, args) -> int:
-    """Draft the weekly note from the week's facts, for a person to edit.
-
-    Reads the stored rankings, the index and the last issue's playbook
-    summary; never publishes anything. Writes out/note-draft.md.
-    """
-    from . import commentary as comm_mod
-    from . import digest as digest_mod
-    from . import releases as releases_mod
-    from .invest import _change_over
-
-    llm = comm_mod.from_config(cfg.raw.get("commentary"), relay=getattr(args, "relay", None))
-    if not llm.available:
-        print(f"{comm_mod.PROVIDERS[llm.provider]['env']} is not set. Nothing drafted.")
-        return 2
-    db = Database(cfg.db_path)
-    try:
-        obs = args.date or db.latest_obs_date()
-        today = getattr(args, "today", None) or _today()
-        cur = digest_mod.previous(cfg.path("data"), (obs or "9999") + "z")
-        week_ago = digest_mod.previous(cfg.path("data"), _shift(obs, -6)) if obs else None
-        diff = digest_mod.diff(cur, week_ago, run_date=today) if cur else {}
-        ix = {}
-        ipath = cfg.path("data/index.ndjson")
-        if ipath.exists():
-            pts = [(lv["date"], lv["value"]) for lv in (json.loads(l) for l in ipath.read_text().splitlines() if l.strip())]
-            if pts:
-                ix = {"name": "Market Haro 50", "value": pts[-1][1], "change_7d": _change_over(pts, 7),
-                      "change_30d": _change_over(pts, 30), "high": max(v for _, v in pts),
-                      "high_date": max(pts, key=lambda p: p[1])[0]}
-        calendar = releases_mod.calendar(
-            db.sets(), [dict(x) for x in db.conn.execute("SELECT number, set_id FROM cards")])
-        facts = comm_mod.lead_facts(diff, index=ix, releases=calendar, obs_date=obs or today, today=today)
-        facts["window"] = "the last seven days"
-        pb = cfg.path("out/playbook.json")
-        if pb.exists():
-            facts["playbook_medians"] = json.loads(pb.read_text())
-        text = comm_mod.write_note_draft(facts, client=llm)
-        if isinstance(llm, comm_mod.RelayClient) and not text:
-            n = llm.flush()
-            print(f"Relay: {n} request(s) waiting in {llm.dir / 'requests.json'}; answer them and run again.")
-            return 1
-        if not text:
-            print("The model did not return a draft.")
-            return 1
-        out = cfg.path("out/note-draft.md")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(text + "\n", encoding="utf-8")
-        print(f"Draft -> {out}  ({llm.tokens_in + llm.tokens_out:,} tokens). Edit it, then save it as data/notes/{today}.md")
-        return 0
-    finally:
-        db.close()
-
-
-def _shift(d: str, days: int) -> str:
-    from datetime import date as _d
-    from datetime import timedelta
-    return (_d.fromisoformat(d) + timedelta(days=days)).isoformat()
 
 
 def cmd_run(cfg, args) -> int:
@@ -892,15 +774,6 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--today", help="override the run date (for reproducing a past issue)")
     r.add_argument("--no-art-fetch", action="store_true",
                    help="embed only card art already cached under data/images; never call the image CDN")
-    r.add_argument("--no-llm", action="store_true",
-                   help="keep the template prose even when the commentary API key is set")
-    r.add_argument("--relay", metavar="DIR",
-                   help="no network here: answer from DIR/responses.json, queue the rest to DIR/requests.json")
-
-    nd = sub.add_parser("note-draft", help="draft the weekly note from the week's facts (out/note-draft.md)")
-    nd.add_argument("--date", help="issue date to draft from, default = latest")
-    nd.add_argument("--today", help="override the run date")
-    nd.add_argument("--relay", metavar="DIR", help="as for invest")
 
     pb = sub.add_parser("publish", help="push today's report and digest to Ghost")
     pb.add_argument("--out", help="where radar invest wrote the dashboard")
@@ -954,7 +827,6 @@ COMMANDS = {
     "backfill": cmd_backfill,
     "snipe": cmd_snipe,
     "invest": cmd_invest,
-    "note-draft": cmd_note_draft,
     "run": cmd_run,
     "stats": cmd_stats,
     "export": cmd_export,

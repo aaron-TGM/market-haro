@@ -13,8 +13,6 @@
 #   secrets.GHOST_URL              https://your-site.ghost.io           optional
 #   secrets.GHOST_ADMIN_KEY        Ghost Admin API key, "<id>:<secret>"  optional
 #   secrets.HARO_ADMIN_SECRET      the sync/alerts Worker's admin secret  optional
-#   secrets.OPENAI_API_KEY         writes the prose (gpt-5.6-sol); templates without it   optional
-#   secrets.ANTHROPIC_API_KEY      the alternative provider, if config says so   optional
 #
 # With the Ghost pair set, every run emails the digest to paying members and
 # refreshes the members-only report page. Without it the report is still built
@@ -60,8 +58,6 @@ jobs:
       GHOST_URL: ${{ secrets.GHOST_URL }}
       GHOST_ADMIN_KEY: ${{ secrets.GHOST_ADMIN_KEY }}
       HARO_ADMIN_SECRET: ${{ secrets.HARO_ADMIN_SECRET }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -126,7 +122,7 @@ jobs:
         run: |
           git config user.name  "radar[bot]"
           git config user.email "radar[bot]@users.noreply.github.com"
-          git add data/history data/cards.ndjson data/sets.ndjson data/index.ndjson data/index_members.json data/rankings data/commentary data/validation_history.json
+          git add data/history data/cards.ndjson data/sets.ndjson data/rankings data/validation_history.json
           if git diff --staged --quiet; then
             echo "Nothing new today."
           else

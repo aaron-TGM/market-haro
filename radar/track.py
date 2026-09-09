@@ -157,7 +157,7 @@ def _cell(v, n=None) -> str:
 
 
 def render(recs: Sequence[dict], validations: Sequence[dict], *, as_of: str, brand: str = "Market Haro",
-           report_url: str = "", index: dict | None = None) -> str:
+           report_url: str = "") -> str:
     sm = summary(recs)
     rows = []
     for r in reversed(list(recs)):
@@ -184,9 +184,6 @@ def render(recs: Sequence[dict], validations: Sequence[dict], *, as_of: str, bra
             f'<td>{_esc(v.get("verdict") or "")}</td></tr>')
 
     ix = ""
-    if index and index.get("value"):
-        ix = (f'<div class="tile"><div class="l">{_esc(index["name"])}</div><div class="big">{index["value"]:.1f}</div>'
-              f'<div class="muted">30d {index.get("change_30d") or 0:+.1f}% · 90d {index.get("change_90d") or 0:+.1f}%</div></div>')
 
     hl = headline(sm)
     head = ""

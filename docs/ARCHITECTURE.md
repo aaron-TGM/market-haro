@@ -30,17 +30,15 @@ tcgapi.dev ──sync──▶ SQLite (cache) ◀──restore── data/histor
 | `invest.py` | measure + score + gates | `features()` measures a 90-day window by date; `change_1y` from the long series; `settled()` = ask vs sold |
 | `plan.py` | budget sizing | twin of the page's `allocate()` |
 | `snipe.py` | live NM English shelf | entry price = cheapest NM shipped; English enforced twice |
-| `index.py` | Market Haro 50 | equal-weight, chain-linked, members fixed per month, `data/index.ndjson` |
 | `sealed.py` | the sealed screen | against earliest price held + release date; its own case/watch/checklist; not scored |
 | `depth.py` | what is under each box | per set: singles ≥$50/$100/$500, top-10 value and its 30d move, money through singles and sealed; a panel, and sealed facts |
 | `releases.py` | the set calendar | codes from card numbers (GD05, ST11–14); marks on every chart; next-release tile |
 | `playbook.py` | what releases did | prior set / new set / market at +30/60/90, medians with n |
 | `track.py` | the public track record | every issue's top 20 vs its pool; validation history |
 | `alerts.py` | alert rules + issue file | mirrored in `worker/src/index.js`; Python writes the cases the Worker test replays |
-| `note.py` | the weekly note | `data/notes/YYYY-MM-DD.md`, ten-day freshness, small Markdown |
 | `art.py` | card art | cached under `data/images/`, 240px WebP data URIs in the page |
 | `haro.py` | the page | one file: CSS, JS, JSON payload; nothing decided on the page that a test cannot check |
-| `digest.py` | the daily diff + email | snapshot per issue in `data/rankings/`; subject leads with the change |
+| `digest.py` | the stored rankings | snapshot per issue in `data/rankings/`; the diff between two issues |
 | `ghost.py` | Ghost Admin API | HS256 JWT; pages as Lexical HTML cards; paid vs public visibility |
 | `validate.py` | walk-forward test | appends to `data/validation_history.json`; verdict thresholds |
 | `heat.py`, `setreport.py`, `signals.py`, `dashboard.py` | the earlier tools | search attention (manual capture), per-set reports, the first dashboard whose helpers the page still reuses |

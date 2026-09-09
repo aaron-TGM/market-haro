@@ -1,12 +1,13 @@
 # Market Haro — from GUNDECK.AI
 
-A daily market terminal for people who invest in the Gundam Card Game. Every morning it
+A daily market dashboard for people who invest in the Gundam Card Game. Every morning it
 measures the whole English market on tcgapi.dev, ranks the singles worth holding, screens
-sealed product, marks every chart with the set calendar, scores its own past calls in
-public, and mails each subscriber what changed on the cards they follow.
+sealed product, shows what is under every box, marks every chart with the set calendar, and
+scores its own past calls in public. No newsletter, no written commentary beyond a one-line
+case per card: the numbers are the product and the reader draws the conclusion.
 
-One paid tier: **$8 a month or $88 a year, 7-day trial, no free tier.** Published through
-Ghost; built and sent by GitHub Actions; watchlists and alerts on one Cloudflare Worker.
+One paid tier: **$8 a month or $88 a year, 7-day trial, no free tier.** One page, rebuilt
+daily by GitHub Actions and served behind a login; how it is hosted is in DEPLOY.md.
 
 ```
 Prices through 2026-09-05 · 127 cards pass the screen · 207 screened
@@ -22,13 +23,6 @@ Prices through 2026-09-05 · 127 cards pass the screen · 207 screened
 **Your holdings.** Star a card, enter copies and cost, and the page opens with positions,
 cost in, value now, P&L and how many broke trend. With the sync Worker deployed the list
 follows the member across devices; without it, it lives in the browser.
-
-**The words.** Each card's case and watch, the email's opening paragraph and a draft of the
-weekly note are written by a model that sees only the card's measured facts and the house
-voice (`docs/VOICE.md`), and whose every number is checked against those facts before it is
-published (`radar/commentary.py`). GPT-5.6 Sol by default (`OPENAI_API_KEY`); Anthropic
-as the alternative. No key, no network, a refused sentence: the template runs instead, so
-the issue always goes out.
 
 **The hold screen.** Every English single priced $10+ and up over 30 days, measured on 90
 days of daily price and sales history, scored 0–100 on value, liquidity, trend, stability
@@ -50,13 +44,6 @@ day, ask vs sold. Deliberately not scored.
 previous set's top 20, the new set's top 20 and the whole market at +30/60/90 days, medians
 with n on every cell. The new set's chase cards fell a median 20–30% in their first two
 months after every release measured.
-
-**The daily email.** What moved since the last issue: entries and exits from the top 20,
-climbers and fallers, asks that ran ahead of sales or fell below them, breadth, feed age.
-Quick hits, then a link to the full report.
-
-**Alerts.** Trend broke, listed below sold, left or entered the top 20, a release in seven
-days — on the cards a member follows, on change only, one email a day at most.
 
 **The track record.** The one public page: every issue's top 20 scored against its own
 candidate pool at +30/60/90 days, spread shown, losers kept, plus the monthly walk-forward
@@ -82,15 +69,12 @@ none because of the cards inside it; this is the table that says which.
 `last_updated_at` rather than the fetch. `radar invest` loads daily history for the
 candidate pool, measures each series (90-day window by date; a year of weekly points behind
 it for the long chart), scores and gates, fetches a live Near Mint English shelf for the
-strongest, builds the index, the sealed screen, the playbook and the track record, and
-writes one self-contained HTML file with the card art embedded, plus the digest, the
-compact issue for the alert service, and a CSV. `radar export` writes the price history to
-plain-text NDJSON so git, not SQLite, is the durable store. `radar publish` puts the report
-on a paid Ghost page, mails the digest to paying members, refreshes the public track record,
-and pushes the issue to the Worker. `radar validate` re-runs the walk-forward test monthly.
+strongest, builds the sealed screen, the set-depth table, the playbook and the track record,
+and writes one self-contained HTML file with the card art embedded, plus a CSV. `radar
+export` writes the price history to plain-text NDJSON so git, not SQLite, is the durable
+store. `radar validate` re-runs the walk-forward test monthly.
 
-Everything the page computes in JavaScript — sizing, P&L, alerts — has a Python twin with
-tests, and the Worker's alert rules replay the Python test cases.
+Everything the page computes in JavaScript — sizing, P&L — has a Python twin with tests.
 
 ## Quick start
 
@@ -102,7 +86,7 @@ cp .env.example .env            # your tcgapi.dev key; never committed
 python -m radar doctor          # verifies the key and every endpoint used
 python -m radar restore         # rebuild the database from data/history
 python -m radar run             # sync, measure, score, render
-open out/dashboard.html         # the report; out/track-record.html; out/digest.html
+open out/dashboard.html         # the report; out/track-record.html
 python tests/test_pipeline.py   # 53 tests
 ```
 
@@ -117,9 +101,8 @@ points across 13 months, so a fresh clone does not need to.
 | `radar doctor` | verify the API key, game slug and every endpoint used |
 | `radar sync [--no-history]` | catalogue + today's prices; dated by the API |
 | `radar backfill --range quarter\|year` | history for cards that lack it |
-| `radar invest [--date] [--today] [--no-fetch] [--no-art-fetch]` | the whole issue: report, digest, issue.json, track record, CSV |
+| `radar invest [--date] [--today] [--no-fetch] [--no-art-fetch]` | the whole issue: report, track record, CSV |
 | `radar run` | sync then invest (what the workflow calls) |
-| `radar invest --relay out/relay` | no network here: queue the model's requests; `scripts/relay.html` answers them from a browser |
 | `radar publish [--dry-run] [--no-email]` | Ghost pages + email, Worker issue push |
 | `radar export` / `radar restore` | the NDJSON archive, both directions |
 | `radar validate [--horizon]` | walk-forward: does the score still separate winners? |
@@ -134,12 +117,9 @@ radar/            the package — see docs/ARCHITECTURE.md for what each module 
 worker/           the sync + alerts Cloudflare Worker (npm test replays the Python cases)
 data/history/     the archive: one NDJSON file per month, the one thing not rebuildable
 data/rankings/    every issue's ranking, as published; the track record is built from these
-data/index.ndjson the Market Haro 50, daily (computed, not shown; the playbook and track record read it)
 tests/            python tests/test_pipeline.py
-docs/VOICE.md     the voice every generated sentence is held to, with samples
 docs/METHOD.md    how the score, gates, settled price and validation were measured
 docs/ARCHITECTURE.md   modules, data flow, what is a cache and what is an asset
-docs/SOW-two-fifties.md   next: Market Haro 50 rename + the GUNDECK 50 (most played)
 docs/LAUNCH.md    the launch plan: Ghost, Stripe, the Worker, the GUNDECK launch, operations
 DEPLOY.md         GitHub Actions, Ghost, the Worker, Resend, costs
 CHANGELOG.md      what changed, by issue
@@ -150,6 +130,6 @@ CHANGELOG.md      what changed, by issue
 Every number describes what a card has already done. Nothing here is a forecast, and
 nothing knows *why* a price is moving: bans, reprints, rotation and tournament results end
 runs and are invisible in price data. The release calendar is on the charts because it is
-on record; a banlist is not, and belongs in the weekly note. The score was calibrated on a
+on record; a banlist is not. The score was calibrated on a
 market that rose the whole way through one 90-day window; `radar validate` exists because
 that will not stay true. Trading cards can lose value.

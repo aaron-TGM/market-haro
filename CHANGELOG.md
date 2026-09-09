@@ -3,6 +3,18 @@
 Newest first. Dates are the day the work landed; issue dates are the price date the
 report carries.
 
+## 2026-09-09 — a dashboard, not a newsletter
+
+- **Removed**: the model-written commentary (`radar/commentary.py`, the relay, `docs/VOICE.md`,
+  the OpenAI/Anthropic keys), the weekly note (`radar/note.py`, `data/notes/`,
+  `radar note-draft`), the Market Haro 50 (`radar/index.py`, `data/index.ndjson`), and the
+  daily email (the digest renderers, `out/digest.*`, `out/lead.txt`). `data/rankings/` stays:
+  it is what the track record scores and what rank movement reads.
+- Each card keeps its one-line template case and watch. The reader draws the conclusion.
+- The pitch and build-review pages are gone; `scripts/build_consumer.py` shows the report
+  and the track record. Ghost, the Worker and alerts are unchanged in this commit and are
+  decided next (see DEPLOY.md when it lands).
+
 ## 2026-09-09 — before hosting
 
 - **Pricing**: $8 a month, $88 a year.

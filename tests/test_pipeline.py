@@ -1153,22 +1153,13 @@ def test_digest_diffs_two_rankings_and_sends_on_day_one():
     assert first["has_previous"] is False
     assert first["entered"] == [] and first["exited"] == []
     assert [r["card_id"] for r in first["top"]] == ["a", "c", "e"]
-    assert "First issue" in digest.to_html(first)
 
     # A late feed is the first line, not a footnote, and it is the subject.
     late = digest.diff(today, prev, top_n=3, run_date="2026-09-10")
     assert late["feed_late"] and late["feed_age_days"] == 7
-    assert digest.to_html(late).lstrip().startswith("<p")
-    assert "7 days behind" in digest.to_html(late)
-    assert "feed 7 days behind" in digest.subject(late)
 
     # Email HTML is boring on purpose: no scripts, no external CSS, no <style>.
-    html = digest.to_html(d, report_url="https://gundeck.ai/market-haro/")
-    assert "<script" not in html and "<link" not in html and "<style" not in html
-    assert "Open the full report" in html
-    assert "financial advice" in html
-    md = digest.to_markdown(d)
-    assert "New to the top 20" in md and "Card e" in md
+
 
 
 def test_digest_snapshot_round_trips_through_disk():
@@ -1249,33 +1240,6 @@ def test_features_measure_the_90_day_window_even_when_the_series_runs_a_year():
     assert f["change_1y"] == 100.0                  # measured on the full series
     wk = invest.weekly_points(pts, 400)
     assert 45 <= len(wk) <= 60 and wk[-1][0] == pts[-1][0]
-
-
-def test_gundeck_index_chain_links_and_lets_members_enter_late():
-    """A member that appears mid-series joins at the current level; the base is
-    100 on the first date half the members are priced; a flat market is 100."""
-    from radar import index
-
-    mem = [{"card_id": "a", "printing": "N"}, {"card_id": "b", "printing": "N"},
-           {"card_id": "c", "printing": "N"}, {"card_id": "d", "printing": "N"}]
-    flat = {("a", "N"): [(f"2026-08-0{i}", 10.0, 1, None) for i in range(1, 8)],
-            ("b", "N"): [(f"2026-08-0{i}", 20.0, 1, None) for i in range(1, 8)],
-            ("c", "N"): [], ("d", "N"): []}
-    lv = index.compute(flat, mem, "2026-08-07")
-    assert lv and lv[0]["value"] == 100.0 and all(x["value"] == 100.0 for x in lv)
-    # b doubles on day 4, c enters on day 5 at 5.0 then doubles on day 6.
-    ser = {("a", "N"): [(f"2026-08-0{i}", 10.0, 1, None) for i in range(1, 8)],
-           ("b", "N"): [(f"2026-08-0{i}", 20.0 if i < 4 else 40.0, 1, None) for i in range(1, 8)],
-           ("c", "N"): [("2026-08-05", 5.0, 1, None), ("2026-08-06", 10.0, 1, None), ("2026-08-07", 10.0, 1, None)],
-           ("d", "N"): []}
-    lv = index.compute(ser, mem, "2026-08-07")
-    by = {x["date"]: x["value"] for x in lv}
-    assert by["2026-08-03"] == 100.0
-    assert by["2026-08-04"] == 150.0          # mean(1.0, 2.0)
-    assert by["2026-08-05"] == 150.0          # c has no previous price: enters, no step
-    assert by["2026-08-06"] == 200.0          # mean(1, 1, 2) -> x1.333.. -> 200
-    top = index.select(ser, {"a": {}, "b": {}, "c": {}}, "2026-08-07", size=2)
-    assert {m["card_id"] for m in top} == {"a", "b"}   # c traded on 3 days, a and b on 7
 
 
 def test_sealed_screen_measures_against_release_and_is_not_scored():
@@ -1369,27 +1333,6 @@ def test_alert_rules_fire_on_change_only_and_match_the_worker():
     out.write_text(json.dumps(cases, indent=1, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def test_weekly_note_shows_only_while_fresh_and_renders_small_markdown():
-    import tempfile
-
-    from radar import note
-
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d); (root / "notes").mkdir()
-        (root / "notes" / "2026-09-01.md").write_text("Old **note**.", encoding="utf-8")
-        (root / "notes" / "2026-09-06.md").write_text(
-            "## Heading\nThis week the *market* gave back GD05. See [the playbook](https://x/y).\n\n- one\n- two <b>\n",
-            encoding="utf-8")
-        got = note.latest(root, "2026-09-06")
-        assert got["date"] == "2026-09-06"
-        assert "<h4>Heading</h4>" in got["html"] and "<em>market</em>" in got["html"]
-        assert '<a href="https://x/y" target="_blank" rel="noopener">the playbook</a>' in got["html"]
-        assert "<ul>" in got["html"] and "&lt;b&gt;" in got["html"]   # escaped, not injected
-        assert note.latest(root, "2026-09-15")["date"] == "2026-09-06"  # 9 days: still fresh
-        assert note.latest(root, "2026-09-20") is None                   # 14 days: past MAX_AGE, gone
-        assert note.latest(root, "2026-08-31") is None                   # never from the future
-
-
 def test_track_record_scores_each_issue_against_its_pool_and_keeps_losers():
     import tempfile
     from datetime import date, timedelta
@@ -1416,101 +1359,6 @@ def test_track_record_scores_each_issue_against_its_pool_and_keeps_losers():
         assert r["to_date"]["days"] == 45
         html, _ = track.build(root, series, "2026-08-15", report_url="https://x/r/")
         assert "2026-07-01" in html and "Nothing is removed" in html and "financial advice" in html
-
-
-def test_commentary_guard_rejects_numbers_the_facts_do_not_contain():
-    """The one rule that makes model-written prose publishable unread: every
-    number in the output is in the input, allowing ordinary rounding."""
-    from radar import commentary as c
-
-    facts = {"market_price": 69.22, "change_90d": 99, "consistency_pct": 86, "avg_daily_sales": 2.0,
-             "ask_premium_pct": -2.3, "window": {"high": 71.37}, "next_release": {"date": "2026-09-25"}}
-    ok, bad = c.guard("Up 99% over the window and 86% of weeks, at $69 with the ask 2% under sales.", facts)
-    assert ok and not bad
-    ok, bad = c.guard("It sells two a day and is 3% off its $71.37 high; ST11-14 land Sep 25.", facts)
-    assert ok, bad                                  # 3 = 71.37-69.22 rounded? no: small integers are allowed
-    ok, bad = c.guard("A 42% climb since spring.", facts)
-    assert not ok and bad == ["42%"]
-    ok, bad = c.guard("Sold 1,201 copies.", facts)
-    assert not ok and bad == ["1,201"]
-    assert c.tone_ok("The ask sits under sales.") and not c.tone_ok("Investors should buy!")
-    assert not c.tone_ok("This will likely run.")
-
-
-def test_commentary_writes_from_facts_caches_and_falls_back():
-    """A fake model: one card gets an acceptable case, one invents a number
-    and keeps the template, one is cached and never re-asked."""
-    import json
-    import tempfile
-
-    from radar import commentary as c
-
-    class Fake(c.Client):
-        def __init__(self):
-            super().__init__(api_key="fake"); self.seen = []
-        def complete(self, system, user, *, max_tokens=400):
-            self.calls += 1
-            facts = json.loads(user.split("FACTS\n", 1)[1])
-            self.seen.append(facts["name"])
-            assert "Lead with the point" in system      # the voice is the system prompt
-            if facts["name"] == "Honest":
-                return json.dumps({"case": f"Listed at ${facts['market_price']} and climbing {facts['change_90d']}% over the window.",
-                                   "watch": "The first week that closes down ends the pattern."})
-            return json.dumps({"case": "Up 400% since the dawn of time.", "watch": "Nothing."})
-
-    rows = [{"card_id": 1, "printing": "Normal", "name": "Honest", "market_price": 20.5, "change_90d": 40,
-             "series": [["2026-06-01", 15.0], ["2026-08-30", 20.5]]},
-            {"card_id": 2, "printing": "Normal", "name": "Liar", "market_price": 9.0, "change_90d": 10,
-             "series": [["2026-06-01", 8.0], ["2026-08-30", 9.0]]}]
-    with tempfile.TemporaryDirectory() as d:
-        fake = Fake()
-        got = c.write_cards(rows, root=Path(d), date="2026-08-30", client=fake,
-                            releases=[{"date": "2026-07-24", "label": "GD05"}])
-        assert set(got) == {"1|Normal"} and "$20.5" in got["1|Normal"]["case"]
-        cache = json.loads((Path(d) / "commentary" / "2026-08-30.json").read_text())
-        assert cache["1|Normal"]["case"] == got["1|Normal"]["case"]
-        assert "400%" in cache["_rejected"]["2|Normal"]
-        # Second run: the honest card is served from cache; only the liar is re-asked.
-        fake2 = Fake()
-        got2 = c.write_cards(rows, root=Path(d), date="2026-08-30", client=fake2,
-                             releases=[{"date": "2026-07-24", "label": "GD05"}])
-        assert got2 == got and fake2.seen == ["Liar"]
-        # No key: nothing is asked, nothing written, and the caller keeps the template.
-        import os
-        os.environ.pop("OPENAI_API_KEY", None); os.environ.pop("ANTHROPIC_API_KEY", None)
-        assert c.write_cards(rows, root=Path(d), date="2026-09-01", client=c.Client(api_key=None)) == {}
-        assert c.from_config({"provider": "openai", "model": "gpt-5.6-sol"}).model == "gpt-5.6-sol"
-        assert c.from_config({"provider": "anthropic"}).model == "claude-haiku-4-5"
-        # The lead has the same guard.
-        lf = {"index": {"value": 141.0, "change_7d": -2.5}, "candidates": 131, "breadth_now_pct": 33}
-        class Lead(Fake):
-            def complete(self, system, user, *, max_tokens=400):
-                self.calls += 1
-                return ("The market gave back 2.5% this week and the Market Haro 50 sits at 141.0 with breadth at 33%. "
-                        "Of the 131 cards that pass, the middle of the ranking moved most, and the alt-art parallels "
-                        "did the moving while the base printings sat still through the whole week of trading.")
-        assert c.write_lead(lf, root=Path(d), date="2026-08-30", client=Lead()).startswith("The market")
-
-
-def test_the_page_prefers_written_prose_and_keeps_the_template_otherwise():
-    import json
-    import re
-
-    from radar import haro
-
-    rows = [{"card_id": 1, "printing": "Normal", "name": "A", "set_name": "S", "number": "S-001", "rarity": "R",
-             "market_price": 20.0, "invest_score": 70.0, "avg_daily_sales": 1.5,
-             "series": [["2026-08-01", 10.0], ["2026-08-02", 11.0]]},
-            {"card_id": 2, "printing": "Normal", "name": "B", "set_name": "S", "number": "S-002", "rarity": "R",
-             "market_price": 20.0, "invest_score": 60.0, "avg_daily_sales": 1.5,
-             "series": [["2026-08-01", 10.0], ["2026-08-02", 11.0]]}]
-    html = haro.render(rows, obs_date="2026-08-09",
-                       commentary={"1|Normal": {"case": "A written case.", "watch": "A written watch."}})
-    payload = json.loads(re.search(r'id="haro-data">(.*?)</script>', html, re.S).group(1)
-                         .replace("\\u003c", "<").replace("\\u003e", ">").replace("\\u0026", "&"))
-    a, b = payload["rows"]
-    assert a["thesis"] == "A written case." and a["watch"] == "A written watch." and a.get("written")
-    assert b["thesis"] != "A written case." and not b.get("written")
 
 
 def test_release_calendar_labels_itself_from_card_numbers():
@@ -1860,42 +1708,6 @@ def test_tcgplayer_links_carry_the_english_filter():
 
     card = _norm_card({"id": 1, "name": "X", "tcgplayer_id": 645344}, 800021, "Newtype Rising")
     assert card["tcgplayer_url"].endswith("/product/645344?Language=English")
-
-
-
-def test_relay_client_queues_what_it_cannot_answer_and_answers_from_the_file():
-    import json
-    from radar import commentary as c
-    with tempfile.TemporaryDirectory() as d:
-        relay = c.RelayClient(d, model="gpt-5.6-sol")
-        assert relay.available
-        rid = c.RelayClient.request_id("gpt-5.6-sol", "sys", "user")
-        try:
-            relay.complete("sys", "user")
-            assert False, "pending request must raise"
-        except c.RelayPending as e:
-            assert str(e) == rid
-        assert relay.flush() == 1
-        q = json.loads((Path(d) / "requests.json").read_text())
-        assert q["requests"][0] == {"id": rid, "model": "gpt-5.6-sol", "system": "sys", "user": "user", "max_tokens": 400}
-        (Path(d) / "responses.json").write_text(json.dumps({rid: " answered "}))
-        again = c.RelayClient(d, model="gpt-5.6-sol")
-        assert again.complete("sys", "user") == "answered" and again.answered == 1
-        # a different model is a different request
-        assert c.RelayClient.request_id("other", "sys", "user") != rid
-        # an issue rebuilds the queue; a note draft appends to it
-        fresh = c.RelayClient(d, model="gpt-5.6-sol", replace=True)
-        try:
-            fresh.complete("sys", "other user")
-        except c.RelayPending:
-            pass
-        assert fresh.flush() == 1 and [r["user"] for r in json.loads((Path(d) / "requests.json").read_text())["requests"]] == ["other user"]
-        more = c.RelayClient(d, model="gpt-5.6-sol")
-        try:
-            more.complete("sys", "third")
-        except c.RelayPending:
-            pass
-        assert more.flush() == 2
 
 
 
