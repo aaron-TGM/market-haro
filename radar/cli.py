@@ -306,7 +306,7 @@ def cmd_invest(cfg, args) -> int:
         from . import commentary as comm_mod
 
         relay = getattr(args, "relay", None)
-        llm = comm_mod.from_config(cfg.raw.get("commentary"), relay=relay)
+        llm = comm_mod.from_config(cfg.raw.get("commentary"), relay=relay, relay_replace=True)
         use_llm = llm.available and not getattr(args, "no_llm", False)
         written = {}
         if use_llm:

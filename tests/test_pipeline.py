@@ -1883,6 +1883,19 @@ def test_relay_client_queues_what_it_cannot_answer_and_answers_from_the_file():
         assert again.complete("sys", "user") == "answered" and again.answered == 1
         # a different model is a different request
         assert c.RelayClient.request_id("other", "sys", "user") != rid
+        # an issue rebuilds the queue; a note draft appends to it
+        fresh = c.RelayClient(d, model="gpt-5.6-sol", replace=True)
+        try:
+            fresh.complete("sys", "other user")
+        except c.RelayPending:
+            pass
+        assert fresh.flush() == 1 and [r["user"] for r in json.loads((Path(d) / "requests.json").read_text())["requests"]] == ["other user"]
+        more = c.RelayClient(d, model="gpt-5.6-sol")
+        try:
+            more.complete("sys", "third")
+        except c.RelayPending:
+            pass
+        assert more.flush() == 2
 
 
 

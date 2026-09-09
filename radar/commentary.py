@@ -256,12 +256,17 @@ class RelayClient(Client):
     facts always map to the same answer.
     """
 
-    def __init__(self, directory: Path | str, *, model: str | None = None, provider: str = DEFAULT_PROVIDER):
+    def __init__(self, directory: Path | str, *, model: str | None = None, provider: str = DEFAULT_PROVIDER,
+                 replace: bool = False):
+        """replace=True: the queue is rebuilt from this run alone (an issue asks for
+        every card, so yesterday's requests are stale); False appends (a note draft
+        adds one request to whatever the issue queued)."""
         super().__init__("relay", provider=provider, model=model)
         self.dir = Path(directory)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.responses = self._read("responses.json")
-        self.queued: dict[str, dict] = {r["id"]: r for r in self._read("requests.json").get("requests", [])}
+        self.queued: dict[str, dict] = ({} if replace else
+                                        {r["id"]: r for r in self._read("requests.json").get("requests", [])})
         self.answered = 0
 
     def _read(self, name: str) -> dict:
@@ -294,13 +299,13 @@ class RelayClient(Client):
         return len(reqs)
 
 
-def from_config(cfg_block: dict | None, *, relay: str | None = None) -> Client:
+def from_config(cfg_block: dict | None, *, relay: str | None = None, relay_replace: bool = False) -> Client:
     """The client the pipeline uses, from the `commentary:` block of config.yaml."""
     c = cfg_block or {}
     provider = c.get("provider") or DEFAULT_PROVIDER
     model = c.get("model") or PROVIDERS.get(provider, {}).get("model")
     if relay:
-        return RelayClient(relay, provider=provider, model=model)
+        return RelayClient(relay, provider=provider, model=model, replace=relay_replace)
     return Client(provider=provider, model=model)
 
 
