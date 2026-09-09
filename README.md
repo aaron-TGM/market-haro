@@ -11,7 +11,6 @@ Ghost; built and sent by GitHub Actions; watchlists and alerts on one Cloudflare
 ```
 Prices through 2026-09-05 · 127 cards pass the screen · 207 screened
 
-  MARKET HARO 50   139.4   1d +0.9%  7d −6.4%  30d −15.1%  90d +9.8%   high 165.9 on Aug 11
   #1  Wing Gundam Zero (LR+)   $338.41   entry $326   vs sold −3%   90d +84%   score 86
   #2  Resource (R-002) (C++)   $101.04   entry $106   vs sold +6%   90d +119%  score 85
   Sealed: Starter Deck 03: Zeon's Rush +62% over 30 days, 421 days after release
@@ -19,11 +18,6 @@ Prices through 2026-09-05 · 127 cards pass the screen · 207 screened
 ```
 
 ## What a subscriber gets
-
-**Market Haro 50.** One number for the market: an equal-weight, chain-linked index of the
-fifty most-traded singles priced $5+, base 100, members fixed per calendar month. A year
-of history with every set release marked on it. *(A second index, the GUNDECK 50 — the
-fifty most played cards, every version priced — is scoped in `docs/SOW-two-fifties.md`.)*
 
 **Your holdings.** Star a card, enter copies and cost, and the page opens with positions,
 cost in, value now, P&L and how many broke trend. With the sync Worker deployed the list
@@ -35,10 +29,6 @@ voice (`docs/VOICE.md`), and whose every number is checked against those facts b
 published (`radar/commentary.py`). GPT-5.6 Sol by default (`OPENAI_API_KEY`); Anthropic
 as the alternative. No key, no network, a refused sentence: the template runs instead, so
 the issue always goes out.
-
-**The weekly note.** A person's few hundred words from `data/notes/YYYY-MM-DD.md`, shown
-for ten days on the page and at the top of the email. `radar note-draft` writes a first
-draft from the week's facts for you to edit.
 
 **The hold screen.** Every English single priced $10+ and up over 30 days, measured on 90
 days of daily price and sales history, scored 0–100 on value, liquidity, trend, stability
@@ -129,7 +119,6 @@ points across 13 months, so a fresh clone does not need to.
 | `radar backfill --range quarter\|year` | history for cards that lack it |
 | `radar invest [--date] [--today] [--no-fetch] [--no-art-fetch]` | the whole issue: report, digest, issue.json, track record, CSV |
 | `radar run` | sync then invest (what the workflow calls) |
-| `radar note-draft [--date]` | draft the weekly note from the week's facts to out/note-draft.md |
 | `radar invest --relay out/relay` | no network here: queue the model's requests; `scripts/relay.html` answers them from a browser |
 | `radar publish [--dry-run] [--no-email]` | Ghost pages + email, Worker issue push |
 | `radar export` / `radar restore` | the NDJSON archive, both directions |
@@ -145,8 +134,7 @@ radar/            the package — see docs/ARCHITECTURE.md for what each module 
 worker/           the sync + alerts Cloudflare Worker (npm test replays the Python cases)
 data/history/     the archive: one NDJSON file per month, the one thing not rebuildable
 data/rankings/    every issue's ranking, as published; the track record is built from these
-data/notes/       the weekly note, one Markdown file per date
-data/index.ndjson the Market Haro 50, daily
+data/index.ndjson the Market Haro 50, daily (computed, not shown; the playbook and track record read it)
 tests/            python tests/test_pipeline.py
 docs/VOICE.md     the voice every generated sentence is held to, with samples
 docs/METHOD.md    how the score, gates, settled price and validation were measured

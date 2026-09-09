@@ -3,6 +3,13 @@
 Newest first. Dates are the day the work landed; issue dates are the price date the
 report carries.
 
+## 2026-09-09 — the page opens on the ranking
+
+- The **weekly note** panel and the **Market Haro 50** panel are gone from the page and the
+  email. The index is still computed to `data/index.ndjson` (the playbook's whole-market
+  column and the track record read it); `radar note-draft` still exists but nothing shows a
+  note. The page now opens on the budget line and the ranking.
+
 ## 2026-09-09 — what a number is for
 
 - **Shelf arithmetic** on every single and every box: days of shelf (listings ÷ sales a day)

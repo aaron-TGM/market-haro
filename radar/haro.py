@@ -1372,7 +1372,6 @@ def render(
 
 <details class="panel gindex" id="gindex" hidden></details>
 <div class="panel portfolio" id="portfolio" hidden></div>
-{_note_panel(note)}
 <div class="sync" id="sync-status" hidden></div>
 
 <div class="panel budget">

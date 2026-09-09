@@ -290,7 +290,10 @@ def cmd_invest(cfg, args) -> int:
         from . import playbook as playbook_mod
         from . import track as track_mod
 
-        weekly_note = note_mod.latest(cfg.path("data"), today)
+        # The weekly note and the Market Haro 50 are computed but no longer shown:
+        # the page opens on the ranking. The index still writes data/index.ndjson
+        # (the playbook's "whole market" column and the track record read it).
+        weekly_note = None
 
         pbook = playbook_mod.build(
             all_sets, [dict(x) for x in db.conn.execute("SELECT id, set_id, product_type FROM cards")],
@@ -325,7 +328,7 @@ def cmd_invest(cfg, args) -> int:
         track_url = pub_cfg.get("track_record_url") or (
             report_url.rstrip("/").rsplit("/", 1)[0] + "/track-record/" if report_url else "track-record.html")
         track_html, track_recs = track_mod.build(cfg.path("data"), series, obs, report_url=report_url or "",
-                                                 index=gindex)
+                                                 index=None)
         track_sm = track_mod.summary(track_recs)
         track_sm["headline"] = track_mod.headline(track_sm)
         if track_sm["headline"]:
@@ -340,7 +343,7 @@ def cmd_invest(cfg, args) -> int:
             today=today,
             prev_ranks=prev_ranks,
             releases=calendar,
-            index=gindex,
+            index=None,
             sealed=sealed_rows,
             playbook=pbook,
             depth=depth,
@@ -374,7 +377,7 @@ def cmd_invest(cfg, args) -> int:
         lead = None
         if use_llm:
             lead = comm_mod.write_lead(
-                comm_mod.lead_facts(since, index=gindex, releases=calendar, obs_date=obs, today=today,
+                comm_mod.lead_facts(since, index=None, releases=calendar, obs_date=obs, today=today,
                                     depth=depth_mod.facts_for_lead(depth)),
                 root=cfg.path("data"), date=obs, client=llm)
             print("Email lead: " + ("written" if lead else "template"))
