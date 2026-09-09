@@ -450,25 +450,35 @@ let watch = loadWatch();
 const isWatched = r => !!watch[key(r)];
 
 // ---- account sync ----------------------------------------------------------
-// Off by default, and off entirely unless this page is served from the
-// members' site with a sync URL configured. Then, and only then: ask Ghost
-// for the signed session token it issues to the logged-in member, and use
-// it to read and write the same watchlist at the sync service. Nothing goes
-// anywhere else, and a reader who is not signed in keeps a browser-only
-// list exactly as before. Two fetches, both named here, nowhere else.
-const SYNC_URL = (DATA.sync_url || '').replace(/\/$/, '');
-const sync = {token:null, state: SYNC_URL ? 'idle' : 'off', timer:null};
+// Off unless this page is served by the site Worker (DATA.sync_on) over
+// https. Then the watchlist is read and written at the same origin,
+// /positions, and the request carries the reader's Clerk session -- the
+// __session cookie Clerk's script keeps fresh on this domain, plus a bearer
+// token from Clerk when it is loaded. Nothing goes anywhere else; a reader
+// on a saved copy of the file keeps a browser-only list exactly as before.
+// One fetch target, named here, nowhere else.
+const SYNC_ON = !!DATA.sync_on && /^https?:$/.test(location.protocol);
+const sync = {state: SYNC_ON ? 'idle' : 'off', timer:null};
 function syncStatus(msg, cls){
   const el = document.getElementById('sync-status'); if (!el) return;
   el.textContent = msg; el.className = 'sync ' + (cls||''); el.hidden = !msg;
 }
+async function clerkToken(){
+  // Clerk's script is added by the Worker; wait briefly for it, then ask
+  // for a fresh token so an old cookie never fails a request.
+  for (let i = 0; i < 40 && !window.__clerkLoaded; i++) await new Promise(r => setTimeout(r, 150));
+  try { return (window.Clerk && window.Clerk.session) ? await window.Clerk.session.getToken() : null; } catch(e){ return null; }
+}
+async function syncFetch(method, body){
+  const tok = await clerkToken();
+  const headers = {'Content-Type':'application/json'}; if (tok) headers.Authorization = 'Bearer ' + tok;
+  return fetch('/positions', {method, headers, credentials:'same-origin', body});
+}
 async function syncInit(){
-  if (!SYNC_URL || !/^https?:$/.test(location.protocol)) return;
+  if (!SYNC_ON) return;
   try {
-    const t = await fetch('/members/api/session', {credentials:'same-origin'});
-    if (!t.ok) { syncStatus('Sign in on the site to keep your watchlist across devices.', 'muted'); return; }
-    sync.token = (await t.text()).trim();
-    const r = await fetch(SYNC_URL + '/positions', {headers:{Authorization:'Bearer ' + sync.token}});
+    const r = await syncFetch('GET');
+    if (r.status === 401 || r.status === 403) { syncStatus('Sign in to keep your watchlist across devices.', 'muted'); return; }
     if (!r.ok) throw new Error('positions ' + r.status);
     const remote = await r.json();
     const localCount = Object.keys(watch).length, remoteCount = Object.keys(remote.positions||{}).length;
@@ -478,9 +488,7 @@ async function syncInit(){
   } catch(e){ sync.state = 'error'; syncStatus('Could not reach the sync service; using this browser\u2019s copy.', 'muted'); }
 }
 async function syncPush(){
-  if (!sync.token) return;
-  const r = await fetch(SYNC_URL + '/positions', {method:'PUT', headers:{Authorization:'Bearer ' + sync.token, 'Content-Type':'application/json'},
-    body: JSON.stringify({positions: watch})});
+  const r = await syncFetch('PUT', JSON.stringify({positions: watch}));
   if (!r.ok) throw new Error('push ' + r.status);
 }
 function syncQueue(){
@@ -1199,7 +1207,7 @@ def render(
     sealed: Sequence[dict] | None = None,
     playbook: dict[str, Any] | None = None,
     depth: list[dict] | None = None,
-    sync_url: str | None = None,
+    sync_on: bool = False,
     record: dict[str, Any] | None = None,
     track_url: str = "",
 ) -> str:
@@ -1266,7 +1274,7 @@ def render(
                       "names": m.get("names") or []} for m in releases],
         "sealed": sealed_rows,
         "sealed_checklist": SEALED_CHECKLIST,
-        "sync_url": sync_url or "",
+        "sync_on": bool(sync_on),
     }, separators=(",", ":")).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
 
     setchips = "".join(f'<button data-set="{_esc(s)}">{_esc(s)}</button>' for s in sets)

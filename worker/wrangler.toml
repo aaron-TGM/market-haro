@@ -1,30 +1,42 @@
-# Market Haro sync + alerts. Deploy: `cd worker && npx wrangler deploy`.
+# Market Haro at marketharo.gundeck.ai. Deploy: `cd worker && npx wrangler deploy`.
 #
-# What this Worker is: the one small server behind an otherwise static
-# product. It keeps each subscriber's watchlist and holdings so they follow
-# the member across devices, and it sends the daily alert email. It trusts
-# Ghost for identity -- a member proves who they are with the signed JWT
-# Ghost hands out at /members/api/session, verified here against the site's
-# published keys -- so there is no login, no password, nothing to leak.
+# One Worker, one page. It serves the report the pipeline pushes each morning
+# to signed-in GUNDECK users whose account carries a Market Haro subscription,
+# the splash page to everyone else, the public track record, and each user's
+# watchlist so it follows them across devices. Identity is Clerk's -- the same
+# instance gundeck.ai signs people in with -- verified here against its
+# published keys. Billing is Stripe's, on gundeck.ai; its webhook writes the
+# entitlement onto the Clerk user and this Worker only reads it.
 #
-# Secrets (set with `npx wrangler secret put NAME`):
-#   ADMIN_SECRET      shared with the pipeline; guards /admin/*
-#   RESEND_API_KEY    optional; without it alerts are computed but not sent
-# Vars (below): GHOST_URL is the members' site and the only allowed origin.
+# Secret (set with `npx wrangler secret put ADMIN_SECRET`): shared with the
+# pipeline, which pushes the pages with it. Nothing else is secret.
 
 name = "market-haro"
 main = "src/index.js"
 compatibility_date = "2026-06-01"
 
+# The custom domain. Add the DNS record in the Cloudflare dashboard first
+# (marketharo CNAME to the workers.dev address, proxied) or let this create it.
+routes = [{ pattern = "marketharo.gundeck.ai", custom_domain = true }]
+
 [vars]
-GHOST_URL = "https://your-site.ghost.io"
-MAIL_FROM = "Market Haro <haro@gundeck.ai>"
-REPORT_URL = "https://your-site.ghost.io/market-haro/"
+# Clerk. The issuer is the Frontend API host; the publishable key is public.
+CLERK_ISSUER = "https://clerk.gundeck.ai"
+CLERK_PUBLISHABLE_KEY = "pk_live_replace-me"
+# Where the splash sends people. All on gundeck.ai.
+SIGN_IN_URL = "https://gundeck.ai/sign-in?redirect_url=https%3A%2F%2Fmarketharo.gundeck.ai%2F"
+CHECKOUT_MONTHLY_URL = "https://gundeck.ai/pricing#market-haro"
+CHECKOUT_ANNUAL_URL = "https://gundeck.ai/pricing#market-haro"
+MANAGE_URL = "https://gundeck.ai/account"
+# The entitlement, as Stripe's webhook writes it onto the Clerk user and
+# Clerk's session-token template copies it into the token. Defaults look at
+# public_metadata.marketHaro.status (or market_haro) for active|trialing.
+# Override the path or the values here if the webhook writes a different
+# shape; set ENTITLEMENT_PLAN to a plan slug instead if Clerk Billing is used.
+ENTITLEMENT_PATH = ""
+ENTITLEMENT_VALUES = "active,trialing"
+ENTITLEMENT_PLAN = ""
 
 [[kv_namespaces]]
 binding = "HARO"
 id = "replace-with-your-kv-namespace-id"
-
-[triggers]
-# 13:40 UTC: the pipeline runs at 13:10 and pushes the issue when it is done.
-crons = ["40 13 * * *"]

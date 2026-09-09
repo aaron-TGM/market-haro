@@ -6,8 +6,10 @@ sealed product, shows what is under every box, marks every chart with the set ca
 scores its own past calls in public. No newsletter, no written commentary beyond a one-line
 case per card: the numbers are the product and the reader draws the conclusion.
 
-One paid tier: **$8 a month or $88 a year, 7-day trial, no free tier.** One page, rebuilt
-daily by GitHub Actions and served behind a login; how it is hosted is in DEPLOY.md.
+One paid tier: **$8 a month or $88 a year, 7-day trial, no free tier** — an add-on to a
+GUNDECK.AI account. One page at marketharo.gundeck.ai, rebuilt daily by GitHub Actions and
+served by one Cloudflare Worker to signed-in GUNDECK users with the subscription; identity
+is Clerk's and billing is Stripe's, both gundeck.ai's own. DEPLOY.md has the setup.
 
 ```
 Prices through 2026-09-05 · 127 cards pass the screen · 207 screened
@@ -103,7 +105,7 @@ points across 13 months, so a fresh clone does not need to.
 | `radar backfill --range quarter\|year` | history for cards that lack it |
 | `radar invest [--date] [--today] [--no-fetch] [--no-art-fetch]` | the whole issue: report, track record, CSV |
 | `radar run` | sync then invest (what the workflow calls) |
-| `radar publish [--dry-run] [--no-email]` | Ghost pages + email, Worker issue push |
+| `radar publish [--dry-run]` | push the report and the track record to the site Worker |
 | `radar export` / `radar restore` | the NDJSON archive, both directions |
 | `radar validate [--horizon]` | walk-forward: does the score still separate winners? |
 | `radar snipe` | live entry prices and copy counts for the movers |
@@ -114,14 +116,14 @@ points across 13 months, so a fresh clone does not need to.
 
 ```
 radar/            the package — see docs/ARCHITECTURE.md for what each module is for
-worker/           the sync + alerts Cloudflare Worker (npm test replays the Python cases)
+worker/           the site: serves and gates the page, keeps watchlists (npm test signs test tokens)
 data/history/     the archive: one NDJSON file per month, the one thing not rebuildable
 data/rankings/    every issue's ranking, as published; the track record is built from these
 tests/            python tests/test_pipeline.py
 docs/METHOD.md    how the score, gates, settled price and validation were measured
 docs/ARCHITECTURE.md   modules, data flow, what is a cache and what is an asset
-docs/LAUNCH.md    the launch plan: Ghost, Stripe, the Worker, the GUNDECK launch, operations
-DEPLOY.md         GitHub Actions, Ghost, the Worker, Resend, costs
+docs/LAUNCH.md    the launch plan, and the appendix of changes on gundeck.ai
+DEPLOY.md         GitHub Actions, the Worker, Clerk, costs
 CHANGELOG.md      what changed, by issue
 ```
 

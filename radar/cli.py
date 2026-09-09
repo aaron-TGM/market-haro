@@ -296,9 +296,9 @@ def cmd_invest(cfg, args) -> int:
         # The public track record, rebuilt every issue from the stored rankings,
         # and its one-sentence summary, which the page carries.
         pub_cfg = cfg.raw.get("publish") or {}
-        report_url = pub_cfg.get("report_url") or None
-        track_url = pub_cfg.get("track_record_url") or (
-            report_url.rstrip("/").rsplit("/", 1)[0] + "/track-record/" if report_url else "track-record.html")
+        site_url = (pub_cfg.get("site_url") or "").rstrip("/")
+        report_url = (site_url + "/") if site_url else None
+        track_url = (site_url + "/track-record") if site_url else "track-record.html"
         track_html, track_recs = track_mod.build(cfg.path("data"), series, obs, report_url=report_url or "")
         track_sm = track_mod.summary(track_recs)
         track_sm["headline"] = track_mod.headline(track_sm)
@@ -316,7 +316,7 @@ def cmd_invest(cfg, args) -> int:
             sealed=sealed_rows,
             playbook=pbook,
             depth=depth,
-            sync_url=(cfg.raw.get("publish") or {}).get("sync_url") or None,
+            sync_on=bool(site_url),
             record=track_sm,
             track_url=track_url,
             art_cache=cfg.path("data/images"),
@@ -327,17 +327,6 @@ def cmd_invest(cfg, args) -> int:
         (out.parent / "track-record.html").write_text(track_html, encoding="utf-8")
         (out.parent / "track.json").write_text(json.dumps(track_sm, indent=1), encoding="utf-8")
         print(f"\nDashboard -> {out}")
-
-        # The compact issue the alert service reads: today's and the previous
-        # issue's state for every ranked card, keyed like the page keys rows.
-        from . import alerts as alerts_mod
-
-        ranked_rows = [dict(r, rank=i) for i, r in enumerate(
-            [x for x in ranked if not x.get("disqualified")], 1)]
-        iss = alerts_mod.issue(ranked_rows, obs_date=obs, prev_rows=(prev or {}).get("rows"),
-                               releases=calendar, sealed=sealed_rows, report_url=report_url or "")
-        out_issue = out.parent / "issue.json"
-        out_issue.write_text(json.dumps(iss, separators=(",", ":"), sort_keys=True), encoding="utf-8")
 
         (out.parent / "playbook.json").write_text(json.dumps(pbook.get("summary"), sort_keys=True), encoding="utf-8")
 
@@ -452,80 +441,40 @@ def _today() -> str:
 
 
 def cmd_publish(cfg, args) -> int:
-    """Push today's report and digest to Ghost.
+    """Push today's report and the track record to the Worker at marketharo.gundeck.ai.
 
     Reads what `radar invest` wrote to out/ rather than rebuilding, so what
-    gets emailed is byte-for-byte what was tested. Credentials come from the
-    environment only -- GHOST_URL and GHOST_ADMIN_KEY -- never from config.
+    is served is byte-for-byte what was tested. The Worker's URL is config
+    (`publish.site_url`); the shared secret is the environment's
+    HARO_ADMIN_SECRET, never config. Two PUTs; nothing else leaves.
     """
     import os
 
-    from . import ghost as ghost_mod
-
-    url = os.getenv("GHOST_URL")
-    key = os.getenv("GHOST_ADMIN_KEY")
-    if not url or not key:
-        print("GHOST_URL and GHOST_ADMIN_KEY must be set. Nothing published.")
+    pcfg = cfg.raw.get("publish") or {}
+    site = (pcfg.get("site_url") or "").rstrip("/")
+    secret = os.getenv("HARO_ADMIN_SECRET")
+    if not site or not secret:
+        print("publish.site_url (config) and HARO_ADMIN_SECRET (environment) must both be set. Nothing published.")
         return 2
-
     out_dir = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html")).parent
-    report = out_dir / "dashboard.html"
-    digest_html = out_dir / "digest.html"
-    meta_path = out_dir / "digest.json"
-    for p in (report, digest_html, meta_path):
+    pages = [("report", out_dir / "dashboard.html"), ("track", out_dir / "track-record.html")]
+    for _, p in pages:
         if not p.exists():
             print(f"Missing {p} -- run `radar invest` first.")
             return 1
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    pcfg = cfg.raw.get("publish") or {}
-    brand = pcfg.get("brand", "Market Haro")
-
-    g = ghost_mod.Ghost(url, key)
     if args.dry_run:
-        site = g.site()
-        print(f"Would publish to {site.get('title') or url}:")
-        print(f"  page  /{pcfg.get('report_slug', ghost_mod.REPORT_SLUG)}  ({report.stat().st_size:,} bytes)")
-        print(f"  post  {meta['subject']}  (email={'no' if args.no_email else 'yes'})")
+        for key, p in pages:
+            print(f"Would PUT {site}/admin/{key}  ({p.stat().st_size:,} bytes)")
         return 0
+    import requests
 
-    page = g.upsert_report_page(
-        report.read_text(encoding="utf-8"),
-        title=f"{brand} — {meta['date']}",
-        slug=pcfg.get("report_slug", ghost_mod.REPORT_SLUG),
-    )
-    print(f"Report page -> {page.get('url') or page.get('slug')}")
-
-    track = out_dir / "track-record.html"
-    if track.exists():
-        tp = g.upsert_report_page(track.read_text(encoding="utf-8"), title=f"{brand} — track record",
-                                  slug=pcfg.get("track_slug", "track-record"), visibility="public")
-        print(f"Track record (public) -> {tp.get('url') or tp.get('slug')}")
-
-    post = g.publish_digest(
-        digest_html.read_text(encoding="utf-8"),
-        title=meta["subject"],
-        slug=f"{pcfg.get('digest_slug_prefix', 'market-haro')}-{meta['date']}",
-        segment=pcfg.get("email_segment", "status:-free"),
-        email=not args.no_email,
-    )
-    print(f"Digest post -> {post.get('url') or post.get('slug')}"
-          f"{'  (emailed to ' + pcfg.get('email_segment', 'status:-free') + ')' if not args.no_email else '  (not emailed)'}")
-    print(f"{g.requests_made} Ghost requests.")
-
-    # The alert service gets today's issue. Optional: no URL, no push.
-    sync_url = (pcfg.get("sync_url") or "").rstrip("/")
-    secret = os.getenv("HARO_ADMIN_SECRET")
-    issue_path = out_dir / "issue.json"
-    if sync_url and secret and issue_path.exists():
-        import requests
-
-        r = requests.put(f"{sync_url}/admin/issue", data=issue_path.read_bytes(),
-                         headers={"X-Admin-Secret": secret, "Content-Type": "application/json"}, timeout=30)
-        print(f"Issue -> {sync_url}/admin/issue  ({r.status_code})")
+    for key, p in pages:
+        r = requests.put(f"{site}/admin/{key}", data=p.read_bytes(),
+                         headers={"X-Admin-Secret": secret, "Content-Type": "text/html; charset=utf-8"}, timeout=60)
+        print(f"{key:<6} -> {site}/admin/{key}  ({r.status_code}, {p.stat().st_size:,} bytes)")
         if not r.ok:
+            print(r.text[:300])
             return 1
-    elif sync_url:
-        print("sync_url is set but HARO_ADMIN_SECRET is not; the alert service was not updated.")
     return 0
 
 
@@ -775,11 +724,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--no-art-fetch", action="store_true",
                    help="embed only card art already cached under data/images; never call the image CDN")
 
-    pb = sub.add_parser("publish", help="push today's report and digest to Ghost")
+    pb = sub.add_parser("publish", help="push today's report and the track record to the site Worker")
     pb.add_argument("--out", help="where radar invest wrote the dashboard")
     pb.add_argument("--dry-run", action="store_true", help="show what would be published")
-    pb.add_argument("--no-email", action="store_true",
-                    help="publish the digest post without sending the email")
     r.add_argument("--date", help="observation date (YYYY-MM-DD), default = latest")
     r.add_argument("--out", help="output html path")
     r.add_argument("--top", type=int, default=25, help="rows to print to the terminal")

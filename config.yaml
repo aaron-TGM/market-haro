@@ -141,28 +141,16 @@ watchlist:
     - 684008   # Giant Killing -- Starter Deck 09: Destiny Ignition
     - 707579   # Amuro Ray R+ -- Freedom Ascension
 
-# Publishing to Ghost. Credentials are NOT here -- GHOST_URL and GHOST_ADMIN_KEY
-# come from the environment (a repo secret in CI, .env locally). This block is
-# the non-secret shape of what gets published.
+# Where the report lives: one Cloudflare Worker (worker/) at the site URL
+# below. `radar publish` PUTs the built report and the track record to it with
+# HARO_ADMIN_SECRET from the environment (a repo secret in CI, .env locally).
+# The Worker shows the report to signed-in GUNDECK users with a Market Haro
+# subscription and the splash page to everyone else.
 publish:
   brand: Market Haro
-  # Pricing is set in Ghost (Settings -> Membership), not here. Recorded so the
-  # repo says what the product is: one paid tier, $8/month or $88/year, a
-  # 7-day trial, no free tier, no founding discount. Everything published is
-  # visibility `paid`.
+  # Pricing is set in Stripe on gundeck.ai, not here. Recorded so the repo
+  # says what the product is.
   pricing_note: "$8/mo or $88/yr, single paid tier, 7-day trial, no free tier"
-  # The members-only page that always holds the latest report. Same slug every
-  # day, so yesterday's email opens today's report.
-  report_slug: market-haro
-  # Daily digest posts get this prefix plus the date.
-  digest_slug_prefix: market-haro
-  # Ghost member filter for the email send. status:-free = every paying member.
-  email_segment: "status:-free"
-  # The sync + alerts Worker (worker/). Leave empty and the page keeps the
-  # watchlist in the browser only; set it and signed-in members get their
-  # watchlist across devices and the daily alert email. The admin secret the
-  # pipeline pushes with comes from the environment (HARO_ADMIN_SECRET).
-  sync_url: ""
-  # Absolute URL of the report page, for the button in the email. Set once the
-  # Ghost site exists, e.g. https://gundeck.ai/market-haro/
-  report_url: ""
+  # The Worker's URL. Empty = nothing is published and the page keeps the
+  # watchlist in the browser only.
+  site_url: "https://marketharo.gundeck.ai"

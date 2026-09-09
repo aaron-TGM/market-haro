@@ -1,5 +1,5 @@
 # Daily run: rebuild the database from the archive, sync today's prices, render
-# the dashboard, commit the archive back, publish the dashboard privately.
+# the dashboard, commit the archive back, push the page to the site Worker.
 #
 # WHY IT RESTORES FIRST
 # The SQLite database is NOT in the repo. Committing a binary that git rewrites
@@ -10,19 +10,17 @@
 #
 # WHAT IT NEEDS
 #   secrets.TCGAPI_KEY             your tcgapi.dev key                  required
-#   secrets.GHOST_URL              https://your-site.ghost.io           optional
-#   secrets.GHOST_ADMIN_KEY        Ghost Admin API key, "<id>:<secret>"  optional
-#   secrets.HARO_ADMIN_SECRET      the sync/alerts Worker's admin secret  optional
+#   secrets.HARO_ADMIN_SECRET      the site Worker's admin secret       optional
 #
-# With the Ghost pair set, every run emails the digest to paying members and
-# refreshes the members-only report page. Without it the report is still built
-# and kept as a workflow artifact; nothing fails, the publish step is skipped.
+# With the secret set, every run pushes the report and the track record to
+# marketharo.gundeck.ai. Without it the report is still built and kept as a
+# workflow artifact; nothing fails, the publish step is skipped.
 #
 # THE PROMISE TO SUBSCRIBERS
-# An issue goes out every day the workflow runs, including days the price feed
-# is late or partial. The page and the email both say how old the prices are.
-# What must NOT happen is a silent skip, so the Ghost step runs even when sync
-# reported a problem -- the digest carries the feed age in its first line.
+# The page is refreshed every day the workflow runs, including days the price
+# feed is late or partial; the page says how old its prices are. What must NOT
+# happen is a silent skip, so the publish step runs even when sync reported a
+# problem.
 
 name: daily
 
@@ -55,8 +53,6 @@ jobs:
       TCGAPI_KEY: ${{ secrets.TCGAPI_KEY }}
       # Hoisted so the publish steps can test them -- `secrets` is not available
       # in a step-level `if`, but `env` is.
-      GHOST_URL: ${{ secrets.GHOST_URL }}
-      GHOST_ADMIN_KEY: ${{ secrets.GHOST_ADMIN_KEY }}
       HARO_ADMIN_SECRET: ${{ secrets.HARO_ADMIN_SECRET }}
 
     steps:
@@ -132,6 +128,6 @@ jobs:
             git push
           fi
 
-      - name: Publish to Ghost (email the digest, refresh the report page)
-        if: env.GHOST_URL != '' && env.GHOST_ADMIN_KEY != ''
+      - name: Push the page to marketharo.gundeck.ai
+        if: env.HARO_ADMIN_SECRET != ''
         run: python -m radar publish

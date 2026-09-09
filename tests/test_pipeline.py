@@ -1182,43 +1182,6 @@ def test_digest_snapshot_round_trips_through_disk():
         assert "series" not in b["rows"][0]
 
 
-def test_ghost_token_is_a_valid_hs256_jwt():
-    """Ghost wants HS256, kid = key id, aud /admin/, five-minute expiry."""
-    import base64
-    import hashlib
-    import hmac
-    import json
-
-    from radar import ghost
-
-    key_id = "64f1c2a9b8e7d6c5a4b3f2e1"
-    secret_hex = "0f" * 32
-    tok = ghost.token(f"{key_id}:{secret_hex}", now=1_700_000_000)
-    head_b, body_b, sig_b = tok.split(".")
-
-    def dec(x):
-        return json.loads(base64.urlsafe_b64decode(x + "=" * (-len(x) % 4)))
-
-    head, body = dec(head_b), dec(body_b)
-    assert head == {"alg": "HS256", "typ": "JWT", "kid": key_id}
-    assert body == {"iat": 1_700_000_000, "exp": 1_700_000_300, "aud": "/admin/"}
-    expected = hmac.new(bytes.fromhex(secret_hex), f"{head_b}.{body_b}".encode(),
-                        hashlib.sha256).digest()
-    assert base64.urlsafe_b64decode(sig_b + "=" * (-len(sig_b) % 4)) == expected
-
-    # A key without the id:secret shape is refused with a clear message.
-    try:
-        ghost.token("not-a-key")
-    except ValueError as exc:
-        assert "id>:<hex secret" in str(exc)
-    else:
-        raise AssertionError("malformed key accepted")
-
-    # The client never puts credentials in config -- URL and key are explicit.
-    g = ghost.Ghost("https://example.ghost.io/", f"{key_id}:{secret_hex}")
-    assert g.base == "https://example.ghost.io/ghost/api/admin"
-
-
 def test_features_measure_the_90_day_window_even_when_the_series_runs_a_year():
     """A year of weekly points behind the daily 90 days must not turn
     change_90d into change-since-launch; it should only feed change_1y."""
@@ -1281,56 +1244,6 @@ def test_release_playbook_measures_prior_new_and_market_with_counts():
     assert ev["prior"]["d30"] < 0 < ev["new"]["d30"]
     assert ev["market"]["n"] == 20 and ev["market"]["n30"] == 20
     assert pb["summary"]["prior"]["d30"][1] == 1
-
-
-def test_alert_rules_fire_on_change_only_and_match_the_worker():
-    """Alerts are about change: a broken trend alerts once, a card listed
-    below sold alerts when it crosses, top-20 moves alert on the move, and
-    the release warning fires at exactly seven days. The cases are written
-    out for the Worker's test suite so the JS mirror is held to them."""
-    import json
-
-    from radar import alerts
-
-    rows = [
-        {"card_id": 1, "printing": "Holofoil", "name": "Wing Zero", "set_name": "NR", "market_price": 300.0,
-         "floor_low": 290.0, "rank": 1, "consistency_pct": 40, "change_7d": -2.0, "ask_premium_pct": -4.0},
-        {"card_id": 2, "printing": "Normal", "name": "Resource", "set_name": "NR", "market_price": 100.0,
-         "rank": 25, "consistency_pct": 80, "change_7d": 1.0, "ask_premium_pct": 3.0},
-        {"card_id": 3, "printing": "Normal", "name": "Epyon", "set_name": "DI", "market_price": 150.0,
-         "rank": 5, "consistency_pct": 80, "change_7d": 1.0, "ask_premium_pct": 1.0},
-        {"card_id": 4, "printing": "Normal", "name": "Steady", "set_name": "DI", "market_price": 50.0,
-         "rank": 30, "consistency_pct": 30, "change_7d": -1.0, "ask_premium_pct": -5.0},
-    ]
-    prev = [
-        {"card_id": 1, "printing": "Holofoil", "rank": 3, "consistency_pct": 80, "change_7d": 1.0, "ask_premium_pct": 2.0},
-        {"card_id": 2, "printing": "Normal", "rank": 10, "consistency_pct": 80, "change_7d": 1.0, "ask_premium_pct": 3.0},
-        {"card_id": 4, "printing": "Normal", "rank": 31, "consistency_pct": 30, "change_7d": -1.0, "ask_premium_pct": -5.0},
-    ]
-    rel = [{"date": "2026-09-13", "label": "ST11–14", "names": ["Starter Deck 11", "Starter Deck 12"]}]
-    iss = alerts.issue(rows, obs_date="2026-09-06", prev_rows=prev, releases=rel, report_url="https://x/r/")
-    positions = {"1|Holofoil": {"qty": 2, "cost": 250.0}, "2|Normal": {"qty": None, "cost": None},
-                 "3|Normal": {"qty": None, "cost": None}, "4|Normal": {"qty": None, "cost": None},
-                 "9|Normal": {"qty": 1, "cost": 1.0}}
-    got = alerts.evaluate(iss, positions, today="2026-09-06")
-    kinds = [(a["kind"], a["key"]) for a in got]
-    assert kinds == [("trend_broke", "1|Holofoil"), ("left_top_20", "2|Normal"),
-                     ("ask_below_sold", "1|Holofoil"), ("entered_top_20", "3|Normal"), ("release_soon", None)]
-    assert got[0]["text"].endswith("— you hold it.")
-    # Steady was already broken and already below sold: nothing new, no alert.
-    assert not any(a["key"] == "4|Normal" for a in got)
-    # Six days out, no release warning; run the same day again, same result (no state here).
-    assert not any(a["kind"] == "release_soon" for a in alerts.evaluate(iss, positions, today="2026-09-05"))
-    p = alerts.pnl(iss, positions)
-    assert p == {"positions": 1, "basis": 500.0, "value": 600.0, "pnl": 100.0, "pct": 20.0}
-
-    cases = [{"name": "the documented case", "issue": iss, "positions": positions, "today": "2026-09-06",
-              "expected": [[a["kind"], a["key"], a["text"]] for a in got],
-              "pnl": {"positions": 1, "pnl": 100.0}},
-             {"name": "no positions, no release", "issue": {**iss, "next_release": None}, "positions": {},
-              "today": "2026-09-06", "expected": [], "pnl": None}]
-    out = Path(__file__).resolve().parent.parent / "worker" / "test" / "alerts_cases.json"
-    out.write_text(json.dumps(cases, indent=1, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def test_track_record_scores_each_issue_against_its_pool_and_keeps_losers():
@@ -1437,15 +1350,14 @@ def test_haro_page_carries_the_subscriber_contract():
     for k in ("price", "entry", "prem", "c7", "c90", "sales", "score", "buy", "settled"):
         assert k in payload["tips"]
 
-    # Nothing the reader types leaves the browser: no form posts, no fetch.
-    # The page talks to exactly two places, both only when a sync URL is
-    # configured and the reader is signed in on the site: Ghost's own session
-    # endpoint (same origin) and the sync service. No form, no third party.
+    # Nothing the reader types leaves the browser: no form posts, and the one
+    # fetch target is the page's own origin, /positions, used only when the
+    # site Worker serves the page (sync_on) and the reader is signed in.
     assert "<form" not in html and "XMLHttpRequest" not in haro.JS
     fetches = re.findall(r"fetch\(([^,)]+)", haro.JS)
-    assert sorted(set(fetches)) == ["'/members/api/session'", "SYNC_URL + '/positions'"], fetches
-    assert "if (!SYNC_URL" in haro.JS
-    assert '"sync_url":""' in html  # nothing configured here
+    assert sorted(set(fetches)) == ["'/positions'"], fetches
+    assert "if (!SYNC_ON" in haro.JS
+    assert '"sync_on":false' in html  # nothing configured here
     # Storage is guarded -- a private window must not break the page.
     assert "try {" in haro.JS and "localStorage" in haro.JS
 

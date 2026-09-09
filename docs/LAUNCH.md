@@ -1,191 +1,115 @@
-# Launch plan: Market Haro on Ghost, sold to GUNDECK customers
+# Launch plan: Market Haro at marketharo.gundeck.ai
 
-From the repo you have to a paying subscriber opening the report with a magic link. Six phases, about a week of calendar time, roughly six hours of your hands. Every step names the screen it happens on. Nothing here requires code changes; everything the code needs is already in the repo.
+From the repo you have to a GUNDECK customer opening the report with the account they already own. Four phases on this side, one appendix of changes on the gundeck.ai side, about three hours of your hands. Every step names the screen it happens on.
 
-**How the "tokenized" login works, in one paragraph, so you can explain it to customers:** Ghost does not use passwords. A member enters their email, Ghost sends a one-time sign-in link, and clicking it sets a signed session cookie for your site. The report is a members-only page on that site, so the cookie is the access control. For the watchlist and alerts, the page asks Ghost for a short-lived signed token for the logged-in member (`/members/api/session`) and hands it to the Worker, which verifies the signature against your site's published keys. Nobody creates an account, nobody stores a password, and the Worker never holds a Ghost admin key. Stripe holds the card; Ghost holds the membership; you hold the data.
+**How access works, in one paragraph, so you can explain it to customers:** Market Haro is an add-on to a GUNDECK.AI account. You sign in with the same account, on a subdomain of the same site; Clerk — the login gundeck.ai already uses — hands the browser a short-lived signed token, and the Market Haro server checks that signature and reads one field on your account: whether Stripe says you have an active Market Haro subscription. That field is written by Stripe's webhook on gundeck.ai when you subscribe, cancel or lapse. No second password, no second account, no email newsletter. The report is the product.
 
 ---
 
-## Phase 0 — Accounts and decisions (30 minutes)
+## Phase 0 — Accounts and decisions (15 minutes)
 
 | Need | Choice | Why |
 |---|---|---|
-| Ghost | **Ghost(Pro)** on a plan that allows custom integrations (the Admin API is how the pipeline publishes), or self-hosted Ghost 5.x | Ghost(Pro) sends the email, handles Stripe, and updates itself. Self-host only if you already run a server. |
-| Domain | `haro.gundeck.ai` (recommended) or a standalone domain | Subdomain keeps the brand and makes the GUNDECK cross-sell natural. |
-| Stripe | Your existing Stripe account, or a new one for this product | Ghost connects with one click; payouts land in Stripe as usual. |
-| Email sending | Ghost(Pro) sends the daily issue. **Resend** sends per-member alerts from the Worker | Ghost can't send a different email to each member; the Worker can. |
-| Cloudflare | Free account, one Worker, one KV namespace | Watchlist sync and alerts. |
-| GitHub | Private repo, Actions enabled | The daily run. Free tier covers it. |
+| Identity | gundeck.ai's Clerk instance (`clerk.gundeck.ai`) | One account, one login; the add-on framing is only true if it is the same account. |
+| Billing | gundeck.ai's Stripe account: one Product, two Prices | Same payout, same customer record, self-serve cancel through the portal you already have. |
+| Domain | `marketharo.gundeck.ai` | A subdomain of the Clerk primary domain, so the signed-in state carries over. |
+| Cloudflare | Free account, one Worker, one KV namespace | Serves the page, gates it, keeps watchlists. |
+| GitHub | Private repo, Actions enabled | The daily run. |
 | tcgapi.dev | Pro plan, the key already in your `.env` | ~60 requests a day of 10,000. |
 
-Decide once, before Phase 2: **monthly $8, yearly $88, 7-day trial, no free tier, no founding discount, no member coupon.** One price for everyone; the 7-day trial is the offer.
+Decided: **$8 a month, $88 a year, 7-day trial, no free tier, no discounts, no coupon.** One price for everyone; the trial is the offer.
 
 ---
 
-## Phase 1 — The pipeline runs by itself (Day 1, ~1 hour)
+## Phase 1 — The pipeline runs by itself (Day 1, ~45 minutes)
 
-1. **Push the repo** to a private GitHub repository.
-   ```bash
-   cd gundam-price-radar
-   git remote add origin git@github.com:aaron-TGM/gundam-price-radar.git
-   git push -u origin main
-   git ls-files | grep -i "\.env$"     # must print nothing
-   ```
-2. **Repo secrets** — Settings → Secrets and variables → Actions → New repository secret:
-   `TCGAPI_KEY` = your tcgapi.dev key, and `OPENAI_API_KEY` = a key from
-   platform.openai.com, which lets GPT-5.6 Sol write each card's case, the email's opening
-   and the weekly-note draft (a dollar or two a day; without it the templates run).
-3. **Run it once by hand** — Actions → *daily* → Run workflow. Watch it: restore → sync → build → export → test → commit. Green means the archive committed a new day and `out/` was kept as a run artifact. Download the artifact and open `index.html`; it should be today's report.
-4. **Turn on failure email** — your GitHub profile → Settings → Notifications → Actions → *Send notifications for failed workflows*. This is the only monitoring you need: the issue goes out even on a late feed, so the failure you care about is the run itself.
+1. Push the repo (private). `git ls-files | grep -i env` must print only `.env.example`.
+2. Repo secrets: `TCGAPI_KEY`; `HARO_ADMIN_SECRET` after Phase 2 (a long random string you make up; the Worker gets the same value).
+3. Actions tab → *daily* → *Run workflow*. Watch it go green: restore, sync, build, tests, commit. Download the run artifact and open `dashboard.html` — that is what subscribers will see.
+4. Settings → Notifications → Actions → email on failure.
 
-*Check:* the `data/history/2026-09.ndjson` file in the repo grew by one day.
+## Phase 2 — The site (Day 1, ~45 minutes)
 
----
+DEPLOY.md §5 has the commands. In order: `wrangler login`; create the KV namespace and paste its id; `wrangler secret put ADMIN_SECRET`; fill `CLERK_PUBLISHABLE_KEY` and the gundeck.ai URLs in `wrangler.toml`; `wrangler deploy`; confirm `https://marketharo.gundeck.ai/health`. Then in Clerk: *Sessions → Customize session token* → add `"public_metadata": "{{user.public_metadata}}"`. Then add `HARO_ADMIN_SECRET` to GitHub and re-run the workflow; the last step pushes the pages. Open the site signed out: the splash.
 
-## Phase 2 — The Ghost site (Day 1–2, ~2 hours)
+## Phase 3 — gundeck.ai (Day 2, your side; the appendix below is the brief)
 
-**2a. Create the site and the domain.**
-Ghost(Pro) → new site → title *Market Haro*. Settings → General → set the site description to the one-liner: *The daily market terminal for people who invest in the Gundam Card Game.* Settings → Domain → add `haro.gundeck.ai`, then add the CNAME it gives you at your DNS host. Wait for the lock icon.
+Stripe Product and Prices, the webhook that writes the entitlement onto the Clerk user, the nav item, the pricing card, the account line. When the webhook has run once for your own account, open marketharo.gundeck.ai signed in: the report, and the watchlist line says "synced to your account".
 
-**2b. Connect Stripe.**
-Settings → Membership → *Connect with Stripe* → authorise. Use live mode. (Ghost takes 0% on Ghost(Pro); Stripe's usual fee applies.)
+## Phase 4 — Rehearsal, then launch (Day 2–3, ~1 hour)
 
-**2c. The tier.**
-Settings → Membership → Tiers → the default paid tier → rename to **Market Haro** →
-Monthly **$8**, Yearly **$88**, *Free trial days* **7**, *Welcome page* `/market-haro/`.
-Benefits (these print on the signup card — keep them to what the product does):
-- The daily report: every English single ranked, gated and explained
-- Market Haro 50, sealed screen, release playbook
-- Your holdings and alerts, across your devices
-- The daily email, and the weekly note
-
-**2d. Make "no free tier" real** — two settings people miss:
-Settings → Membership → *Subscription access* → **Paid-members only**.
-Settings → Portal → *Tiers* → untick the **Free** tier so it never appears on the signup screen. Also under Portal: turn on *Show portal button*, set the signup text to *Start 7-day trial*.
-
-**2e. The newsletter.**
-Settings → Newsletters → the default newsletter → name **Market Haro Daily**, sender name *Market Haro*, sender email `haro@gundeck.ai` (Ghost(Pro) will verify the address). Turn on *Show badge* off, *Feedback* off. Design: header with title only; the digest carries its own layout.
-
-**2f. The integration key the pipeline uses.**
-Settings → Integrations → *Add custom integration* → name **market-haro** → copy the **Admin API key** (`id:secret`) and the site URL.
-Back in GitHub → repo secrets: `GHOST_URL` = `https://haro.gundeck.ai`, `GHOST_ADMIN_KEY` = the key.
-
-**2g. Point the email at the report.**
-In `config.yaml` under `publish:` set `report_url: https://haro.gundeck.ai/market-haro/`. Commit and push.
-
-**2h. First publish, safely.**
-```bash
-GHOST_URL=https://haro.gundeck.ai GHOST_ADMIN_KEY=... python -m radar publish --dry-run
-GHOST_URL=https://haro.gundeck.ai GHOST_ADMIN_KEY=... python -m radar publish --no-email
-```
-Then open the site. `/market-haro/` should show the paywall to a stranger and the report to a paid member; `/track-record/` should be public. Trigger the workflow by hand once more and let it send the email for real — to you, because you are the only member.
-
-*Check:* you received the Market Haro Daily email, clicked *Open today's report*, and the report opened without a password prompt.
-
----
-
-## Phase 3 — The Worker: watchlists that follow the member, and alerts (Day 2, ~45 minutes)
-
-```bash
-cd worker
-npm install
-npx wrangler login
-npx wrangler kv namespace create HARO        # paste the id it prints into wrangler.toml
-```
-Edit `wrangler.toml`: `GHOST_URL = "https://haro.gundeck.ai"`, `REPORT_URL = "https://haro.gundeck.ai/market-haro/"`, `MAIL_FROM = "Market Haro <haro@gundeck.ai>"`.
-
-```bash
-npx wrangler secret put ADMIN_SECRET          # any long random string; keep it
-npx wrangler secret put RESEND_API_KEY        # from resend.com after verifying gundeck.ai
-npx wrangler deploy                           # prints the Worker URL
-```
-
-Then: `config.yaml → publish.sync_url` = the Worker URL. GitHub repo secret `HARO_ADMIN_SECRET` = the same string as above. Commit, push.
-
-**Resend:** resend.com → Domains → add `gundeck.ai` → add the DKIM/SPF records it gives you at your DNS host → verified. Create an API key with *sending* access only.
-
-*Check:* open the report as a signed-in member. The line under the index reads **Watchlist synced to your account.** Star a card on your laptop; open the report on your phone; it is there. Then, from your machine:
-```bash
-curl -X POST -H "X-Admin-Secret: $HARO_ADMIN_SECRET" https://<worker>/admin/alerts/run
-```
-It answers with `members`, `sent`, `skipped`. If you hold something that broke trend today, you have an email.
-
----
-
-## Phase 4 — Rehearsal: the subscriber journey, end to end (Day 3, ~1 hour)
-
-Do this with a second email address you control, on your phone, without touching the admin.
-
-1. Open `haro.gundeck.ai`. You should see the track record and a *Start 7-day trial* button. Nothing else is readable.
-2. Start the trial. Stripe asks for a card. Choose monthly. After checkout Ghost lands you on `/market-haro/` — the report, signed in, no password.
-3. Enter a budget, tap a row, star two cards, enter copies and cost on one. Reload: it persists. Open on another device: it is there.
-4. Wait for the next morning's email (or trigger the workflow by hand). The email arrives from *Market Haro*, the button opens the report, you are still signed in.
-5. Sign out (Portal → *Sign out*). Reopen the report: paywall. Click *Sign in*, enter the email, click the link in the email: report. That link is the "tokenized login" — no password anywhere.
-6. Cancel the trial from Portal → *Manage subscription*. Access ends at the trial's end; Ghost handles the Stripe side.
-7. In Ghost admin → Members, delete the test member.
-
-If any step fails, fix it before Phase 5. The three most common: the report page not `paid` (re-run `radar publish`), the free tier still visible in Portal (2d), sender email unverified (2e).
-
----
-
-## Phase 5 — Launch to GUNDECK customers (Day 4–7)
-
-You have paying GUNDECK.AI customers (30-day Pro at $3, lifetime at $29). They are the first hundred subscribers if the ask is small. There is no member discount — one price, and the 7-day trial is the offer, which keeps the pitch to one sentence. Three moves:
-
-**5a. Comped seats for a dozen believers.** Ghost admin → Members → the member → *Complimentary*. Give the first ten to fifteen GUNDECK regulars who post decks or prices — the ones other players listen to — three free months in exchange for one thing: screenshots of the report in their communities. Their watchlists and alerts work like anyone else's.
-
-**5b. The email to your list.** From GUNDECK.AI, not from Market Haro, to every GUNDECK customer, sent the morning a good issue lands. Keep it short:
+With a second email on a phone: subscribe (trial) → open the report → star three cards, enter a holding → sign out → sign in → the holding is there → cancel from the account page → the site shows the splash again. Then the launch itself: a top-level *Market Haro* item in gundeck.ai's nav, the pricing card, one email to your customer list from GUNDECK.AI (below), and `/track-record` as the link you give strangers.
 
 > **Subject:** The market half of GUNDECK — Market Haro
 >
-> Every morning Market Haro measures the whole English Gundam market and tells you which cards are worth holding, which are listed ahead of themselves, what every set release did to prices, and what changed on the cards *you* follow. It scores its own past calls in public.
+> Every morning Market Haro measures the whole English Gundam market and ranks what is worth holding: every single scored, every box measured against the cards inside it, every chart marked with the set calendar, and a public record of every call scored a month later. Same account, one page, no newsletter.
 >
-> It's $8 a month or $88 a year, and the first week is free — you'll see seven issues before you're charged anything.
+> $8 a month or $88 a year, first week free. It's an add-on — billed separately from your GUNDECK plan, cancel any time.
 >
-> [Start the trial] · [See the public track record first]
+> [Open Market Haro] · [See the public track record]
 >
 > — Aaron
 
-Link the first button to the Portal signup URL and the second to `/track-record/`. Send it once, then a reminder to non-openers five days later, then stop.
-
-**5c. Inside gundeck.ai.** A single persistent line in the app for logged-in customers — *Market Haro: today's market, ranked. Seven days free →* — is worth more than any email. Put the live Market Haro 50 number in it if the app can fetch `data/index.ndjson` from the repo (it is public text; the last line is today's level).
-
-**5d. The public page.** `/track-record/` is the landing page a stranger should hit. Set it as the site's home page: Settings → Navigation → primary link *Track record* → `/track-record/`; and in Settings → General → *Publication home page* choose the track record page if your theme allows, otherwise pin it first in navigation. Add one line to it via the theme's code injection if you want a hero above it; the page itself stays generated.
+Send it once, a reminder to non-openers five days later, then stop.
 
 ---
 
-## Phase 6 — Operating it (weekly, ~20 minutes)
+## Operating it (weekly, ~10 minutes)
 
 | When | What | Where |
 |---|---|---|
-| Weekly | Write the note: `data/notes/YYYY-MM-DD.md`, a few hundred words, commit | repo |
-| Weekly | Glance at Ghost → Dashboard: new trials, conversions, churn, opens | Ghost admin |
-| Weekly | Glance at the last run's summary; if `sync` was red, check the feed age line in the email | GitHub Actions |
+| Weekly | Glance at the last run's summary; if `sync` was red, the page's freshness line says how old the prices are | GitHub Actions |
+| Weekly | Stripe → Subscriptions: trials, conversions, churn | Stripe |
 | Monthly (1st) | The workflow runs `radar validate` and commits it; read the verdict line in `data/validation_history.json`. Below +0.20 two months running is the signal to revisit the score | repo |
-| Monthly | Stripe payout reconciliation; refund anyone who asks within 14 days without a fight | Stripe |
-| Quarterly | Rotate `GHOST_ADMIN_KEY` and `ADMIN_SECRET`; confirm `.env` is still ignored | Ghost, Cloudflare, GitHub |
-| When a set releases | The chart marks appear on their own. Write the banlist, if there is one, into the note — the price data cannot see it | repo |
+| Quarterly | Rotate `ADMIN_SECRET` / `HARO_ADMIN_SECRET`; confirm `.env` is still ignored | Cloudflare, GitHub |
 
-Backups: the archive is in git; that is the backup. Ghost(Pro) backs up the site; Stripe holds billing. The only data of yours outside those is the Worker's KV (watchlists, emails, ~1 KB a member); export it quarterly with `npx wrangler kv key list` + `get`, or accept that its loss costs each member their starred list and nothing else.
-
----
+Backups: the archive is in git; that is the backup. Clerk holds accounts, Stripe holds billing. The only data of yours outside those is the Worker's KV (watchlists, ~1 KB a user, keyed by Clerk user id); export it quarterly with `npx wrangler kv key list` + `get`, or accept that its loss costs each user their starred list and nothing else.
 
 ## Money and terms, stated once
 
-- **Price:** $8/month, $88/year, 7-day trial, no free tier, no discounts.
-- **Refunds:** 14 days, no questions, from Stripe. Say it on the signup page; it lowers the barrier more than it costs.
-- **Terms:** two paragraphs on a public `/terms/` page: information only, not financial advice, cards can lose value, data from tcgapi.dev under commercial licence, you may cancel any time, we store your email and your watchlist and nothing else. The report footer already says the substantive part.
-- **Privacy:** the Worker stores the member's email (to send alerts) and watchlist, keyed by a hash. Ghost stores the membership. Stripe stores the card. Nothing is sold or shared.
-- **Running cost before the first subscriber:** Ghost(Pro) plan + tcgapi.dev Pro + a domain. Cloudflare, Resend and GitHub are free at this scale. Three subscribers cover it.
-
----
+- **Price:** $8/month, $88/year, 7-day trial, no free tier, no discounts. An add-on to GUNDECK.AI, billed separately.
+- **Refunds:** 14 days, no questions, from Stripe.
+- **Terms:** two paragraphs on gundeck.ai's existing terms page: information only, not financial advice, cards can lose value, data from tcgapi.dev under commercial licence, cancel any time, we store your watchlist and nothing else. The report footer already says the substantive part.
+- **Privacy:** the Worker stores the watchlist keyed by Clerk user id. Clerk stores the account. Stripe stores the card. Nothing is sold or shared.
+- **Running cost before the first subscriber:** tcgapi.dev Pro. Cloudflare and GitHub are free at this scale.
 
 ## The order, as a checklist
 
-- [ ] 0 · Decide the domain; confirm Ghost plan allows custom integrations
-- [ ] 1 · Repo pushed, `TCGAPI_KEY` set, one green run, failure notifications on
-- [ ] 2 · Site, domain, Stripe, tier ($8/$88/7 days), paid-only access, free tier hidden, newsletter sender verified, integration key, `report_url`, publish dry-run then `--no-email`, then a real send to yourself
-- [ ] 3 · Worker deployed, KV created, `ADMIN_SECRET` + `RESEND_API_KEY`, Resend domain verified, `sync_url` + `HARO_ADMIN_SECRET`, "synced to your account" seen, alert run answered
-- [ ] 4 · Full rehearsal with a second email on a phone: trial → report → watchlist → email → sign out → magic link → cancel
-- [ ] 5 · Offer created, comped seats given, GUNDECK email sent, in-app line live, track record as the front door
-- [ ] 6 · Weekly note written; the calendar reminder for the rest exists
+- [ ] 1 · Repo pushed, `TCGAPI_KEY` set, one green run, artifact opened, failure notifications on
+- [ ] 2 · Worker deployed on `marketharo.gundeck.ai`, KV id and publishable key in `wrangler.toml`, `ADMIN_SECRET` set both sides, Clerk session token carries `public_metadata`, `/health` ok, splash shows signed out
+- [ ] 3 · gundeck.ai: Product + two Prices, webhook writing `publicMetadata.marketHaro`, nav item, pricing card, account line (appendix)
+- [ ] 4 · Rehearsal on a second account: trial → report → watchlist survives sign out → cancel → splash. Then the email.
+
+---
+
+## Appendix — changes on gundeck.ai (the brief for Manus)
+
+Market Haro is a separate subscription sold as an add-on. gundeck.ai keeps owning identity (Clerk) and billing (Stripe); the Market Haro server only reads one field on the Clerk user. Four pieces of work.
+
+**A. Stripe.** One Product, "Market Haro", with two recurring Prices: `$8.00 / month` and `$88.00 / year`, both with a 7-day trial and no setup fee. Checkout Sessions for these two Prices must set `subscription_data.metadata.clerkUserId` (and `client_reference_id`) to the signed-in user's Clerk id, and use the existing Stripe Customer for that user if there is one (`customer` on the session) so one customer record holds the lifetime purchase and the subscription. `cancel_at_period_end` is the cancel path, through the existing customer portal.
+
+**B. The webhook.** On `customer.subscription.created`, `customer.subscription.updated` and `customer.subscription.deleted` for subscriptions whose Price belongs to the Market Haro Product, read `clerkUserId` from the subscription metadata (fall back to the customer's metadata) and set the Clerk user's public metadata:
+
+```json
+"publicMetadata": {
+  "marketHaro": {
+    "status": "active" | "trialing" | "past_due" | "canceled" | "unpaid",
+    "plan": "monthly" | "annual",
+    "currentPeriodEnd": 1767225600,
+    "stripeSubscriptionId": "sub_…"
+  }
+}
+```
+
+`status` is Stripe's subscription status verbatim. Merge, do not replace, the rest of `publicMetadata` (`PATCH /v1/users/{id}/metadata` on the Clerk Backend API merges). The Market Haro server treats `active` and `trialing` as entitled and everything else as not; it re-reads the token on every request, so the change is live within a minute of the webhook. Nothing else on gundeck.ai needs to know the field exists.
+
+**C. Clerk dashboard (one setting).** *Sessions → Customize session token*: add `"public_metadata": "{{user.public_metadata}}"`. Without it the token does not carry the field and every subscriber sees the splash. `marketharo.gundeck.ai` is a subdomain of the primary domain, so no satellite-domain setup is expected; if the splash shows "sign in" to a signed-in user, add it as a satellite under *Domains*.
+
+**D. gundeck.ai app.**
+- Nav: a top-level item **Market Haro** → `https://marketharo.gundeck.ai/`.
+- Pricing page: a fourth card beside the existing three, marked *add-on*. Copy: **Market Haro** — *Today's Gundam market, ranked.* $8/month or $88/year, 7-day free trial. "A daily dashboard of every Gundam single worth holding and every box measured against the cards inside it, with a public record of every call. Separate subscription, billed monthly or yearly in addition to your GUNDECK plan; cancel any time." Two buttons → the two Checkout Sessions (A). Someone with no GUNDECK plan may still buy it.
+- Account page: a line **Market Haro · active until {date} · Manage** that opens the Stripe customer portal; *Not subscribed · Start a trial* otherwise.
+- Sign-in redirect: the splash sends people to `https://gundeck.ai/sign-in?redirect_url=https://marketharo.gundeck.ai/`; make sure the sign-in page honours `redirect_url` for that origin.
+- Terms: the two paragraphs under "Money and terms" above, appended to the existing terms.
+
+What Market Haro will never do: write to Clerk or Stripe, store an email address, or send mail. If a subscriber can't see the report, the first three checks are: the token carries `public_metadata` (C), the webhook wrote `marketHaro.status` (B), and the status is `active` or `trialing`.

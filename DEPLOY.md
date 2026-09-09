@@ -5,9 +5,9 @@ can't be lost, and you can open the dashboard from your phone without the world
 being able to.
 
 The shape that gets you there is **GitHub Actions for the schedule, git for the
-data, Ghost for subscribers, payments, the email and the members-only report**.
-Nothing here needs a server of your own; Ghost Pro or a $6 VPS is the only
-running cost beyond the API plan.
+data, one Cloudflare Worker for the page, and gundeck.ai's Clerk and Stripe for
+who is signed in and who has paid**. Nothing here needs a server of your own,
+and nothing beyond the API plan costs money.
 
 ---
 
@@ -86,7 +86,7 @@ The point count should match `python -m radar stats` against your real database.
 | Name | Value |
 |---|---|
 | `TCGAPI_KEY` | your tcgapi.dev key |
-| `OPENAI_API_KEY` | optional; GPT-5.6 Sol writes the prose (radar/commentary.py). Templates without it |
+| `HARO_ADMIN_SECRET` | the Worker's admin secret (step 5); without it the page is built but not pushed |
 
 Secrets are write-only once saved and are not exposed to forked-PR runs. Do not
 put the key in `config.yaml` — that file is committed.
@@ -97,9 +97,9 @@ put the key in `config.yaml` — that file is committed.
 after TCGplayer's overnight batch has settled, and you can trigger it by hand
 from the Actions tab any time.
 
-Each run: restore → sync → build the issue (report, digest, track record,
-issue.json) → export → run the test suite → commit → publish to Ghost and the
-Worker. The tests run *before* the commit on purpose, so a broken run
+Each run: restore → sync → build the issue (report, track record) → keep it as
+a run artifact → export → run the test suite → commit → push the two pages to
+the Worker. The tests run *before* the commit on purpose, so a broken run
 can't push a corrupted history.
 
 On the 1st of each month it also runs `radar validate` and commits the result, so
@@ -113,111 +113,58 @@ Trigger it once manually and watch it go green before trusting the schedule.
 > failing — which is exactly when you'd want it not to. Turn on Actions failure
 > notifications: **Settings → Notifications → Actions → email on failure**.
 
-### 5. Ghost — subscribers, payments, email, and the private report
+### 5. The site: one Worker at marketharo.gundeck.ai
 
-This is the layer between the report and a paying reader, and Ghost does all of it:
-Stripe memberships, member-only content, the email send, and magic-link sign-in.
+`worker/` is the whole server. It holds the report the pipeline pushes each
+morning, shows it to signed-in GUNDECK users whose account carries a Market Haro
+subscription, shows the splash (sign in / subscribe) to everyone else, serves the
+public track record at `/track-record`, and keeps each user's watchlist so it
+follows them across devices. It never talks to Clerk or Stripe at request time:
+it verifies Clerk's session token against Clerk's published keys and reads the
+entitlement Stripe's webhook wrote onto the user.
 
-1. Create the site (Ghost Pro, or self-hosted on a $6 VPS). Under **Settings →
-   Membership** connect Stripe and set up **one paid tier**:
+**5a. Cloudflare.** `cd worker && npm install`, then `npx wrangler login`. Create
+the KV namespace — `npx wrangler kv namespace create HARO` — and paste the id
+it prints into `wrangler.toml`. Set the one secret: `npx wrangler secret put
+ADMIN_SECRET` (make it long and random; the same value goes into the GitHub
+secret `HARO_ADMIN_SECRET`). Fill in `CLERK_PUBLISHABLE_KEY` (the `pk_live_…`
+from the Clerk dashboard; it is public) and the four gundeck.ai URLs in
+`[vars]`. `npx wrangler deploy`. The `routes` line attaches the custom domain:
+if the DNS record does not exist, wrangler creates it; if you manage DNS by
+hand, add `marketharo CNAME market-haro.<your-subdomain>.workers.dev`, proxied.
 
-   | | |
-   |---|---|
-   | Monthly | **$8** |
-   | Yearly | **$88** |
-   | Free trial | **7 days** (Settings → Membership → the tier → "Free trial days") |
-   | Free tier | off |
-   | Founding / launch discount | none |
+**5b. Clerk** (in the Clerk dashboard for the gundeck.ai instance; see
+docs/LAUNCH.md for the gundeck.ai side).
+- *Sessions → Customize session token*: add `"public_metadata": "{{user.public_metadata}}"`
+  so the entitlement rides in the token. This is the one setting the gate
+  cannot work without.
+- The Worker's domain is a subdomain of the instance's primary domain, so the
+  signed-in state carries over on its own. If the splash still shows "sign in"
+  while you are signed in on gundeck.ai, add `marketharo.gundeck.ai` under
+  *Domains* as a satellite and redeploy.
 
-   Two settings make "no free" real, and both are easy to miss:
-   **Settings → Membership → Subscription access → Paid-members only** (nobody can
-   sign up without paying), and in **Settings → Portal** untick the free tier so it
-   never appears on the signup screen. `radar publish` already sends only to
-   `status:-free` and publishes with visibility `paid`, so the code side is
-   consistent with this whether or not the settings are — but without them a
-   free signup could still exist and simply see nothing, which is confusing rather
-   than harmful.
-2. **Settings → Integrations → Add custom integration** → name it `market-haro`.
-   Copy the **Admin API key** (it looks like `<id>:<hex secret>`) and the site URL.
-3. Add two repo secrets:
+**5c. The entitlement.** The Worker's defaults expect Stripe's webhook to write
+`publicMetadata.marketHaro = {status: "active"|"trialing"|…, plan, currentPeriodEnd}`
+on the Clerk user (either spelling of the key works). If your webhook writes a
+different shape, set `ENTITLEMENT_PATH` (dotted path to the status) and
+`ENTITLEMENT_VALUES` in `wrangler.toml`; if you move to Clerk Billing, set
+`ENTITLEMENT_PLAN` to the plan slug instead and leave the path empty.
 
-| Name | Value |
-|---|---|
-| `GHOST_URL` | `https://your-site.ghost.io` (no trailing path) |
-| `GHOST_ADMIN_KEY` | the Admin API key from step 2 |
-
-4. In `config.yaml` under `publish:` set `report_url` to where the report page will
-   live — `https://<your-site>/market-haro/` — so the button in the email points at
-   it. Everything else under `publish:` can stay as it is.
-5. Run it once by hand before trusting the schedule:
-
-```bash
-GHOST_URL=... GHOST_ADMIN_KEY=... python -m radar publish --dry-run   # shows what would go out
-GHOST_URL=... GHOST_ADMIN_KEY=... python -m radar publish --no-email  # publishes, no send
-```
-
-Open the site as a paid member and check the report page renders. Then let the
-workflow send for real.
-
-What gets published each day: the digest as a **paid post emailed to every paying
-member** (`status:-free`), and the full dashboard as a **paid page at `/market-haro/`**
-— the same slug every day, so the link in any past email opens the latest report.
-Free members and the public see neither.
-
-If a day's feed is late the issue still goes out; the feed age is the first line
-and the subject. If Ghost itself is unreachable the workflow fails loudly and the
-dashboard is still kept as a run artifact — turn on failure notifications so you
-find out the same morning.
-
-What gets published each day, in full: the digest as a **paid post emailed to
-every paying member**, the full dashboard as a **paid page at `/market-haro/`**,
-and the **track record as a public page at `/track-record/`** — the one page
-without a paywall, because a prospect deserves to see the ranking scored before
-they pay. Set `track_slug` under `publish:` to change its address.
-
-### 5b. The sync + alerts Worker (optional, and what makes it a product, not a page)
-
-Without this, every subscriber's watchlist lives in their browser and dies on
-their phone. With it, the watchlist and holdings follow the member across
-devices, the page opens with their P&L, and they get one email on the days
-something on their list changed — trend broke, a card listed below what it
-sells for, a top-20 move, a release in seven days. It is one Cloudflare
-Worker and one KV namespace; free tier covers thousands of members.
-
-1. `cd worker && npm install`, then create the KV namespace:
-   `npx wrangler kv namespace create HARO` — paste the id it prints into
-   `wrangler.toml`. Set `GHOST_URL` and `REPORT_URL` there too.
-2. Secrets: `npx wrangler secret put ADMIN_SECRET` (any long random string) and,
-   for email, `npx wrangler secret put RESEND_API_KEY` (a [Resend](https://resend.com)
-   key with the sending domain verified; set `MAIL_FROM` in `wrangler.toml`).
-   Without the Resend key the Worker still syncs watchlists; it just cannot send.
-3. `npx wrangler deploy`. Note the Worker URL it prints.
-4. In `config.yaml` under `publish:` set `sync_url` to that URL. Add the repo
-   secret `HARO_ADMIN_SECRET` with the same value as step 2, so `radar publish`
-   can push the day's issue to the Worker.
-5. Check it: open the report as a signed-in member; the line under the index
-   should say "Watchlist synced to your account." Star a card on your laptop,
-   open the report on your phone, it is there.
-
-How identity works, so you can explain it to a subscriber: Ghost issues a
-signed token to the logged-in member at `/members/api/session`; the page sends
-that token to the Worker; the Worker verifies the signature against the
-site's published keys. There is no password, no account to create, and the
-Worker never sees a Ghost admin key. The alert rules live in `radar/alerts.py`
-and are mirrored in the Worker; `python tests/test_pipeline.py` writes the
-cases and `cd worker && npm test` replays them, so the two cannot drift.
-
-**The weekly note** is no longer shown on the page or in the email; `data/notes/`
-and `radar note-draft` remain for a later version.
+**5d. Check it.** `curl https://marketharo.gundeck.ai/health` → `{"ok":true}`.
+Locally, `HARO_ADMIN_SECRET=… python -m radar publish` pushes the report and
+the track record; open the site signed out (splash), signed in without a
+subscription (splash, "no Market Haro subscription yet"), and signed in with one
+(the report, and the watchlist status line says "synced to your account").
+`cd worker && npm test` runs the gate against signed test tokens.
 
 ### 6. Where the report lives
 
-Ghost, and only Ghost. `radar publish` puts the report on the members-only page
-and mails the digest; nothing else hosts it. An earlier version of this workflow
-could also push the built page to Cloudflare Pages behind Cloudflare Access; that
-step is gone, because a paid report published to a second host is one skipped
-Access policy away from being public. Without the Ghost secrets the workflow
-still builds everything and keeps `out/` as a run artifact for you to download.
+Only in the Worker's KV, served only to entitled sessions with
+`Cache-Control: private, no-store`. The GitHub Actions run keeps a copy of each
+day's `out/` as a run artifact for seven days, which is your fallback if a push
+ever fails. Nothing else hosts it.
+
+---
 
 ## Verifying it actually works
 
@@ -247,8 +194,8 @@ what stops the repo filling with no-op commits.
 |---|---|
 | GitHub Actions, private repo | 2,000 min/month free; this uses ~3 min/day ≈ **90 min** |
 | GitHub storage | ~85 MB/year of text |
-| Cloudflare Worker + KV | free tier: 100k requests/day, 1 GB KV |
-| Resend | free tier: 3,000 emails/month; one email per member per day at most |
+| Cloudflare Worker + KV | free tier: 100k requests/day, 1 GB KV; the report is ~4.5 MB, one key |
+| Clerk, Stripe | gundeck.ai's existing accounts; Stripe's usual fee per charge |
 | tcgapi.dev Pro | your existing plan; a daily run costs ~60 requests of 10,000 |
 
 So: **free**, with a wide margin on every limit.

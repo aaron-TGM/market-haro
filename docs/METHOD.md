@@ -420,8 +420,8 @@ so a day's run appends ~1,700 lines and changes nothing else. Roughly **85 MB of
 text a year**, and re-exporting an unchanged database is byte-identical, which is
 what makes "commit only if changed" safe.
 
-The report publishes to a members-only Ghost page and nowhere else. Without the
-Ghost secrets the workflow still builds it and keeps it as a run artifact.
+The report is pushed to the site Worker and served only to entitled sessions.
+Without the admin secret the workflow still builds it and keeps it as a run artifact.
 
 ## Notes and gotchas
 

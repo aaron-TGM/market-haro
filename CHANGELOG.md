@@ -3,6 +3,17 @@
 Newest first. Dates are the day the work landed; issue dates are the price date the
 report carries.
 
+## 2026-09-09 — marketharo.gundeck.ai
+
+- **Ghost is gone.** The site is one Cloudflare Worker at marketharo.gundeck.ai that serves
+  the report to signed-in GUNDECK users whose account carries a Market Haro subscription
+  (Clerk session token verified against clerk.gundeck.ai's keys; entitlement read from
+  `public_metadata.marketHaro.status`, written by Stripe's webhook on gundeck.ai), the splash
+  to everyone else, the public track record, and each user's watchlist by user id.
+  `radar publish` PUTs the two pages to it. Alerts and Resend are gone with the email.
+- Pricing stays $8 / $88; an add-on to a GUNDECK account. docs/LAUNCH.md is rewritten
+  around this and ends with the appendix of changes on gundeck.ai.
+
 ## 2026-09-09 — a dashboard, not a newsletter
 
 - **Removed**: the model-written commentary (`radar/commentary.py`, the relay, `docs/VOICE.md`,

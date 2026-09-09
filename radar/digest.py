@@ -144,15 +144,3 @@ def diff(today: dict, prev: dict | None, *, top_n: int = TOP_N, run_date: str | 
     out["stretched"].sort(key=lambda r: -r["ask_premium_pct"])
     out["cheapened"].sort(key=lambda r: r["ask_premium_pct"])
     return out
-
-
-# --------------------------------------------------------------------------
-# Rendering. Email HTML has to be boring: inline styles, tables, no scripts,
-# no external CSS. Ghost strips or rewrites most of what a browser would allow.
-# --------------------------------------------------------------------------
-def _money(v):
-    return "—" if v is None else f"${v:,.2f}"
-
-
-def _pct(v):
-    return "—" if v is None else f"{v:+.0f}%"
