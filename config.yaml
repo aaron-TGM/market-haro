@@ -147,10 +147,10 @@ watchlist:
 publish:
   brand: Market Haro
   # Pricing is set in Ghost (Settings -> Membership), not here. Recorded so the
-  # repo says what the product is: one paid tier, $7.99/month or $75/year, a
+  # repo says what the product is: one paid tier, $9.99/month or $89/year, a
   # 7-day trial, no free tier, no founding discount. Everything published is
   # visibility `paid`.
-  pricing_note: "$7.99/mo or $75/yr, single paid tier, 7-day trial, no free tier"
+  pricing_note: "$9.99/mo or $89/yr, single paid tier, 7-day trial, no free tier"
   # The members-only page that always holds the latest report. Same slug every
   # day, so yesterday's email opens today's report.
   report_slug: market-haro

@@ -137,7 +137,7 @@ def build() -> tuple[str, str]:
     <h1>The daily market terminal for people who <em>invest</em> in the Gundam Card Game.</h1>
     <p>Every morning it measures the entire English market, ranks the singles worth holding, screens sealed product, marks every chart with the set calendar, scores its own past calls in public, and emails each subscriber what changed on the cards they follow. Built and sent automatically; one person writes the weekly note.</p>
   </div>
-  <div class="price"><div class="l">One tier</div><div class="v">$7.99<small> / month</small></div><div class="f">$75 a year · 7-day trial · no free tier<br>Stripe through Ghost · cancel any time</div></div>
+  <div class="price"><div class="l">One tier</div><div class="v">$9.99<small> / month</small></div><div class="f">$89 a year · 7-day trial · no free tier<br>Stripe through Ghost · cancel any time</div></div>
 </div>
 
 <div class="stats">
@@ -213,7 +213,7 @@ def build() -> tuple[str, str]:
   <h2>Priced as a terminal, run for almost nothing.</h2>
   <div class="lead"><p>The closest comparable covers sixteen games at $19 with a $49 professional tier. Market Haro covers one game deeper than anyone: sold-price timing, budget sizing, sealed, the release playbook, member alerts and a public record. It is priced against the depth, not the category.</p></div>
   <table class="cmp"><thead><tr><th>Product</th><th>Scope</th><th>Price</th><th>What it lacks against Market Haro</th></tr></thead><tbody>
-    <tr class="us"><td>Market Haro</td><td>Gundam Card Game, every English product, daily</td><td><b>$7.99/mo · $75/yr</b></td><td>Graded and eBay comps (scoped next); a most-played index (scoped next)</td></tr>
+    <tr class="us"><td>Market Haro</td><td>Gundam Card Game, every English product, daily</td><td><b>$9.99/mo · $89/yr</b></td><td>Graded and eBay comps (scoped next); a most-played index (scoped next)</td></tr>
     <tr><td>TCGIndex Premium / Pro</td><td>16 games, screeners, weekly picks, public track record</td><td>$19/mo · $49/mo</td><td>Ask-vs-sold timing, budget sizing, sealed screen, release playbook, per-member alerts</td></tr>
     <tr><td>Card Ladder Pro</td><td>Sports cards; collection tracking, sales history</td><td>≈ $150/yr</td><td>Not a TCG product; no screen, no sizing, no release calendar</td></tr>
     <tr><td>TCGplayer price guide</td><td>Free market prices per card</td><td>Free</td><td>No ranking, no history beyond the page, no sold-vs-ask, no alerts</td></tr>
@@ -221,7 +221,7 @@ def build() -> tuple[str, str]:
   <div class="grid" style="margin-top:22px">
     <div class="card"><h4>Cost to run</h4><p>GitHub Actions, a Cloudflare Worker and KV, Resend’s free tier, Ghost, and the price API plan. Under $100 a month all in, before the first subscriber.</p></div>
     <div class="card"><h4>Cost to ship</h4><p>Fully automated: a scheduled run builds, tests, commits, publishes and sends. One human input a week — the note.</p></div>
-    <div class="card"><h4>Break-even</h4><p>Thirty subscribers cover infrastructure. A thousand at $7.99 is $96,000 a year on a product one person can operate.</p></div>
+    <div class="card"><h4>Break-even</h4><p>Twenty-five subscribers cover infrastructure. A thousand at $9.99 is $120,000 a year on a product one person can operate.</p></div>
   </div>
 </section>
 

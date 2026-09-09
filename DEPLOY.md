@@ -123,8 +123,8 @@ Stripe memberships, member-only content, the email send, and magic-link sign-in.
 
    | | |
    |---|---|
-   | Monthly | **$7.99** |
-   | Yearly | **$75** |
+   | Monthly | **$9.99** |
+   | Yearly | **$89** |
    | Free trial | **7 days** (Settings → Membership → the tier → "Free trial days") |
    | Free tier | off |
    | Founding / launch discount | none |

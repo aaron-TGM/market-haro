@@ -5,8 +5,8 @@ report carries.
 
 ## 2026-09-09 — the record, the shelf, the price
 
-- **Pricing** reset to **$7.99 a month, $75 a year** (GUNDECK offer: first month $3.99, first
-  year $60). Single paid tier, 7-day trial, no free tier, as before.
+- **Pricing** reset to **$9.99 a month, $89 a year**. Single paid tier, 7-day trial, no free
+  tier, and no member coupon — one price for everyone.
 - **The record, per call**: every top-20 pick is resolved on its own 30 days after its issue
   against that issue's pool. One sentence at the top of the track record and a tile on the
   report: "Of N calls resolved at 30 days, X% beat their pool and Y% were up." `out/track.json`.

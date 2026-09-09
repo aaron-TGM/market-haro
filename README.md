@@ -5,7 +5,7 @@ measures the whole English market on tcgapi.dev, ranks the singles worth holding
 sealed product, marks every chart with the set calendar, scores its own past calls in
 public, and mails each subscriber what changed on the cards they follow.
 
-One paid tier: **$7.99 a month or $75 a year, 7-day trial, no free tier.** Published through
+One paid tier: **$9.99 a month or $89 a year, 7-day trial, no free tier.** Published through
 Ghost; built and sent by GitHub Actions; watchlists and alerts on one Cloudflare Worker.
 
 ```
@@ -145,7 +145,7 @@ docs/VOICE.md     the voice every generated sentence is held to, with samples
 docs/METHOD.md    how the score, gates, settled price and validation were measured
 docs/ARCHITECTURE.md   modules, data flow, what is a cache and what is an asset
 docs/SOW-two-fifties.md   next: Market Haro 50 rename + the GUNDECK 50 (most played)
-docs/LAUNCH.md    the launch plan: Ghost, Stripe, the Worker, the GUNDECK offer, operations
+docs/LAUNCH.md    the launch plan: Ghost, Stripe, the Worker, the GUNDECK launch, operations
 DEPLOY.md         GitHub Actions, Ghost, the Worker, Resend, costs
 CHANGELOG.md      what changed, by issue
 ```

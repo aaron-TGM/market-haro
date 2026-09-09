@@ -18,7 +18,7 @@ From the repo you have to a paying subscriber opening the report with a magic li
 | GitHub | Private repo, Actions enabled | The daily run. Free tier covers it. |
 | tcgapi.dev | Pro plan, the key already in your `.env` | ~60 requests a day of 10,000. |
 
-Decide once, before Phase 2: **monthly $7.99, yearly $75, 7-day trial, no free tier, no founding discount.** The one exception is a GUNDECK-customer offer (Phase 5), which is a coupon, not a tier.
+Decide once, before Phase 2: **monthly $9.99, yearly $89, 7-day trial, no free tier, no founding discount, no member coupon.** One price for everyone; the 7-day trial is the offer.
 
 ---
 
@@ -52,7 +52,7 @@ Settings → Membership → *Connect with Stripe* → authorise. Use live mode. 
 
 **2c. The tier.**
 Settings → Membership → Tiers → the default paid tier → rename to **Market Haro** →
-Monthly **$7.99**, Yearly **$75**, *Free trial days* **7**, *Welcome page* `/market-haro/`.
+Monthly **$9.99**, Yearly **$89**, *Free trial days* **7**, *Welcome page* `/market-haro/`.
 Benefits (these print on the signup card — keep them to what the product does):
 - The daily report: every English single ranked, gated and explained
 - Market Haro 50, sealed screen, release playbook
@@ -130,29 +130,27 @@ If any step fails, fix it before Phase 5. The three most common: the report page
 
 ## Phase 5 — Launch to GUNDECK customers (Day 4–7)
 
-You have paying GUNDECK.AI customers (30-day Pro at $3, lifetime at $29). They are the first hundred subscribers if the offer is right and the ask is small. Three moves:
+You have paying GUNDECK.AI customers (30-day Pro at $3, lifetime at $29). They are the first hundred subscribers if the ask is small. There is no member discount — one price, and the 7-day trial is the offer, which keeps the pitch to one sentence. Three moves:
 
-**5a. The offer.** Settings → Offers → *New offer*: name **GUNDECK member**, tier Market Haro, monthly, **first month $3.99** (50% off once), or yearly **$60** (20% off the first year). Ghost gives you a link like `haro.gundeck.ai/gundeck-member`. It stacks with the 7-day trial: card entered, nothing charged for a week, then the discounted first period. No free tier, one coupon, expires in 30 days — say so.
+**5a. Comped seats for a dozen believers.** Ghost admin → Members → the member → *Complimentary*. Give the first ten to fifteen GUNDECK regulars who post decks or prices — the ones other players listen to — three free months in exchange for one thing: screenshots of the report in their communities. Their watchlists and alerts work like anyone else's.
 
-**5b. Comped seats for a dozen believers.** Ghost admin → Members → the member → *Complimentary*. Give the first ten to fifteen GUNDECK regulars who post decks or prices — the ones other players listen to — three free months in exchange for one thing: screenshots of the report in their communities. Their watchlists and alerts work like anyone else's.
-
-**5c. The email to your list.** From GUNDECK.AI, not from Market Haro, to every GUNDECK customer, sent the morning a good issue lands. Keep it short:
+**5b. The email to your list.** From GUNDECK.AI, not from Market Haro, to every GUNDECK customer, sent the morning a good issue lands. Keep it short:
 
 > **Subject:** The market half of GUNDECK — Market Haro
 >
 > Every morning Market Haro measures the whole English Gundam market and tells you which cards are worth holding, which are listed ahead of themselves, what every set release did to prices, and what changed on the cards *you* follow. It scores its own past calls in public.
 >
-> It's $7.99 a month. As a GUNDECK member your first month is $3.99, and the first week is free — you'll see two issues before you're charged anything.
+> It's $9.99 a month or $89 a year, and the first week is free — you'll see seven issues before you're charged anything.
 >
 > [Start the trial] · [See the public track record first]
 >
 > — Aaron
 
-Link the first button to the offer URL and the second to `/track-record/`. Send it once, then a reminder to non-openers five days later, then stop; the offer expiring does the rest.
+Link the first button to the Portal signup URL and the second to `/track-record/`. Send it once, then a reminder to non-openers five days later, then stop.
 
-**5d. Inside gundeck.ai.** A single persistent line in the app for logged-in customers — *Market Haro: today's market, ranked. First month $3.99 for members →* — is worth more than any email. Put the live Market Haro 50 number in it if the app can fetch `data/index.ndjson` from the repo (it is public text; the last line is today's level).
+**5c. Inside gundeck.ai.** A single persistent line in the app for logged-in customers — *Market Haro: today's market, ranked. Seven days free →* — is worth more than any email. Put the live Market Haro 50 number in it if the app can fetch `data/index.ndjson` from the repo (it is public text; the last line is today's level).
 
-**5e. The public page.** `/track-record/` is the landing page a stranger should hit. Set it as the site's home page: Settings → Navigation → primary link *Track record* → `/track-record/`; and in Settings → General → *Publication home page* choose the track record page if your theme allows, otherwise pin it first in navigation. Add one line to it via the theme's code injection if you want a hero above it; the page itself stays generated.
+**5d. The public page.** `/track-record/` is the landing page a stranger should hit. Set it as the site's home page: Settings → Navigation → primary link *Track record* → `/track-record/`; and in Settings → General → *Publication home page* choose the track record page if your theme allows, otherwise pin it first in navigation. Add one line to it via the theme's code injection if you want a hero above it; the page itself stays generated.
 
 ---
 
@@ -174,7 +172,7 @@ Backups: the archive is in git; that is the backup. Ghost(Pro) backs up the site
 
 ## Money and terms, stated once
 
-- **Price:** $7.99/month, $75/year, 7-day trial, no free tier. GUNDECK members: first month $3.99 or first year $60, for 30 days from launch.
+- **Price:** $9.99/month, $89/year, 7-day trial, no free tier, no discounts.
 - **Refunds:** 14 days, no questions, from Stripe. Say it on the signup page; it lowers the barrier more than it costs.
 - **Terms:** two paragraphs on a public `/terms/` page: information only, not financial advice, cards can lose value, data from tcgapi.dev under commercial licence, you may cancel any time, we store your email and your watchlist and nothing else. The report footer already says the substantive part.
 - **Privacy:** the Worker stores the member's email (to send alerts) and watchlist, keyed by a hash. Ghost stores the membership. Stripe stores the card. Nothing is sold or shared.
@@ -186,7 +184,7 @@ Backups: the archive is in git; that is the backup. Ghost(Pro) backs up the site
 
 - [ ] 0 · Decide the domain; confirm Ghost plan allows custom integrations
 - [ ] 1 · Repo pushed, `TCGAPI_KEY` set, one green run, failure notifications on
-- [ ] 2 · Site, domain, Stripe, tier ($7.99/$75/7 days), paid-only access, free tier hidden, newsletter sender verified, integration key, `report_url`, publish dry-run then `--no-email`, then a real send to yourself
+- [ ] 2 · Site, domain, Stripe, tier ($9.99/$89/7 days), paid-only access, free tier hidden, newsletter sender verified, integration key, `report_url`, publish dry-run then `--no-email`, then a real send to yourself
 - [ ] 3 · Worker deployed, KV created, `ADMIN_SECRET` + `RESEND_API_KEY`, Resend domain verified, `sync_url` + `HARO_ADMIN_SECRET`, "synced to your account" seen, alert run answered
 - [ ] 4 · Full rehearsal with a second email on a phone: trial → report → watchlist → email → sign out → magic link → cancel
 - [ ] 5 · Offer created, comped seats given, GUNDECK email sent, in-app line live, track record as the front door
