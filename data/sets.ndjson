@@ -1,27 +1,27 @@
-{"card_count":207,"game_slug":"gundam-card-game","id":"800001","name":"Steel Requiem","release_date":"2026-01-30","slug":"steel-requiem"}
-{"card_count":36,"game_slug":"gundam-card-game","id":"800002","name":"Starter Deck 06: Clan Unity","release_date":"2025-10-24","slug":"starter-deck-06-clan-unity"}
-{"card_count":197,"game_slug":"gundam-card-game","id":"800003","name":"Newtype Rising","release_date":"2025-07-25","slug":"newtype-rising"}
-{"card_count":85,"game_slug":"gundam-card-game","id":"800004","name":"Edition Beta","release_date":"2025-02-06","slug":"edition-beta"}
-{"card_count":36,"game_slug":"gundam-card-game","id":"800005","name":"Starter Deck 05: Iron Bloom","release_date":"2025-09-26","slug":"starter-deck-05-iron-bloom"}
-{"card_count":25,"game_slug":"gundam-card-game","id":"800006","name":"Promotional EX Base Tokens","release_date":"2025-02-25","slug":"promotional-ex-base-tokens"}
-{"card_count":65,"game_slug":"gundam-card-game","id":"800007","name":"Promotional Resource Tokens","release_date":"2025-02-25","slug":"promotional-resource-tokens"}
-{"card_count":14,"game_slug":"gundam-card-game","id":"800008","name":"Promotional EX Resource Tokens","release_date":"2025-02-25","slug":"promotional-ex-resource-tokens"}
-{"card_count":36,"game_slug":"gundam-card-game","id":"800009","name":"Starter Deck 07: Celestial Drive","release_date":"2026-01-16","slug":"starter-deck-07-celestial-drive"}
-{"card_count":39,"game_slug":"gundam-card-game","id":"800010","name":"Starter Deck 03: Zeon's Rush","release_date":"2025-07-11","slug":"starter-deck-03-zeons-rush"}
-{"card_count":39,"game_slug":"gundam-card-game","id":"800011","name":"Starter Deck 04: SEED Strike","release_date":"2025-07-11","slug":"starter-deck-04-seed-strike"}
-{"card_count":39,"game_slug":"gundam-card-game","id":"800012","name":"Starter Deck 02: Wings of Advance","release_date":"2025-07-11","slug":"starter-deck-02-wings-of-advance"}
-{"card_count":224,"game_slug":"gundam-card-game","id":"800013","name":"Gundam Promotional Cards","release_date":"2025-03-01","slug":"gundam-promotional-cards"}
-{"card_count":36,"game_slug":"gundam-card-game","id":"800014","name":"Starter Deck 08: Flash of Radiance","release_date":"2026-01-16","slug":"starter-deck-08-flash-of-radiance"}
-{"card_count":192,"game_slug":"gundam-card-game","id":"800015","name":"Dual Impact","release_date":"2025-10-24","slug":"dual-impact"}
-{"card_count":39,"game_slug":"gundam-card-game","id":"800016","name":"Starter Deck 01: Heroic Beginnings","release_date":"2025-07-11","slug":"starter-deck-01-heroic-beginnings"}
-{"card_count":42,"game_slug":"gundam-card-game","id":"800017","name":"Starter Deck 09: Destiny Ignition","release_date":"2026-03-27","slug":"starter-deck-09-destiny-ignition"}
-{"card_count":199,"game_slug":"gundam-card-game","id":"800018","name":"Phantom Aria","release_date":"2026-04-24","slug":"phantom-aria"}
-{"card_count":111,"game_slug":"gundam-card-game","id":"800019","name":"Eternal Nexus","release_date":"2026-06-26","slug":"eternal-nexus"}
-{"card_count":38,"game_slug":"gundam-card-game","id":"800020","name":"Starter Deck 10: Generation Pulse","release_date":"2026-06-26","slug":"starter-deck-10-generation-pulse"}
-{"card_count":201,"game_slug":"gundam-card-game","id":"800021","name":"Freedom Ascension","release_date":"2026-07-24","slug":"freedom-ascension"}
-{"card_count":50,"game_slug":"gundam-card-game","id":"800022","name":"Deck Build Box Freedom Ascension","release_date":"2026-07-24","slug":"deck-build-box-freedom-ascension"}
-{"card_count":4,"game_slug":"gundam-card-game","id":"800023","name":"Stardust Trails","release_date":"2026-10-30","slug":"stardust-trails"}
-{"card_count":3,"game_slug":"gundam-card-game","id":"800024","name":"Starter Deck 14: Heavy Dominion","release_date":"2026-09-25","slug":"starter-deck-14-heavy-dominion"}
-{"card_count":3,"game_slug":"gundam-card-game","id":"800025","name":"Starter Deck 13: Silent Barrage","release_date":"2026-09-25","slug":"starter-deck-13-silent-barrage"}
-{"card_count":3,"game_slug":"gundam-card-game","id":"800026","name":"Starter Deck 12: Raging Onslaught","release_date":"2026-09-25","slug":"starter-deck-12-raging-onslaught"}
-{"card_count":3,"game_slug":"gundam-card-game","id":"800027","name":"Starter Deck 11: Aquatic Assault","release_date":"2026-09-25","slug":"starter-deck-11-aquatic-assault"}
+{"card_count":207,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800001","name":"Steel Requiem","release_date":"2026-01-30","slug":"steel-requiem"}
+{"card_count":36,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800002","name":"Starter Deck 06: Clan Unity","release_date":"2025-10-24","slug":"starter-deck-06-clan-unity"}
+{"card_count":197,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800003","name":"Newtype Rising","release_date":"2025-07-25","slug":"newtype-rising"}
+{"card_count":85,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800004","name":"Edition Beta","release_date":"2025-02-06","slug":"edition-beta"}
+{"card_count":36,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800005","name":"Starter Deck 05: Iron Bloom","release_date":"2025-09-26","slug":"starter-deck-05-iron-bloom"}
+{"card_count":25,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800006","name":"Promotional EX Base Tokens","release_date":"2025-02-25","slug":"promotional-ex-base-tokens"}
+{"card_count":65,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800007","name":"Promotional Resource Tokens","release_date":"2025-02-25","slug":"promotional-resource-tokens"}
+{"card_count":14,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800008","name":"Promotional EX Resource Tokens","release_date":"2025-02-25","slug":"promotional-ex-resource-tokens"}
+{"card_count":36,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800009","name":"Starter Deck 07: Celestial Drive","release_date":"2026-01-16","slug":"starter-deck-07-celestial-drive"}
+{"card_count":39,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800010","name":"Starter Deck 03: Zeon's Rush","release_date":"2025-07-11","slug":"starter-deck-03-zeons-rush"}
+{"card_count":39,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800011","name":"Starter Deck 04: SEED Strike","release_date":"2025-07-11","slug":"starter-deck-04-seed-strike"}
+{"card_count":39,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800012","name":"Starter Deck 02: Wings of Advance","release_date":"2025-07-11","slug":"starter-deck-02-wings-of-advance"}
+{"card_count":224,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800013","name":"Gundam Promotional Cards","release_date":"2025-03-01","slug":"gundam-promotional-cards"}
+{"card_count":36,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800014","name":"Starter Deck 08: Flash of Radiance","release_date":"2026-01-16","slug":"starter-deck-08-flash-of-radiance"}
+{"card_count":192,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800015","name":"Dual Impact","release_date":"2025-10-24","slug":"dual-impact"}
+{"card_count":39,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800016","name":"Starter Deck 01: Heroic Beginnings","release_date":"2025-07-11","slug":"starter-deck-01-heroic-beginnings"}
+{"card_count":42,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800017","name":"Starter Deck 09: Destiny Ignition","release_date":"2026-03-27","slug":"starter-deck-09-destiny-ignition"}
+{"card_count":199,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800018","name":"Phantom Aria","release_date":"2026-04-24","slug":"phantom-aria"}
+{"card_count":111,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800019","name":"Eternal Nexus","release_date":"2026-06-26","slug":"eternal-nexus"}
+{"card_count":38,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800020","name":"Starter Deck 10: Generation Pulse","release_date":"2026-06-26","slug":"starter-deck-10-generation-pulse"}
+{"card_count":201,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800021","name":"Freedom Ascension","release_date":"2026-07-24","slug":"freedom-ascension"}
+{"card_count":50,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800022","name":"Deck Build Box Freedom Ascension","release_date":"2026-07-24","slug":"deck-build-box-freedom-ascension"}
+{"card_count":4,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800023","name":"Stardust Trails","release_date":"2026-10-30","slug":"stardust-trails"}
+{"card_count":3,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800024","name":"Starter Deck 14: Heavy Dominion","release_date":"2026-09-25","slug":"starter-deck-14-heavy-dominion"}
+{"card_count":3,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800025","name":"Starter Deck 13: Silent Barrage","release_date":"2026-09-25","slug":"starter-deck-13-silent-barrage"}
+{"card_count":3,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800026","name":"Starter Deck 12: Raging Onslaught","release_date":"2026-09-25","slug":"starter-deck-12-raging-onslaught"}
+{"card_count":3,"game_name":"Gundam Card Game","game_slug":"gundam-card-game","id":"800027","name":"Starter Deck 11: Aquatic Assault","release_date":"2026-09-25","slug":"starter-deck-11-aquatic-assault"}
