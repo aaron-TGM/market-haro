@@ -153,9 +153,16 @@ different shape, set `ENTITLEMENT_PATH` (dotted path to the status) and
 **5d. The vanity domain.** `marketharo.io` is a redirect, not a host: the app stays
 on `marketharo.gundeck.ai` because that shares a root domain with gundeck.ai and
 so shares its signed-in state; a different root domain would need Clerk's
-satellite-domain setup. Register the .io in Cloudflare Registrar, then *Rules →
-Redirect Rules → Redirect from Root and WWW* → `https://marketharo.gundeck.ai${path}`,
-301. Say `marketharo.io` everywhere people read; the redirect does the rest. If
+satellite-domain setup. *Rules → Redirect Rules* → root and www → `https://marketharo.gundeck.ai${path}`,
+301. The domain is registered at Namecheap; leave it there and point its
+nameservers at Cloudflare (Add a site → Free → copy the two nameservers →
+Namecheap → Manage → Nameservers → Custom DNS), because Namecheap's own redirect
+is HTTP-only and cannot preserve paths. In Cloudflare add a proxied placeholder
+`A @ 192.0.2.1` and `CNAME www → marketharo.io` so the proxy terminates the
+request, set SSL/TLS to Full, then the rule: filter
+`(http.host eq "marketharo.io") or (http.host eq "www.marketharo.io")`, dynamic
+target `concat("https://marketharo.gundeck.ai", http.request.uri.path)`, 301,
+preserve query string. Say `marketharo.io` everywhere people read; the redirect does the rest. If
 the product ever needs to stand alone, that is the day to make the .io a satellite
 domain and move the Worker's route.
 
