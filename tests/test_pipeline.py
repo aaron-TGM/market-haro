@@ -1885,6 +1885,45 @@ def test_relay_client_queues_what_it_cannot_answer_and_answers_from_the_file():
         assert c.RelayClient.request_id("other", "sys", "user") != rid
 
 
+
+def test_track_record_headline_counts_every_call_against_its_pool():
+    from radar import track
+    td = {"days": 11, "top": 1.0, "top_n": 2, "pool": 0.0, "pool_n": 10, "spread": 1.0}
+    recs = [
+        {"date": "2026-08-11", "top_n": 3, "pool_n": 10,
+         "windows": {30: {"top": 5.0, "top_n": 3, "pool": 2.0, "pool_n": 10, "spread": 3.0}},
+         "calls_30": [10.0, 3.0, -4.0], "to_date": td},
+        {"date": "2026-08-12", "top_n": 2, "pool_n": 10,
+         "windows": {30: {"top": -1.0, "top_n": 2, "pool": -3.0, "pool_n": 10, "spread": 2.0}},
+         "calls_30": [-1.0, -2.0], "to_date": td},
+        {"date": "2026-09-01", "top_n": 2, "pool_n": 10, "windows": {}, "to_date": td},   # still open
+    ]
+    sm = track.summary(recs)
+    assert sm["closed_30"] == 2 and sm["beat"] == 2 and sm["median_spread"] == 2.5
+    assert sm["calls_30"] == 5
+    assert sm["calls_beat_pct"] == 80          # 10, 3 beat 2.0; -1, -2 beat -3.0; -4 did not
+    assert sm["calls_up_pct"] == 40
+    assert sm["calls_median"] == -1.0
+    hl = track.headline(sm)
+    assert hl.startswith("Of 5 top-20 calls resolved at 30 days, 80% beat their pool and 40% were up")
+    assert track.headline(track.summary(recs[2:])) == ""
+    html = track.render(recs, [], as_of="2026-09-12")
+    assert "Calls resolved at +30 days" in html and "80% beat their pool" in html
+
+
+def test_supply_measures_the_shelf_by_date_and_stays_quiet_until_it_can():
+    from radar.invest import supply
+    assert supply([]) == {}
+    pts = [("2026-09-03", 40), ("2026-09-04", 36), ("2026-09-07", 30)]
+    out = supply(pts)
+    assert out["listings_now"] == 30 and out["listings_first"] == 40
+    assert "listings_change_7d" not in out            # four days of record: nothing to compare to yet
+    pts.append(("2026-09-11", 24))
+    out = supply(pts)
+    assert out["listings_change_7d"] == -33.3          # 24 vs 36 on Sep 4, the nearest close to Sep 4
+    assert "listings_change_30d" not in out
+    assert supply(pts, as_of="2026-09-07")["listings_now"] == 30   # never peeks past the issue date
+
 if __name__ == "__main__":
     passed = 0
     for name, fn in sorted(globals().items()):

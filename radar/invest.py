@@ -125,6 +125,31 @@ def _change_over(pts: Sequence[Sequence[Any]], days: int, *, tolerance: int = 3)
     return round((pts[-1][1] / best[1] - 1) * 100, 1)
 
 
+def supply(listings: Sequence[tuple[str, int]], *, as_of: str | None = None) -> dict[str, Any]:
+    """The shelf over time: how many copies are listed now against 7 and 30 days ago.
+
+    A shelf that shrinks while copies keep selling is demand eating supply --
+    the one thing a price chart cannot show, and the signal sealed buyers care
+    about most. Uses the same date-indexed lookback as _change_over (a 3-day
+    tolerance), so a card that did not update on the exact day still measures.
+    Returns {} until the shelf has been recorded long enough to compare.
+    """
+    if not listings:
+        return {}
+    pts = [(d, float(n)) for d, n in listings if n is not None]
+    if as_of:
+        pts = [p for p in pts if p[0] <= as_of]
+    if not pts:
+        return {}
+    out: dict[str, Any] = {"listings_now": int(pts[-1][1]), "listings_as_of": pts[-1][0],
+                           "listings_first": int(pts[0][1]), "listings_first_date": pts[0][0]}
+    for days in (7, 30):
+        ch = _change_over(pts, days) if pts[-1][1] else None
+        if ch is not None:
+            out[f"listings_change_{days}d"] = ch
+    return out
+
+
 def settled(pts: Sequence[tuple[str, float, float, float | None]], window: int = 14) -> dict:
     """Where copies are actually changing hands, versus what they are listed at.
 

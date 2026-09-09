@@ -5,7 +5,7 @@ measures the whole English market on tcgapi.dev, ranks the singles worth holding
 sealed product, marks every chart with the set calendar, scores its own past calls in
 public, and mails each subscriber what changed on the cards they follow.
 
-One paid tier: **$35 a month or $300 a year, 7-day trial, no free tier.** Published through
+One paid tier: **$7.99 a month or $75 a year, 7-day trial, no free tier.** Published through
 Ghost; built and sent by GitHub Actions; watchlists and alerts on one Cloudflare Worker.
 
 ```
@@ -70,7 +70,14 @@ days — on the cards a member follows, on change only, one email a day at most.
 
 **The track record.** The one public page: every issue's top 20 scored against its own
 candidate pool at +30/60/90 days, spread shown, losers kept, plus the monthly walk-forward
-validation of the score itself.
+validation of the score itself — and one sentence at the top, per call: "Of N top-20 calls
+resolved at 30 days, X% beat their pool." Every issue is committed to git the day it goes
+out, so the sentence cannot be improved after the fact.
+
+**The shelf.** Listing counts, measured daily: how many copies are listed now against 7 and
+30 days ago. A shelf that drains while copies keep selling is demand eating supply — the
+thing a price chart cannot show — and it is a verdict chip, a line in every detail, and a
+fact the writer is given.
 
 ## How it works, in one paragraph
 

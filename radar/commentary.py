@@ -135,7 +135,7 @@ def card_facts(r: dict, *, releases: Sequence[dict] = (), playbook: dict | None 
             "market_price", "floor_low", "shelf_med", "copies", "settled_price", "ask_premium_pct",
             "settled_days", "settled_volume", "change_3d", "change_7d", "change_30d", "change_90d",
             "change_180d", "change_1y", "consistency_pct", "volatility_pct", "drawdown_pct",
-            "avg_daily_sales", "days_traded_pct", "entry_vs_shelf_pct", "kind", "release_date",
+            "avg_daily_sales", "days_traded_pct", "entry_vs_shelf_pct", "listings_change_7d", "listings_change_30d", "kind", "release_date",
             "days_since_release", "first_price", "first_date", "change_since_first", "total_listings")
     facts = {k: f(k) for k in keys if r.get(k) is not None}
     if r.get("kind") == "sealed":            # sealed is not scored and has no rarity

@@ -513,6 +513,19 @@ class Database:
             )
         return out
 
+    def listings_series(self) -> dict[tuple[str, str], list[tuple[str, int]]]:
+        """(card, printing) -> [(date, total_listings)], the supply side of the
+        market. Only the daily snapshot carries listing counts (the history
+        endpoint does not), so the series starts the day the archive first
+        stored them (2026-09-03) and has a point only on days the row updated."""
+        out: dict[tuple[str, str], list[tuple[str, int]]] = {}
+        for row in self.conn.execute(
+            """SELECT card_id, printing, obs_date, total_listings FROM price_points
+               WHERE total_listings IS NOT NULL ORDER BY card_id, printing, obs_date ASC"""
+        ):
+            out.setdefault((row["card_id"], row["printing"]), []).append((row["obs_date"], int(row["total_listings"])))
+        return out
+
     def all_series_with_volume(
         self,
     ) -> dict[tuple[str, str], list[tuple[str, float, float, float | None]]]:

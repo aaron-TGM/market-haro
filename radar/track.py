@@ -38,13 +38,18 @@ TOP = 20
 HORIZONS = (30, 60, 90)
 
 
-def _median_change(keys: Sequence[tuple[str, str]], series: dict, start: str, end: str) -> tuple[float | None, int]:
+def _changes(keys: Sequence[tuple[str, str]], series: dict, start: str, end: str) -> list[float]:
     ch = []
     for k in keys:
         p0 = _price_at(series.get(k, []), start)
         p1 = _price_at(series.get(k, []), end, before=False)
         if p0 and p1:
             ch.append((p1 / p0 - 1) * 100)
+    return ch
+
+
+def _median_change(keys: Sequence[tuple[str, str]], series: dict, start: str, end: str) -> tuple[float | None, int]:
+    ch = _changes(keys, series, start, end)
     return (round(median(ch), 1) if len(ch) >= 5 else None), len(ch)
 
 
@@ -72,6 +77,10 @@ def issues(rankings_dir: Path, series: dict, as_of: str) -> list[dict[str, Any]]
                 p, pn = _median_change(pool, series, d, end.isoformat())
                 rec["windows"][h] = {"top": t, "top_n": tn, "pool": p, "pool_n": pn,
                                      "spread": round(t - p, 1) if t is not None and p is not None else None}
+                if h == 30:
+                    # Every top-20 call resolved on its own: the number a reader
+                    # can hold the product to, one row per call, never edited.
+                    rec["calls_30"] = [round(c, 1) for c in _changes(top, series, d, end.isoformat())]
         elapsed = (today - start).days
         t, tn = _median_change(top, series, d, as_of)
         p, pn = _median_change(pool, series, d, as_of)
@@ -82,12 +91,35 @@ def issues(rankings_dir: Path, series: dict, as_of: str) -> list[dict[str, Any]]
 
 
 def summary(recs: Sequence[dict]) -> dict[str, Any]:
-    """Across closed +30 windows: how often the top 20 beat the pool, and by how much."""
+    """Across closed +30 windows: how often the top 20 beat the pool, and by how much --
+    per issue, and per call (each top-20 pick resolved against its own pool's median)."""
     spreads = [r["windows"][30]["spread"] for r in recs if 30 in r["windows"] and r["windows"][30]["spread"] is not None]
-    if not spreads:
-        return {"closed_30": 0}
-    return {"closed_30": len(spreads), "beat": sum(1 for s in spreads if s > 0),
-            "median_spread": round(median(spreads), 1)}
+    calls, beat, up = 0, 0, 0
+    all_calls: list[float] = []
+    for r in recs:
+        w = r["windows"].get(30) or {}
+        pool = w.get("pool")
+        for c in r.get("calls_30") or []:
+            calls += 1
+            up += c > 0
+            beat += pool is not None and c > pool
+            all_calls.append(c)
+    out: dict[str, Any] = {"closed_30": len(spreads), "calls_30": calls}
+    if spreads:
+        out.update({"beat": sum(1 for s in spreads if s > 0), "median_spread": round(median(spreads), 1)})
+    if calls:
+        out.update({"calls_beat_pct": round(100 * beat / calls), "calls_up_pct": round(100 * up / calls),
+                    "calls_median": round(median(all_calls), 1)})
+    return out
+
+
+def headline(sm: dict) -> str:
+    """One plain sentence for the top of the page and the sales copy. Empty until a window closes."""
+    if not sm.get("calls_30"):
+        return ""
+    return (f"Of {sm['calls_30']} top-20 calls resolved at 30 days, {sm['calls_beat_pct']}% beat their pool "
+            f"and {sm['calls_up_pct']}% were up; the median call moved {sm['calls_median']:+.1f}%"
+            + (f" against a median spread of {sm['median_spread']:+.1f}% over the pool." if sm.get("closed_30") else "."))
 
 
 # ---------------------------------------------------------------- the page
@@ -156,7 +188,12 @@ def render(recs: Sequence[dict], validations: Sequence[dict], *, as_of: str, bra
         ix = (f'<div class="tile"><div class="l">{_esc(index["name"])}</div><div class="big">{index["value"]:.1f}</div>'
               f'<div class="muted">30d {index.get("change_30d") or 0:+.1f}% · 90d {index.get("change_90d") or 0:+.1f}%</div></div>')
 
-    head = (f'<div class="tile"><div class="l">Issues scored at +30 days</div><div class="big">{sm["closed_30"]}</div>'
+    hl = headline(sm)
+    head = ""
+    if sm.get("calls_30"):
+        head += (f'<div class="tile"><div class="l">Calls resolved at +30 days</div><div class="big">{sm["calls_30"]}</div>'
+                 f'<div class="muted">{sm["calls_beat_pct"]}% beat their pool · {sm["calls_up_pct"]}% up · median {sm["calls_median"]:+.1f}%</div></div>')
+    head += (f'<div class="tile"><div class="l">Issues scored at +30 days</div><div class="big">{sm["closed_30"]}</div>'
             f'<div class="muted">{"top 20 beat the pool in " + str(sm["beat"]) + " of them" if sm["closed_30"] else "first window closes soon"}</div></div>')
     if sm["closed_30"]:
         head += (f'<div class="tile"><div class="l">Median spread, +30d</div><div class="big {"up" if sm["median_spread"] > 0 else "down"}">{sm["median_spread"]:+.1f}%</div>'
@@ -173,6 +210,7 @@ def render(recs: Sequence[dict], validations: Sequence[dict], *, as_of: str, bra
 <div class="brand">from GUNDECK.AI</div>
 <h1>{_esc(brand)} — track record</h1>
 <p class="muted">Updated {_esc(as_of)}. Every issue's top 20, scored against the whole candidate pool from the day it was published. Nothing is removed.</p>
+{f'<p><b>{_esc(hl)}</b> A call is one card in one issue&rsquo;s top 20; a card that stays in the top 20 is called again the next day and resolved again. Every issue is committed to a public git history the day it is published, so no row here can be added, changed or removed after the fact.</p>' if hl else ''}
 <div class="tiles">{head}{ix}</div>
 
 <h2>Issue by issue</h2>

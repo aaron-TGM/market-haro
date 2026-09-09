@@ -123,8 +123,8 @@ Stripe memberships, member-only content, the email send, and magic-link sign-in.
 
    | | |
    |---|---|
-   | Monthly | **$35** |
-   | Yearly | **$300** |
+   | Monthly | **$7.99** |
+   | Yearly | **$75** |
    | Free trial | **7 days** (Settings → Membership → the tier → "Free trial days") |
    | Free tier | off |
    | Founding / launch discount | none |
@@ -175,7 +175,7 @@ and the **track record as a public page at `/track-record/`** — the one page
 without a paywall, because a prospect deserves to see the ranking scored before
 they pay. Set `track_slug` under `publish:` to change its address.
 
-### 5b. The sync + alerts Worker (optional, and what makes it a $35 product)
+### 5b. The sync + alerts Worker (optional, and what makes it a product, not a page)
 
 Without this, every subscriber's watchlist lives in their browser and dies on
 their phone. With it, the watchlist and holdings follow the member across

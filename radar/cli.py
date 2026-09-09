@@ -200,11 +200,13 @@ def cmd_invest(cfg, args) -> int:
             series = db.all_series_with_volume()
 
         # 2. Measure.
+        shelves = db.listings_series()
         measured = []
         for r in candidates:
             key = (r["card_id"], r.get("printing") or "Normal")
             hist = series.get(key, [])
             feats = invest_mod.features(hist) or {}
+            feats.update(invest_mod.supply(shelves.get(key, []), as_of=obs))
             rec = {**r, **feats,
                    "series": [(pt[0], pt[1]) for pt in invest_mod._window(hist, 90)],
                    "series_long": invest_mod.weekly_points(hist, 400)}
@@ -281,7 +283,8 @@ def cmd_invest(cfg, args) -> int:
             "SELECT id, name, set_name, product_type FROM cards")}
         gindex = index_mod.build(cfg.path("data"), series, card_meta, obs)
         sealed_rows = sealed_mod.evaluate(
-            [r for r in rows if r.get("product_type") == "Sealed Products"], series, all_sets, obs)
+            [r for r in rows if r.get("product_type") == "Sealed Products"], series, all_sets, obs,
+            shelves=shelves)
         from . import note as note_mod
         from . import playbook as playbook_mod
         from . import track as track_mod
@@ -308,6 +311,18 @@ def cmd_invest(cfg, args) -> int:
         print(f"{gindex['name']}: {gindex.get('value', '—')} "
               f"({gindex.get('change_7d', 0) or 0:+.1f}% 7d, {len(gindex.get('constituents') or [])} members)"
               f" · sealed screen: {len(sealed_rows)} products")
+        # The public track record, rebuilt every issue from the stored rankings,
+        # and its one-sentence summary, which the page and the email carry.
+        pub_cfg = cfg.raw.get("publish") or {}
+        report_url = pub_cfg.get("report_url") or None
+        track_url = pub_cfg.get("track_record_url") or (
+            report_url.rstrip("/").rsplit("/", 1)[0] + "/track-record/" if report_url else "track-record.html")
+        track_html, track_recs = track_mod.build(cfg.path("data"), series, obs, report_url=report_url or "",
+                                                 index=gindex)
+        track_sm = track_mod.summary(track_recs)
+        track_sm["headline"] = track_mod.headline(track_sm)
+        if track_sm["headline"]:
+            print("Record: " + track_sm["headline"])
         html = haro.render(
             ranked,
             obs_date=obs,
@@ -324,18 +339,21 @@ def cmd_invest(cfg, args) -> int:
             sync_url=(cfg.raw.get("publish") or {}).get("sync_url") or None,
             note=weekly_note,
             commentary=written,
+            record=track_sm,
+            track_url=track_url,
             art_cache=cfg.path("data/images"),
             fetch_art=not getattr(args, "no_art_fetch", False),
         )
         out = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
         haro.write(html, out)
+        (out.parent / "track-record.html").write_text(track_html, encoding="utf-8")
+        (out.parent / "track.json").write_text(json.dumps(track_sm, indent=1), encoding="utf-8")
         print(f"\nDashboard -> {out}")
 
         # The compact issue the alert service reads: today's and the previous
         # issue's state for every ranked card, keyed like the page keys rows.
         from . import alerts as alerts_mod
 
-        report_url = cfg.raw.get("publish", {}).get("report_url") or None
         ranked_rows = [dict(r, rank=i) for i, r in enumerate(
             [x for x in ranked if not x.get("disqualified")], 1)]
         iss = alerts_mod.issue(ranked_rows, obs_date=obs, prev_rows=(prev or {}).get("rows"),
@@ -361,9 +379,6 @@ def cmd_invest(cfg, args) -> int:
         (out.parent / "playbook.json").write_text(json.dumps(pbook.get("summary"), sort_keys=True), encoding="utf-8")
 
         # The public track record, rebuilt every issue from the stored rankings.
-        track_html, _ = track_mod.build(cfg.path("data"), series, obs, report_url=report_url or "",
-                                        index=gindex)
-        (out.parent / "track-record.html").write_text(track_html, encoding="utf-8")
         (out.parent / "digest.md").write_text(
             digest_mod.to_markdown(since, report_url=report_url, lead=lead), encoding="utf-8")
         (out.parent / "digest.json").write_text(

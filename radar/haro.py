@@ -820,6 +820,13 @@ function verdicts(r){
   else if (s >= 1) v.push({c:'good', t:`${s.toFixed(1)} sales a day`, s:'a stack clears in days'});
   else v.push({c:'bad', t:`${s.toFixed(1)} sales a day`, s:'slow to exit'});
   if (r.drawdown_pct != null && r.drawdown_pct >= 10) v.push({c:'warn', t:`${r.drawdown_pct.toFixed(0)}% off its high`, s:'90-day high'});
+  // The shelf: supply, which a price chart cannot show. Shrinking while copies
+  // still sell is demand eating supply; growing is sellers arriving.
+  const lc = r.listings_change_30d ?? r.listings_change_7d; const lw = r.listings_change_30d != null ? '30d' : '7d';
+  if (lc != null && r.total_listings != null){
+    if (lc <= -20) v.push({c:'good', t:`Shelf ${lc.toFixed(0)}% in ${lw}`, s:`${r.total_listings} listed · supply draining`});
+    else if (lc >= 25) v.push({c:'warn', t:`Shelf +${lc.toFixed(0)}% in ${lw}`, s:`${r.total_listings} listed · sellers arriving`});
+  }
   return v.map(x=>`<span class="vchip ${x.c}"><span class="vt">${esc(x.t)}</span>${x.s?`<span class="vs">${esc(x.s)}</span>`:''}</span>`).join('');
 }
 const cleanWatch = s => { const t = String(s||'').replace(/^Watch:\s*/i,'').replace(/\s*Reprints, ban-list changes and rotation[^.]*\.\s*$/,'').trim(); return t ? t[0].toUpperCase() + t.slice(1) : ''; };
@@ -844,6 +851,9 @@ function detailHTML(r, plan){
        <div class="kv"><span class="k">Entry vs the shelf</span><span class="vv ${r.entry_vs_shelf_pct==null?'':(r.entry_vs_shelf_pct>0?'up':'down')}">${r.entry_vs_shelf_pct==null?'—':(r.entry_vs_shelf_pct>0?Math.abs(r.entry_vs_shelf_pct).toFixed(0)+'% below median':Math.abs(r.entry_vs_shelf_pct).toFixed(0)+'% above median')}</span></div>
        <div class="kv"><span class="k">Copies at Near Mint</span><span class="vv">${r.copies ?? '—'}</span></div>`
     : '<p class="sub2">No live entry price for this card today.</p>';
+  const supplyLine = (r.total_listings != null)
+    ? `<div class="kv"><span class="k" data-tip="Listings on TCGplayer, all conditions, against 7 and 30 days ago. Fewer listings while copies keep selling is demand eating supply; more is sellers arriving. Recorded daily since 2026-09-03.">All listings<span class="info">?</span></span><span class="vv">${r.total_listings}${r.listings_change_7d!=null?` <span class="${r.listings_change_7d<0?'up':'down'}">${pct(r.listings_change_7d,0)} 7d</span>`:''}${r.listings_change_30d!=null?` <span class="${r.listings_change_30d<0?'up':'down'}">${pct(r.listings_change_30d,0)} 30d</span>`:''}</span></div>`
+    : '';
   const soldLine = r.settled_price != null
     ? `<div class="kv"><span class="k">Sold for, 14-day average</span><span class="vv">$${r.settled_price.toFixed(2)}</span></div>
        <div class="kv"><span class="k">Based on</span><span class="vv">${r.settled_volume ?? '—'} sales / ${r.settled_days} days</span></div>`
@@ -909,8 +919,7 @@ function detailHTML(r, plan){
         <h5 data-tip="${esc(DATA.tips.settled)}">The shelf today<span class="info">?</span></h5>
         ${isSealed(r) ? `<div class="kv"><span class="k">Market price</span><span class="vv">${money(r.market_price)}</span></div>
           <div class="kv"><span class="k">Lowest listing</span><span class="vv">${money(r.low_price)}</span></div>
-          <div class="kv"><span class="k">Median listing</span><span class="vv">${money(r.median_price)}</span></div>
-          <div class="kv"><span class="k">Listings</span><span class="vv">${r.total_listings ?? '—'}</span></div>` : shelf}${soldLine}
+          <div class="kv"><span class="k">Median listing</span><span class="vv">${money(r.median_price)}</span></div>` : shelf}${supplyLine}${soldLine}
       </div>
       <div class="dbox">
         <h5>Your money <span class="sub">saved in this browser</span></h5>
@@ -1207,6 +1216,8 @@ def render(
     sync_url: str | None = None,
     note: dict[str, Any] | None = None,
     commentary: dict[str, dict] | None = None,
+    record: dict[str, Any] | None = None,
+    track_url: str = "",
 ) -> str:
     """`since` and `heat` are accepted for compatibility and unused: the
     issue-to-issue comparison is the email digest's job, and the hand-kept
@@ -1269,6 +1280,11 @@ def render(
         next_tile = (f'<div class="kpi cyan"><div class="l" data-tip="{_esc(names)}">Next release<span class="info">?</span></div>'
                      f'<div class="v">{_esc(nxt["label"])}</div><div class="f">{_esc(nxt["date"])} · {when}</div></div>')
 
+    record_tile = ""
+    if record and record.get("calls_30"):
+        record_tile = (f'<a class="kpi" href="{_esc(track_url or "#")}" data-tip="Every top-20 pick, scored 30 days after the issue it appeared in against that issue&#39;s whole pool. Public, committed to git the day it is published, never edited."><div class="l">The record<span class="info">?</span></div>'
+                       f'<div class="v">{record["calls_beat_pct"]}%</div><div class="f">of {record["calls_30"]} calls beat their pool at +30d · median {record["calls_median"]:+.1f}%</div></a>')
+
     payload = json.dumps({
         "rows": rows, "obs_date": obs_date, "checklist": CHECKLIST,
         "plan": plan_cfg or {"max_position_pct": 0.25}, "tips": TIPS,
@@ -1325,7 +1341,7 @@ def render(
   <div class="kpi"><div class="l">Pass the screen</div><div class="v">{len(candidates)}</div><div class="f">of {len(ranked):,} screened</div></div>
   <div class="kpi up"><div class="l" data-tip="Candidates selling at least one copy a day. Below that, exiting a stack takes weeks.">Liquid enough<span class="info">?</span></div><div class="v">{liquid}</div><div class="f">1+ sales a day</div></div>
   <a class="kpi" href="#screened-out"><div class="l">Screened out</div><div class="v">{len(rejected)}</div><div class="f">every one listed with its reason</div></a>
-  {next_tile}
+  {next_tile}{record_tile}
 </div>
 
 <div class="toolbar">

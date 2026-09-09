@@ -105,14 +105,19 @@ def _days_between(a: str | None, b: str | None) -> int | None:
         return None
 
 
-def evaluate(rows: Sequence[dict], series: dict, sets: Sequence[dict], as_of: str) -> list[dict]:
-    """rows: latest price rows for sealed products; series: all_series_with_volume."""
+def evaluate(rows: Sequence[dict], series: dict, sets: Sequence[dict], as_of: str,
+             shelves: dict | None = None) -> list[dict]:
+    """rows: latest price rows for sealed products; series: all_series_with_volume;
+    shelves: db.listings_series(), for the supply measure."""
+    from .invest import supply
+
     release = {str(s["id"]): s.get("release_date") for s in sets}
     out = []
     for r in rows:
         key = (str(r["card_id"]), r.get("printing") or "Normal")
         pts = series.get(key, [])
         feats = features(pts) or {}
+        feats.update(supply((shelves or {}).get(key, []), as_of=as_of))
         price = r.get("market_price")
         if not price:
             continue

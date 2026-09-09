@@ -196,7 +196,7 @@ def build() -> tuple[str, str]:
 <aside class="rail">
   <div class="brand">from GUNDECK.AI</div>
   <h1>Market Haro<br>the build</h1>
-  <div class="facts">Issue <b>{html.escape(p['obs_date'])}</b><br>Built 2026-09-06<br><b>{len(rows)}</b> pass the screen<br>MH50 <b>{ix.get('value', 0):.1f}</b><br>$35/mo · $300/yr</div>
+  <div class="facts">Issue <b>{html.escape(p['obs_date'])}</b><br>Built 2026-09-06<br><b>{len(rows)}</b> pass the screen<br>MH50 <b>{ix.get('value', 0):.1f}</b><br>$7.99/mo · $75/yr</div>
   <nav>
     <a href="#built">What we built</a>
     <a href="#report">The report <span class="st">live</span></a>
@@ -211,7 +211,7 @@ def build() -> tuple[str, str]:
 <main>
 <section id="built">
   <p class="eyebrow">Market Haro · from GUNDECK.AI <span class="chip built">built 2026-09-06</span></p>
-  <h2>Everything in the $35 build, on one page, live.</h2>
+  <h2>Everything in the build, on one page, live.</h2>
   <div class="prose"><p>Each surface below is embedded as it ships — the report you can filter and tap, the email as it lands, an alert as a member would get it, the public track record — on the last complete day the price feed has, <b>{html.escape(p['obs_date'])}</b>. The batch feed stamps most rows Sep 4 and runs a day behind the daily history; the charts, short-window changes and the settled price include Friday.</p></div>
   {tiles}
   <table class="feat"><thead><tr><th>Feature</th><th>What it is</th><th>Status</th></tr></thead><tbody>{frows}</tbody></table>
@@ -269,7 +269,7 @@ def build() -> tuple[str, str]:
   <p class="eyebrow">What needs you <span class="chip you">your side</span></p>
   <h2>Six things, none of them code.</h2>
   <ul class="todo">
-    <li><i></i><span><b>Ghost tier.</b> Settings → Membership: $35 monthly, $300 yearly, 7-day trial on, subscription access paid-members only, free tier hidden in Portal.</span></li>
+    <li><i></i><span><b>Ghost tier.</b> Settings → Membership: $7.99 monthly, $75 yearly, 7-day trial on, subscription access paid-members only, free tier hidden in Portal.</span></li>
     <li><i></i><span><b>Repo secrets.</b> TCGAPI_KEY, GHOST_URL, GHOST_ADMIN_KEY — then run the workflow once by hand and watch it go green.</span></li>
     <li><i></i><span><b>The Worker.</b> <code>cd worker && npm install && npx wrangler kv namespace create HARO && npx wrangler deploy</code>; secrets ADMIN_SECRET and RESEND_API_KEY; put the Worker URL in <code>config.yaml → publish.sync_url</code> and the same secret in the repo as HARO_ADMIN_SECRET. DEPLOY.md §5b.</span></li>
     <li><i></i><span><b>Resend.</b> Verify the sending domain; set MAIL_FROM in <code>worker/wrangler.toml</code>.</span></li>

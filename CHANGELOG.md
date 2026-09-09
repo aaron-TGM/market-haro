@@ -3,6 +3,21 @@
 Newest first. Dates are the day the work landed; issue dates are the price date the
 report carries.
 
+## 2026-09-09 — the record, the shelf, the price
+
+- **Pricing** reset to **$7.99 a month, $75 a year** (GUNDECK offer: first month $3.99, first
+  year $60). Single paid tier, 7-day trial, no free tier, as before.
+- **The record, per call**: every top-20 pick is resolved on its own 30 days after its issue
+  against that issue's pool. One sentence at the top of the track record and a tile on the
+  report: "Of N calls resolved at 30 days, X% beat their pool and Y% were up." `out/track.json`.
+  The first window closes 2026-09-10.
+- **The shelf**: listing counts are now a measured series (`db.listings_series`,
+  `invest.supply`): listings today against 7 and 30 days ago, on singles and sealed. A verdict
+  chip when the shelf drains 20%+ or grows 25%+; a line in the detail; in the writer's facts.
+  Recorded daily since 2026-09-03, so the deltas appear from 2026-09-10.
+- **Market Haro 50** folds closed by default: one line at the top, the chart on a click.
+- **Commentary relay** (`--relay DIR`, `scripts/relay.html`) for machines without network.
+
 ## 2026-09-08 — the voice
 
 - **Written, not templated**: each card's case and watch, the email's opening paragraph and a

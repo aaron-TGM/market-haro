@@ -1,6 +1,6 @@
 """The weekly note: a few hundred words in a person's voice.
 
-A pure data product at $35 a month feels cold, and the thing subscribers
+A pure data product feels cold, and the thing subscribers
 actually forward to each other is a paragraph with a point of view. So the
 page and the email carry a slot for one -- written by a person, not
 generated, and shown only while it is fresh.
