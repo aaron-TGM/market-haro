@@ -32,6 +32,7 @@ tcgapi.dev ──sync──▶ SQLite (cache) ◀──restore── data/histor
 | `snipe.py` | live NM English shelf | entry price = cheapest NM shipped; English enforced twice |
 | `index.py` | Market Haro 50 | equal-weight, chain-linked, members fixed per month, `data/index.ndjson` |
 | `sealed.py` | the sealed screen | against earliest price held + release date; its own case/watch/checklist; not scored |
+| `depth.py` | what is under each box | per set: singles ≥$50/$100/$500, top-10 value and its 30d move, money through singles and sealed; a panel, and sealed facts |
 | `releases.py` | the set calendar | codes from card numbers (GD05, ST11–14); marks on every chart; next-release tile |
 | `playbook.py` | what releases did | prior set / new set / market at +30/60/90, medians with n |
 | `track.py` | the public track record | every issue's top 20 vs its pool; validation history |

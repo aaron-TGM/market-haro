@@ -135,7 +135,9 @@ def card_facts(r: dict, *, releases: Sequence[dict] = (), playbook: dict | None 
             "market_price", "floor_low", "shelf_med", "copies", "settled_price", "ask_premium_pct",
             "settled_days", "settled_volume", "change_3d", "change_7d", "change_30d", "change_90d",
             "change_180d", "change_1y", "consistency_pct", "volatility_pct", "drawdown_pct",
-            "avg_daily_sales", "days_traded_pct", "entry_vs_shelf_pct", "listings_change_7d", "listings_change_30d", "kind", "release_date",
+            "avg_daily_sales", "days_traded_pct", "entry_vs_shelf_pct", "listings_change_7d", "listings_change_30d",
+            "days_of_shelf", "dollars_to_clear", "dollars_30d", "tracked_high", "tracked_high_date", "tracked_since",
+            "off_tracked_high_pct", "kind", "release_date",
             "days_since_release", "first_price", "first_date", "change_since_first", "total_listings")
     facts = {k: f(k) for k in keys if r.get(k) is not None}
     if r.get("kind") == "sealed":            # sealed is not scored and has no rarity
@@ -144,6 +146,8 @@ def card_facts(r: dict, *, releases: Sequence[dict] = (), playbook: dict | None 
         facts.pop("rarity", None)
     if r.get("components"):
         facts["score_components"] = {k: round(v) for k, v in r["components"].items()}
+    if r.get("set_depth"):
+        facts["set_beneath_it"] = r["set_depth"]
     ser = r.get("series") or []
     if ser:
         facts["window"] = {"from": ser[0][0], "to": ser[-1][0], "first_price": round(ser[0][1], 2),
@@ -162,7 +166,8 @@ def card_facts(r: dict, *, releases: Sequence[dict] = (), playbook: dict | None 
     return facts
 
 
-def lead_facts(diff: dict, *, index: dict | None, releases: Sequence[dict], obs_date: str, today: str) -> dict:
+def lead_facts(diff: dict, *, index: dict | None, releases: Sequence[dict], obs_date: str, today: str,
+               depth: Sequence[dict] = ()) -> dict:
     top = lambda rows, n=5: [{k: r.get(k) for k in ("name", "set_name", "rank", "prev_rank", "invest_score",  # noqa: E731
                                                      "ask_premium_pct", "prev_premium", "floor_low", "disqualified")
                               if r.get(k) is not None} for r in (rows or [])[:n]]
@@ -179,6 +184,7 @@ def lead_facts(diff: dict, *, index: dict | None, releases: Sequence[dict], obs_
         "climbers": top(diff.get("climbers")), "fallers": top(diff.get("fallers")),
         "asks_ran_ahead": top(diff.get("stretched")), "asks_fell_below": top(diff.get("cheapened")),
         "next_release": ({"date": nxt["date"], "label": nxt["label"], "names": nxt.get("names")} if nxt else None),
+        "money_by_set_30d": list(depth) or None,
     }
 
 

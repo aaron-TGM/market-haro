@@ -150,6 +150,27 @@ def supply(listings: Sequence[tuple[str, int]], *, as_of: str | None = None) -> 
     return out
 
 
+def shelf_math(row: dict) -> dict[str, Any]:
+    """Two numbers a shelf implies, given what is listed and how fast it sells.
+
+    days_of_shelf: listings / sales a day -- how long the current shelf lasts
+    at the current pace (341 days is a box going nowhere; 12 is a box that is
+    about to be scarce). dollars_to_clear: listings x price -- what it would
+    cost to buy the shelf out, i.e. how much money it takes to move this.
+    """
+    n = row.get("total_listings")
+    price = _f(row.get("market_price"))
+    sales = _f(row.get("avg_daily_sales"))
+    out: dict[str, Any] = {}
+    if n is None or price is None:
+        return out
+    n = int(n)
+    out["dollars_to_clear"] = round(n * price)
+    if sales and sales > 0:
+        out["days_of_shelf"] = round(n / sales)
+    return out
+
+
 def settled(pts: Sequence[tuple[str, float, float, float | None]], window: int = 14) -> dict:
     """Where copies are actually changing hands, versus what they are listed at.
 
@@ -277,7 +298,21 @@ def features(series: Sequence[Sequence[Any]]) -> dict[str, Any] | None:
     volatility = round(math.sqrt(var) * 100, 1)
 
     days = len(vol)
+    # Money through the product: copies sold x what they sold for (the market
+    # price when no sale price is recorded), over the last 30 days. Grayson's
+    # "dollar absorption": how much of the market this card actually is.
+    last30 = _window(pts, 30)
+    dollars_30d = round(sum(p[2] * (p[3] or p[1]) for p in last30))
+    # The high since we have tracked it -- the whole stored series, not the
+    # window -- and the day it was set. "This was $1,000 once" is context a
+    # 90-day high cannot give.
+    hi_pt = max(full, key=lambda p: p[1])
     return {
+        "dollars_30d": dollars_30d,
+        "tracked_high": round(hi_pt[1], 2),
+        "tracked_high_date": str(hi_pt[0])[:10],
+        "tracked_since": str(full[0][0])[:10],
+        "off_tracked_high_pct": round((1 - last / hi_pt[1]) * 100, 1) if hi_pt[1] else 0.0,
         # Short-window changes computed from the stored daily series rather than
         # taken from the API's price_change_24h field. That field is unreliable:
         # measured 2026-08-09 across 1,701 Gundam products it was non-zero on

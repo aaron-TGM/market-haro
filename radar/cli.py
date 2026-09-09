@@ -207,6 +207,7 @@ def cmd_invest(cfg, args) -> int:
             hist = series.get(key, [])
             feats = invest_mod.features(hist) or {}
             feats.update(invest_mod.supply(shelves.get(key, []), as_of=obs))
+            feats.update(invest_mod.shelf_math({**r, **feats}))
             rec = {**r, **feats,
                    "series": [(pt[0], pt[1]) for pt in invest_mod._window(hist, 90)],
                    "series_long": invest_mod.weekly_points(hist, 400)}
@@ -294,6 +295,12 @@ def cmd_invest(cfg, args) -> int:
         pbook = playbook_mod.build(
             all_sets, [dict(x) for x in db.conn.execute("SELECT id, set_id, product_type FROM cards")],
             series, obs, calendar=calendar)
+        # What is under each box: the set's singles, and the money through both.
+        from . import depth as depth_mod
+
+        depth = depth_mod.build(rows, series, all_sets, as_of=obs)
+        for sr in sealed_rows:
+            sr["set_depth"] = depth_mod.for_set(depth, sr.get("set_id"))
         # The words. A model writes each card's case from its facts, guarded
         # number by number; the template stands wherever it did not.
         from . import commentary as comm_mod
@@ -336,6 +343,7 @@ def cmd_invest(cfg, args) -> int:
             index=gindex,
             sealed=sealed_rows,
             playbook=pbook,
+            depth=depth,
             sync_url=(cfg.raw.get("publish") or {}).get("sync_url") or None,
             note=weekly_note,
             commentary=written,
@@ -366,7 +374,8 @@ def cmd_invest(cfg, args) -> int:
         lead = None
         if use_llm:
             lead = comm_mod.write_lead(
-                comm_mod.lead_facts(since, index=gindex, releases=calendar, obs_date=obs, today=today),
+                comm_mod.lead_facts(since, index=gindex, releases=calendar, obs_date=obs, today=today,
+                                    depth=depth_mod.facts_for_lead(depth)),
                 root=cfg.path("data"), date=obs, client=llm)
             print("Email lead: " + ("written" if lead else "template"))
         if isinstance(llm, comm_mod.RelayClient):

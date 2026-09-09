@@ -3,6 +3,20 @@
 Newest first. Dates are the day the work landed; issue dates are the price date the
 report carries.
 
+## 2026-09-09 — what a number is for
+
+- **Shelf arithmetic** on every single and every box: days of shelf (listings ÷ sales a day)
+  and dollars to clear it (listings × price) — how long the shelf lasts and how little money
+  moves the price. In the detail, and in the writer's facts (`invest.shelf_math`).
+- **Money through it**: copies sold × what they sold for over 30 days, per product
+  (`dollars_30d`), and **what is under each box** — a panel per set: singles worth $50/$100/$500,
+  what the top ten are worth and how that moved this month, money through singles and sealed
+  (`radar/depth.py`). Every sealed case is written with its own set's row; the email lead is
+  given the three sets money is moving through.
+- **High since tracked** and its date, and how far off it the card sits, in the detail and the
+  facts — not only the 90-day high.
+- **Voice**: two rules. A number must carry a consequence; a watch names a mechanism.
+
 ## 2026-09-09 — the record, the shelf, the price
 
 - **Pricing** reset to **$9.99 a month, $89 a year**. Single paid tier, 7-day trial, no free

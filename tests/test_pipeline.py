@@ -1924,6 +1924,53 @@ def test_supply_measures_the_shelf_by_date_and_stays_quiet_until_it_can():
     assert "listings_change_30d" not in out
     assert supply(pts, as_of="2026-09-07")["listings_now"] == 30   # never peeks past the issue date
 
+
+def test_shelf_math_and_the_tracked_high():
+    from radar import invest
+    assert invest.shelf_math({"total_listings": 26, "market_price": 338.41, "avg_daily_sales": 1.9}) == {
+        "dollars_to_clear": 8799, "days_of_shelf": 14}
+    assert invest.shelf_math({"total_listings": 26, "market_price": 338.41, "avg_daily_sales": 0}) == {"dollars_to_clear": 8799}
+    assert invest.shelf_math({"market_price": 5}) == {}
+    from datetime import date, timedelta
+    d0 = date(2026, 5, 1)
+    series = [((d0 + timedelta(days=i)).isoformat(), 10 + (40 if i == 20 else 0) + i * 0.1, 2, 11 + i * 0.1) for i in range(120)]
+    f = invest.features(series)
+    assert f["tracked_high"] == 52.0 and f["tracked_high_date"] == "2026-05-21" and f["tracked_since"] == "2026-05-01"
+    assert f["off_tracked_high_pct"] > 50
+    assert f["dollars_30d"] == round(sum(2 * (11 + i * 0.1) for i in range(89, 120)))   # _window is inclusive: 31 days
+
+
+def test_set_depth_measures_what_is_under_a_box():
+    from radar import depth
+    sets = [{"id": "1", "name": "Deep", "release_date": "2026-07-24"}, {"id": "2", "name": "Thin", "release_date": "2026-01-30"}]
+    rows = []
+    for i in range(12):
+        rows.append({"card_id": f"d{i}", "printing": "Normal", "set_id": "1", "set_name": "Deep",
+                     "name": f"Deep {i}", "market_price": 600 - i * 50, "product_type": "Cards"})
+    for i in range(6):
+        rows.append({"card_id": f"t{i}", "printing": "Normal", "set_id": "2", "set_name": "Thin",
+                     "name": f"Thin {i}", "market_price": 60 - i * 10, "product_type": "Cards"})
+    rows.append({"card_id": "box1", "printing": "Normal", "set_id": "1", "set_name": "Deep", "name": "Deep Box",
+                 "market_price": 190, "product_type": "Sealed Products"})
+    rows.append({"card_id": "x", "printing": "Normal", "set_id": "3", "set_name": "Promo", "name": "lone",
+                 "market_price": 900, "product_type": "Cards"})    # too few to be a set
+    from datetime import date, timedelta
+    d0 = date(2026, 8, 1)
+    ser = {("d0", "Normal"): [((d0 + timedelta(days=i)).isoformat(), 500 + i * 100 / 37, 1, None) for i in range(38)],
+           ("box1", "Normal"): [((d0 + timedelta(days=i)).isoformat(), 190, 5, 200) for i in range(38)]}
+    table = depth.build(rows, ser, sets, as_of="2026-09-07")
+    assert [t["set_name"] for t in table] == ["Deep", "Thin"]
+    deep = table[0]
+    assert deep["over_50"] == 12 and deep["over_100"] == 11 and deep["over_500"] == 3
+    assert deep["top10_value"] == sum(600 - i * 50 for i in range(10))
+    assert deep["top_card"] == "Deep 0" and deep["top_card_price"] == 600
+    assert deep["dollars_30d_sealed"] == 5 * 200 * 31 and deep["dollars_30d_singles"] > 0
+    assert deep["top10_change_30d"] is not None
+    f = depth.for_set(table, "1")
+    assert f["set_name"] == "Deep" and "release_date" not in f and f["over_100"] == 11
+    assert depth.for_set(table, "3") is None
+    assert [x["set_name"] for x in depth.facts_for_lead(table, 1)] == ["Deep"]
+
 if __name__ == "__main__":
     passed = 0
     for name, fn in sorted(globals().items()):

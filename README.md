@@ -75,9 +75,16 @@ resolved at 30 days, X% beat their pool." Every issue is committed to git the da
 out, so the sentence cannot be improved after the fact.
 
 **The shelf.** Listing counts, measured daily: how many copies are listed now against 7 and
-30 days ago. A shelf that drains while copies keep selling is demand eating supply — the
-thing a price chart cannot show — and it is a verdict chip, a line in every detail, and a
-fact the writer is given.
+30 days ago, how many days the shelf lasts at today's pace, and what it would cost to buy it
+out. A shelf that drains while copies keep selling is demand eating supply — the thing a
+price chart cannot show — and it is a verdict chip, a line in every detail, and a fact the
+writer is given, along with the money that moved through the card in 30 days and the high
+since we have tracked it.
+
+**What is under each box.** For every set, the singles beneath it: how many are worth $50,
+$100 and $500, what the top ten are worth and how that moved this month, and the money that
+moved through the set's singles and its sealed product in 30 days. A box sells six a day or
+none because of the cards inside it; this is the table that says which.
 
 ## How it works, in one paragraph
 

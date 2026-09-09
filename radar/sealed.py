@@ -109,7 +109,7 @@ def evaluate(rows: Sequence[dict], series: dict, sets: Sequence[dict], as_of: st
              shelves: dict | None = None) -> list[dict]:
     """rows: latest price rows for sealed products; series: all_series_with_volume;
     shelves: db.listings_series(), for the supply measure."""
-    from .invest import supply
+    from .invest import shelf_math, supply
 
     release = {str(s["id"]): s.get("release_date") for s in sets}
     out = []
@@ -118,6 +118,7 @@ def evaluate(rows: Sequence[dict], series: dict, sets: Sequence[dict], as_of: st
         pts = series.get(key, [])
         feats = features(pts) or {}
         feats.update(supply((shelves or {}).get(key, []), as_of=as_of))
+        feats.update(shelf_math({**r, **feats}))
         price = r.get("market_price")
         if not price:
             continue

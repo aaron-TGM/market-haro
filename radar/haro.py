@@ -854,6 +854,10 @@ function detailHTML(r, plan){
   const supplyLine = (r.total_listings != null)
     ? `<div class="kv"><span class="k" data-tip="Listings on TCGplayer, all conditions, against 7 and 30 days ago. Fewer listings while copies keep selling is demand eating supply; more is sellers arriving. Recorded daily since 2026-09-03.">All listings<span class="info">?</span></span><span class="vv">${r.total_listings}${r.listings_change_7d!=null?` <span class="${r.listings_change_7d<0?'up':'down'}">${pct(r.listings_change_7d,0)} 7d</span>`:''}${r.listings_change_30d!=null?` <span class="${r.listings_change_30d<0?'up':'down'}">${pct(r.listings_change_30d,0)} 30d</span>`:''}</span></div>`
     : '';
+  const shelfMath = (r.dollars_to_clear != null)
+    ? `<div class="kv"><span class="k" data-tip="Listings divided by sales a day: how long the shelf lasts at today's pace. Under 30 is a shelf about to be scarce; over 180 is a card going nowhere until it clears.">Days of shelf<span class="info">?</span></span><span class="vv">${r.days_of_shelf != null ? r.days_of_shelf + 'd' : '—'}</span></div>
+       <div class="kv"><span class="k" data-tip="Listings times price: what it would cost to buy the shelf out. The smaller it is, the less money it takes to move this price.">To clear the shelf<span class="info">?</span></span><span class="vv">${money(r.dollars_to_clear)}</span></div>`
+    : '';
   const soldLine = r.settled_price != null
     ? `<div class="kv"><span class="k">Sold for, 14-day average</span><span class="vv">$${r.settled_price.toFixed(2)}</span></div>
        <div class="kv"><span class="k">Based on</span><span class="vv">${r.settled_volume ?? '—'} sales / ${r.settled_days} days</span></div>`
@@ -905,6 +909,8 @@ function detailHTML(r, plan){
         <div class="kv"><span class="k">Since then</span><span class="vv">${r.change_since_first==null?'—':pct(r.change_since_first)}</span></div>
         <div class="changes">${changes}</div>
         <div class="kv" style="margin-top:8px"><span class="k">Off its 90-day high</span><span class="vv">${r.drawdown_pct ?? '—'}%</span></div>
+        <div class="kv"><span class="k">High since tracked</span><span class="vv">${r.tracked_high != null ? money(r.tracked_high) + ' <span class="flat">' + shortDate(r.tracked_high_date) + (r.off_tracked_high_pct ? ' · ' + r.off_tracked_high_pct + '% off' : '') + '</span>' : '—'}</span></div>
+        <div class="kv"><span class="k" data-tip="Copies sold times what they sold for, over the last 30 days: how much money actually moved through this card.">Money through it, 30d<span class="info">?</span></span><span class="vv">${money(r.dollars_30d)}</span></div>
         <div class="kv"><span class="k">Units sold a day</span><span class="vv">${r.avg_daily_sales ?? '—'}</span></div>
         <p class="sub2" style="margin-top:8px">Sealed is not scored. The singles model measures rarity and copies; a box's price is print waves and time, so it gets the questions above instead of a number.</p>
       </div>` : `<div class="dbox">
@@ -914,12 +920,14 @@ function detailHTML(r, plan){
         <div class="changes">${changes}</div>
         <div class="kv" style="margin-top:8px"><span class="k">Daily volatility</span><span class="vv">${r.volatility_pct ?? '—'}%</span></div>
         <div class="kv"><span class="k">Off its 90-day high</span><span class="vv">${r.drawdown_pct ?? '—'}%</span></div>
+        <div class="kv"><span class="k">High since tracked</span><span class="vv">${r.tracked_high != null ? money(r.tracked_high) + ' <span class="flat">' + shortDate(r.tracked_high_date) + (r.off_tracked_high_pct ? ' · ' + r.off_tracked_high_pct + '% off' : '') + '</span>' : '—'}</span></div>
+        <div class="kv"><span class="k" data-tip="Copies sold times what they sold for, over the last 30 days: how much money actually moved through this card.">Money through it, 30d<span class="info">?</span></span><span class="vv">${money(r.dollars_30d)}</span></div>
       </div>`}
       <div class="dbox">
         <h5 data-tip="${esc(DATA.tips.settled)}">The shelf today<span class="info">?</span></h5>
         ${isSealed(r) ? `<div class="kv"><span class="k">Market price</span><span class="vv">${money(r.market_price)}</span></div>
           <div class="kv"><span class="k">Lowest listing</span><span class="vv">${money(r.low_price)}</span></div>
-          <div class="kv"><span class="k">Median listing</span><span class="vv">${money(r.median_price)}</span></div>` : shelf}${supplyLine}${soldLine}
+          <div class="kv"><span class="k">Median listing</span><span class="vv">${money(r.median_price)}</span></div>` : shelf}${supplyLine}${shelfMath}${soldLine}
       </div>
       <div class="dbox">
         <h5>Your money <span class="sub">saved in this browser</span></h5>
@@ -1163,6 +1171,42 @@ def _playbook_panel(pb: dict | None) -> str:
 </details>"""
 
 
+def _money(v) -> str:
+    if v is None:
+        return "\u2014"
+    v = float(v)
+    return f"${v/1000:.0f}k" if v >= 10000 else f"${v:,.0f}"
+
+
+def _depth_panel(depth: list[dict] | None) -> str:
+    """What is under each box. See radar/depth.py."""
+    if not depth:
+        return ""
+    rows = []
+    for d in depth:
+        ch = d.get("top10_change_30d")
+        ch_cell = (f'<td class="num {"up" if ch > 0 else "down" if ch < 0 else "flat"}">{ch:+d}%</td>'
+                   if ch is not None else '<td class="num flat">\u2014</td>')
+        rows.append(
+            f'<tr><td><b>{_esc(d["set_name"])}</b><span class="n">{_esc(d.get("release_date") or "")} \u00b7 '
+            f'{d["singles_priced"]} singles priced</span></td>'
+            f'<td class="num">{d["over_50"]}</td><td class="num">{d["over_100"]}</td><td class="num">{d["over_500"]}</td>'
+            f'<td class="num">{_money(d["top10_value"])}<span class="n">{_esc(d.get("top_card") or "")} {_money(d.get("top_card_price"))}</span></td>'
+            f'{ch_cell}'
+            f'<td class="num">{_money(d["dollars_30d_singles"])}</td><td class="num">{_money(d["dollars_30d_sealed"])}</td></tr>')
+    top = depth[0]
+    return f"""
+<details class="panel playbook depth">
+  <summary>What is under each box<span class="sc">the singles beneath every set, and the money through them</span></summary>
+  <p class="lead">A box sells six a day or none because of the cards inside it. <b>{_esc(top["set_name"])}</b> moved <b>{_money(top["dollars_30d"])}</b> through singles and sealed in 30 days, {top["over_100"]} of its singles are $100 or more. Money through = copies sold \u00d7 what they sold for, last 30 days, TCGplayer.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Set</th><th colspan="3" class="grp">Singles worth at least</th><th class="num">Top 10 worth</th><th class="num">Top 10, 30d</th><th colspan="2" class="grp">Money through, 30d</th></tr>
+    <tr><th></th><th class="num">$50</th><th class="num">$100</th><th class="num">$500</th><th></th><th></th><th class="num">Singles</th><th class="num">Sealed</th></tr></thead>
+    <tbody>{"".join(rows)}</tbody>
+  </table></div>
+</details>"""
+
+
 def _note_panel(note: dict | None) -> str:
     """A person's note, shown while it is fresh. See radar/note.py."""
     if not note or not note.get("html"):
@@ -1213,6 +1257,7 @@ def render(
     index: dict[str, Any] | None = None,
     sealed: Sequence[dict] | None = None,
     playbook: dict[str, Any] | None = None,
+    depth: list[dict] | None = None,
     sync_url: str | None = None,
     note: dict[str, Any] | None = None,
     commentary: dict[str, dict] | None = None,
@@ -1373,6 +1418,7 @@ def render(
 <div class="rows" id="rows"></div>
 <div class="more" id="more" style="display:none"><button class="ghost" id="more-all">Show all</button></div>
 
+{_depth_panel(depth)}
 {_playbook_panel(playbook)}
 
 <details class="panel howto">

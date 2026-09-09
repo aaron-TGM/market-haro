@@ -39,6 +39,16 @@ specific, a little dry, never impressed by a chart, never talking down to you.
    Not "the parallel foil variant."
 10. **When the numbers say nothing, say so.** "Nothing in this card's numbers is flashing" is a
     complete case. Don't manufacture drama from a flat line.
+11. **A number must carry a consequence.** "208 listed, 17 sold in 28 days" is a fact; "208
+    listed and 17 sold in 28 days, so this shelf lasts a year at today's pace" is a sentence.
+    Every figure you use ends in what it means for someone holding or buying this card: how
+    long the shelf lasts (days of shelf), how little money it takes to move the price
+    (dollars to clear the shelf), how much actually moves through it a month.
+12. **A watch names a mechanism, not a mood.** Not "if sentiment cools" but "with $1,400 of
+    copies on the shelf, one buyer clearing it moves the price and one seller listing a
+    playset undoes it." Say what would have to happen, physically, on the shelf or in the
+    sales, for the case to break — and if the answer is "a reprint or a wave," say that the
+    price data cannot see it coming.
 
 ## Examples
 
@@ -73,8 +83,11 @@ specific, a little dry, never impressed by a chart, never talking down to you.
 ## What the writer is given, and what it is not
 
 Given: the card's measured facts (prices, changes, weeks up, sales a day, drawdown, ask vs
-sold, shelf, copies, rank movement), the release calendar around it, and the playbook's
-medians. Never given: news, rumours, tournament results, reprints. If the writer wants to
+sold, shelf, copies, rank movement), the shelf's arithmetic (listings against 7 and 30 days
+ago, days of shelf, dollars to clear it, money through it in 30 days, the high since we have
+tracked it and when), the release calendar around it, the playbook's medians, and — for a
+box — what is under it: how many of its set's singles are worth $50, $100 and $500, what the
+top ten are worth and how that moved this month. Never given: news, rumours, tournament results, reprints. If the writer wants to
 mention any of those, it can't — and the note should say the price data can't see them.
 
 ## Four samples from the issue of 2026-09-07, written to the guard
