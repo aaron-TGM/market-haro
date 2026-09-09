@@ -122,6 +122,8 @@ data/rankings/    every issue's ranking, as published; the track record is built
 tests/            python tests/test_pipeline.py
 docs/METHOD.md    how the score, gates, settled price and validation were measured
 docs/ARCHITECTURE.md   modules, data flow, what is a cache and what is an asset
+docs/PLAN.md      the plan to go live, block by block, for Aaron
+docs/HANDOFF-gundeck.md   the integration handoff for the gundeck.ai side (Clerk, Stripe, UI)
 docs/LAUNCH.md    the launch plan, and the appendix of changes on gundeck.ai
 DEPLOY.md         GitHub Actions, the Worker, Clerk, costs
 CHANGELOG.md      what changed, by issue
