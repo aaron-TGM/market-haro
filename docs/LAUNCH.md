@@ -12,7 +12,7 @@ From the repo you have to a GUNDECK customer opening the report with the account
 |---|---|---|
 | Identity | gundeck.ai's Clerk instance (`clerk.gundeck.ai`) | One account, one login; the add-on framing is only true if it is the same account. |
 | Billing | gundeck.ai's Stripe account: one Product, two Prices | Same payout, same customer record, self-serve cancel through the portal you already have. |
-| Domain | `marketharo.gundeck.ai` | A subdomain of the Clerk primary domain, so the signed-in state carries over. |
+| Domain | `marketharo.gundeck.ai`; `marketharo.io` as a 301 to it | A subdomain of the Clerk primary domain, so the signed-in state carries over; the .io is the name people say and type. |
 | Cloudflare | Free account, one Worker, one KV namespace | Serves the page, gates it, keeps watchlists. |
 | GitHub | Private repo, Actions enabled | The daily run. |
 | tcgapi.dev | Pro plan, the key already in your `.env` | ~60 requests a day of 10,000. |

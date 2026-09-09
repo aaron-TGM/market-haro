@@ -150,7 +150,16 @@ different shape, set `ENTITLEMENT_PATH` (dotted path to the status) and
 `ENTITLEMENT_VALUES` in `wrangler.toml`; if you move to Clerk Billing, set
 `ENTITLEMENT_PLAN` to the plan slug instead and leave the path empty.
 
-**5d. Check it.** `curl https://marketharo.gundeck.ai/health` → `{"ok":true}`.
+**5d. The vanity domain.** `marketharo.io` is a redirect, not a host: the app stays
+on `marketharo.gundeck.ai` because that shares a root domain with gundeck.ai and
+so shares its signed-in state; a different root domain would need Clerk's
+satellite-domain setup. Register the .io in Cloudflare Registrar, then *Rules →
+Redirect Rules → Redirect from Root and WWW* → `https://marketharo.gundeck.ai${path}`,
+301. Say `marketharo.io` everywhere people read; the redirect does the rest. If
+the product ever needs to stand alone, that is the day to make the .io a satellite
+domain and move the Worker's route.
+
+**5e. Check it.** `curl https://marketharo.gundeck.ai/health` → `{"ok":true}`.
 Locally, `HARO_ADMIN_SECRET=… python -m radar publish` pushes the report and
 the track record; open the site signed out (splash), signed in without a
 subscription (splash, "no Market Haro subscription yet"), and signed in with one
