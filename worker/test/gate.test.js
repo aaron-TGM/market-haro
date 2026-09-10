@@ -71,6 +71,7 @@ test('the front door: splash for strangers, splash for the unsubscribed, the rep
     assert.match(await r.text(), /TRACK/);
     assert.match(body, /subscribe\?plan=monthly/); assert.match(body, /redirectToSignUp/); assert.match(body, /checkout.*success/);
     assert.match(body, /&quot;isSatellite&quot;:true/); assert.match(body, /&quot;signInUrl&quot;:&quot;https:\/\/gundeck.ai\/sign-in&quot;/);
+    assert.match(body, /data-clerk-domain="marketharo.io"/);   // clerk-js reads the satellite domain from the tag
     r = await worker.fetch(new Request('https://marketharo.io/me'), e);
     assert.deepEqual(await r.json(), { signed_in: false, entitled: false });
 

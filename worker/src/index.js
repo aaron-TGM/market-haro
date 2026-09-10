@@ -129,7 +129,11 @@ function clerkOptions(env) {
 function clerkScript(env) {
   const host = issuers(env)[0].replace(/^https?:\/\//, '');
   const opts = esc(JSON.stringify(clerkOptions(env)));   // inside an attribute: quotes as &quot;
-  return `<script async crossorigin="anonymous" data-clerk-publishable-key="${esc(env.CLERK_PUBLISHABLE_KEY || '')}" src="https://${esc(host)}/npm/@clerk/clerk-js@5/dist/clerk.browser.js" onload="window.Clerk.load(${opts}).then(function(){window.__clerkLoaded=true;document.dispatchEvent(new Event('clerk:loaded'))})"></script>`;
+  // clerk-js reads the satellite's domain from the script tag itself
+  // (data-clerk-domain) when it constructs window.Clerk; load() alone
+  // fails with "Missing domain and proxyUrl".
+  const domain = env.CLERK_SATELLITE_DOMAIN ? ` data-clerk-domain="${esc(env.CLERK_SATELLITE_DOMAIN)}"` : '';
+  return `<script async crossorigin="anonymous" data-clerk-publishable-key="${esc(env.CLERK_PUBLISHABLE_KEY || '')}"${domain} src="https://${esc(host)}/npm/@clerk/clerk-js@5/dist/clerk.browser.js" onload="window.Clerk.load(${opts}).then(function(){window.__clerkLoaded=true;document.dispatchEvent(new Event('clerk:loaded'))})"></script>`;
 }
 
 function splash(env, state) {
@@ -270,6 +274,7 @@ export default {
     const path = url.pathname.replace(/\/+$/, '') || '/';
 
     if (path === '/health') return json({ ok: true });
+    if (path === '/favicon.ico') return new Response(null, { status: 204 });
 
     if (path.startsWith('/admin/')) {
       if (!env.ADMIN_SECRET || req.headers.get('X-Admin-Secret') !== env.ADMIN_SECRET) return json({ error: 'forbidden' }, 403);
