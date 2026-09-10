@@ -130,4 +130,4 @@ jobs:
 
       - name: Push the page to marketharo.io
         if: env.HARO_ADMIN_SECRET != ''
-        run: python -m radar publish
+        run: python -m radar publish --out out/index.html

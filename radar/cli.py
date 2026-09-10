@@ -456,8 +456,10 @@ def cmd_publish(cfg, args) -> int:
     if not site or not secret:
         print("publish.site_url (config) and HARO_ADMIN_SECRET (environment) must both be set. Nothing published.")
         return 2
-    out_dir = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html")).parent
-    pages = [("report", out_dir / "dashboard.html"), ("track", out_dir / "track-record.html")]
+    # The report is whatever `radar invest --out` wrote (the workflow uses
+    # out/index.html); the track record sits beside it.
+    report = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
+    pages = [("report", report), ("track", report.parent / "track-record.html")]
     for _, p in pages:
         if not p.exists():
             print(f"Missing {p} -- run `radar invest` first.")
