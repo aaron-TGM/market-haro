@@ -298,7 +298,7 @@ def cmd_invest(cfg, args) -> int:
         pub_cfg = cfg.raw.get("publish") or {}
         site_url = (pub_cfg.get("site_url") or "").rstrip("/")
         report_url = (site_url + "/") if site_url else None
-        track_url = (site_url + "/track-record") if site_url else "track-record.html"
+        track_url = (site_url + "/preview") if site_url else "preview.html"
         track_html, track_recs = track_mod.build(cfg.path("data"), series, obs, report_url=report_url or "")
         track_sm = track_mod.summary(track_recs)
         track_sm["headline"] = track_mod.headline(track_sm)
@@ -326,6 +326,15 @@ def cmd_invest(cfg, args) -> int:
         haro.write(html, out)
         (out.parent / "track-record.html").write_text(track_html, encoding="utf-8")
         (out.parent / "track.json").write_text(json.dumps(track_sm, indent=1), encoding="utf-8")
+        # The public preview: today's top ten, the real rows, then the door.
+        from . import preview as preview_mod
+
+        n_pass = sum(1 for r in ranked if not r.get("disqualified"))
+        (out.parent / "preview.html").write_text(preview_mod.render(
+            ranked, obs_date=obs, total_pass=n_pass, pool_n=len(ranked), sealed_n=len(sealed_rows),
+            record=track_sm, site_url=site_url, art_cache=cfg.path("data/images"),
+            fetch_art=not getattr(args, "no_art_fetch", False)), encoding="utf-8")
+        print(f"Preview   -> {out.parent / 'preview.html'}")
         print(f"\nDashboard -> {out}")
 
         (out.parent / "playbook.json").write_text(json.dumps(pbook.get("summary"), sort_keys=True), encoding="utf-8")
@@ -441,7 +450,7 @@ def _today() -> str:
 
 
 def cmd_publish(cfg, args) -> int:
-    """Push today's report and the track record to the Worker at marketharo.io.
+    """Push today's report and the public preview to the Worker at marketharo.io.
 
     Reads what `radar invest` wrote to out/ rather than rebuilding, so what
     is served is byte-for-byte what was tested. The Worker's URL is config
@@ -459,7 +468,7 @@ def cmd_publish(cfg, args) -> int:
     # The report is whatever `radar invest --out` wrote (the workflow uses
     # out/index.html); the track record sits beside it.
     report = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
-    pages = [("report", report), ("track", report.parent / "track-record.html")]
+    pages = [("report", report), ("preview", report.parent / "preview.html")]
     for _, p in pages:
         if not p.exists():
             print(f"Missing {p} -- run `radar invest` first.")

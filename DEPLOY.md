@@ -97,7 +97,7 @@ put the key in `config.yaml` — that file is committed.
 after TCGplayer's overnight batch has settled, and you can trigger it by hand
 from the Actions tab any time.
 
-Each run: restore → sync → build the issue (report, track record) → keep it as
+Each run: restore → sync → build the issue (report, preview) → keep it as
 a run artifact → export → run the test suite → commit → push the two pages to
 the Worker. The tests run *before* the commit on purpose, so a broken run
 can't push a corrupted history.
@@ -118,7 +118,7 @@ Trigger it once manually and watch it go green before trusting the schedule.
 `worker/` is the whole server. It holds the report the pipeline pushes each
 morning, shows it to signed-in GUNDECK users whose account carries a Market Haro
 subscription, shows the splash (sign in / subscribe) to everyone else, serves the
-public track record at `/track-record`, and keeps each user's watchlist so it
+public preview — today's top ten, then the plans — at `/preview` (the old `/track-record` redirects there), and keeps each user's watchlist so it
 follows them across devices. It never talks to Clerk or Stripe at request time:
 it verifies Clerk's session token against Clerk's published keys and reads the
 entitlement Stripe's webhook wrote onto the user.
@@ -166,7 +166,7 @@ different shape, set `ENTITLEMENT_PATH` (dotted path to the status) and
 
 **5e. Check it.** `curl https://marketharo.io/health` → `{"ok":true}`;
 `/me` → `{"signed_in":false,"entitled":false}`. Locally, `HARO_ADMIN_SECRET=…
-python -m radar publish` pushes the report and the track record; open the site
+python -m radar publish` pushes the report and the preview; open the site
 signed out (splash), click *Already subscribed? Sign in* (a hop to gundeck.ai and
 back), signed in without a subscription (splash, "no Market Haro subscription
 yet"), and signed in with one (the report, and the watchlist status line says

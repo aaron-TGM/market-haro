@@ -41,7 +41,7 @@ What exists now, for the record:
 
 **To change the Worker later:** edit `worker/src/index.js` in the repo, run `npm test` in `worker/`, then Cloudflare → market-haro → Edit code → replace all → Deploy. The dashboard is the source of truth for the deployed settings; `wrangler.toml` mirrors them for reference. Don't run `wrangler deploy` — it would replace the dashboard's configuration with the file's.
 
-Still to do from this block: GitHub → repo → Settings → Secrets and variables → Actions → **`HARO_ADMIN_SECRET`** = the same value as the Worker's `ADMIN_SECRET`; Actions → *daily* → Run workflow. When it's green, `https://marketharo.io/track-record` is live.
+Done Sep 10: `HARO_ADMIN_SECRET` in GitHub, run #4 green, the pages pushed. The public page is `https://marketharo.io/preview` (today's top ten, then the plans; `/track-record` redirects there).
 
 ## 4. Manus builds the gundeck.ai side — their time; send the handoff today
 
@@ -68,14 +68,14 @@ Where: a phone and a laptop, a second email address, Stripe test mode first, the
 
 1. Nav item and pricing cards live on gundeck.ai (Manus).
 2. The email to your GUNDECK list, from GUNDECK.AI, the text in `docs/LAUNCH.md` Phase 4 — it now carries both stories: Market Haro is live, and GUNDECK's pricing is changing (Lifetime to $59 on the date you set). Send once; a reminder to non-openers five days later; stop.
-3. One post wherever your audience is, linking `marketharo.io` and `marketharo.io/track-record`.
+3. One post wherever your audience is, linking `marketharo.io/preview` — today's top ten, free, is the link to give strangers.
 4. That evening: Stripe → Subscriptions, count trials. Actions tab: still green.
 
 ## After launch — the standing list
 
 - **Daily, 30 seconds:** did the Action run green? (Email on failure covers this.)
 - **Weekly, 10 minutes:** Stripe trials → paid → churn; skim the report once as a subscriber.
-- **Sep 10 onward:** the track record's first 30-day window closes; the "of N calls resolved…" sentence appears on `/track-record` by itself.
+- **Sep 10 onward:** the track record's first 30-day window closes; the "of N calls…" line appears on `/preview` by itself.
 - **Oct 16:** the Lifetime-increase announcement. **Oct 30:** GD06 releases; Lifetime is $59 from today; tick the *backfill* box on the next manual run so the new cards get their history.
 - **Monthly (1st), 5 minutes:** read the verdict line the workflow appended to `data/validation_history.json`.
 - **Quarterly:** rotate `ADMIN_SECRET` (Worker) and `HARO_ADMIN_SECRET` (GitHub) together; `npx wrangler kv key list` → export watchlists.

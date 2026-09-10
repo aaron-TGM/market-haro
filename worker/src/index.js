@@ -5,11 +5,12 @@
 //                          user with a Market Haro subscription; otherwise the
 //                          splash (sign in / subscribe)
 //   GET  /me               {signed_in, entitled} for the page's own scripts
-//   GET  /track-record     the public track record
+//   GET  /preview          the public preview: today's top ten, then the plans
+//   GET  /track-record     301 -> /preview
 //   GET  /positions        the caller's watchlist + holdings   (signed in)
 //   PUT  /positions        replace them                        (signed in)
 //   PUT  /admin/report     today's report HTML, from the pipeline   (X-Admin-Secret)
-//   PUT  /admin/track      the track record HTML, from the pipeline (X-Admin-Secret)
+//   PUT  /admin/preview    the preview HTML, from the pipeline      (X-Admin-Secret)
 //   GET  /health
 //
 // Identity is Clerk's. The same Clerk instance that signs people in to
@@ -156,7 +157,7 @@ function splash(env, state) {
   // user: CHECKOUT_URL + ?plan=monthly|annual opens Stripe Checkout and, on
   // success, returns to this page with ?checkout=success. Sign-up happens
   // here, in Clerk's own modal, before that hand-off.
-  const track = '/track-record';
+  const track = '/preview';
   const checkout = env.CHECKOUT_URL || 'https://gundeck.ai/market-haro/subscribe';
   const monthly = `${checkout}?plan=monthly`, annual = `${checkout}?plan=annual`;
   const manage = env.MANAGE_URL || 'https://gundeck.ai/account';
@@ -197,7 +198,7 @@ footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);color:v
 <div class="row" id="auth">${state === 'noplan'
   ? `<span class="who" id="who">Signed in. This account has no Market Haro subscription yet — pick a plan above.</span> <a class="btn quiet" href="${esc(manage)}">Manage account</a> <a class="btn quiet" href="#" id="signout">Sign out</a>`
   : `<a class="btn quiet" href="#" id="signin">Already subscribed? Sign in</a>`}</div>
-<div class="row"><a class="btn quiet" href="${track}">See the public track record</a></div>
+<div class="row"><a class="btn quiet" href="${track}">See today's top 10 — free</a></div>
 <p class="tag" style="margin-top:14px">Signing in or up takes you to gundeck.ai for a moment and brings you straight back.</p>
 <footer>Market Haro is published by GUNDECK.AI. Every number describes what a card has already done. Nothing here is a forecast, a recommendation or financial advice; trading cards can lose value.</footer>
 </div>
@@ -306,7 +307,7 @@ export default {
     if (path.startsWith('/admin/')) {
       if (!env.ADMIN_SECRET || req.headers.get('X-Admin-Secret') !== env.ADMIN_SECRET) return json({ error: 'forbidden' }, 403);
       if (req.method !== 'PUT') return json({ error: 'method' }, 405);
-      const key = { '/admin/report': 'report', '/admin/track': 'track' }[path];
+      const key = { '/admin/report': 'report', '/admin/preview': 'preview' }[path];
       if (!key) return json({ error: 'not found' }, 404);
       const body = await req.text();
       if (body.length > MAX_PAGE) return json({ error: 'too large' }, 413);
@@ -321,11 +322,14 @@ export default {
       return json({ signed_in: !!who, entitled: !!who && entitled(who, env) });
     }
 
-    if (path === '/track-record') {
-      const page = await env.HARO.get('track');
+    if (path === '/preview') {
+      const page = await env.HARO.get('preview');
       return page ? html(page, 200, { 'Cache-Control': 'public, max-age=600', 'X-Robots-Tag': 'all' })
-                  : html('<!doctype html><title>Market Haro</title><p style="font-family:monospace;padding:2rem">The track record has not been published yet.</p>', 404);
+                  : html('<!doctype html><title>Market Haro</title><p style="font-family:monospace;padding:2rem">Today\'s preview has not been published yet.</p>', 404);
     }
+    // The track record used to be its own page; its one-line summary now
+    // sits on the preview. Old links keep working.
+    if (path === '/track-record') return Response.redirect(new URL('/preview', url.origin).toString(), 301);
 
     if (path === '/positions') {
       const who = await whoami(req, env);

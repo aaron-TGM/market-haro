@@ -65,15 +65,17 @@ test('the front door: splash for strangers, splash for the unsubscribed, the rep
     assert.equal(r.status, 200);
     r = await worker.fetch(new Request('https://marketharo.io/admin/report', { method: 'PUT', headers: { 'X-Admin-Secret': 'wrong' }, body: '<html>' }), e);
     assert.equal(r.status, 403);
-    r = await worker.fetch(new Request('https://marketharo.io/admin/track', { method: 'PUT', headers: { 'X-Admin-Secret': 's3' }, body: '<!doctype html><html><body>TRACK</body></html>' }), e);
+    r = await worker.fetch(new Request('https://marketharo.io/admin/preview', { method: 'PUT', headers: { 'X-Admin-Secret': 's3' }, body: '<!doctype html><html><body>PREVIEW</body></html>' }), e);
     assert.equal(r.status, 200);
 
     r = await worker.fetch(new Request('https://marketharo.io/'), e);
     assert.equal(r.status, 200); let body = await r.text();
     assert.match(body, /Start monthly/); assert.match(body, /Sign in/); assert.doesNotMatch(body, /REPORT/);
     assert.equal(r.headers.get('cache-control'), 'private, no-store');
+    r = await worker.fetch(new Request('https://marketharo.io/preview'), e);
+    assert.match(await r.text(), /PREVIEW/); assert.equal(r.headers.get('Cache-Control'), 'public, max-age=600');
     r = await worker.fetch(new Request('https://marketharo.io/track-record'), e);
-    assert.match(await r.text(), /TRACK/);
+    assert.equal(r.status, 301); assert.equal(r.headers.get('Location'), 'https://marketharo.io/preview');
     assert.match(body, /subscribe\?plan=monthly/); assert.match(body, /redirectToSignUp/); assert.match(body, /checkout.*success/);
     assert.match(body, /&quot;isSatellite&quot;:true/); assert.match(body, /&quot;signInUrl&quot;:&quot;https:\/\/gundeck.ai\/sign-in&quot;/);
     assert.match(body, /data-clerk-domain="marketharo.io"/);   // clerk-js reads the satellite domain from the tag
