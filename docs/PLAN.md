@@ -9,8 +9,8 @@ For Aaron. Six blocks, in order; each says what you do, where, how long, and how
 Where: your machine, GitHub.
 
 1. Unzip the latest `market-haro-repo.zip`, `cd gundam-price-radar`, confirm `git log --oneline -1` shows the newest commit.
-2. Create the private repo `aaron-TGM/gundam-price-radar` on GitHub (empty, no README). Then:
-   `git remote add origin git@github.com:aaron-TGM/gundam-price-radar.git && git push -u origin main`
+2. Create the private repo `aaron-TGM/market-haro` on GitHub (empty, no README). Then:
+   `git remote add origin https://github.com/aaron-TGM/market-haro.git && git push -u origin main`
 3. Check nothing secret went up: `git ls-files | grep -i env` prints only `.env.example`.
 4. Repo → Settings → Secrets and variables → Actions → **New repository secret**: `TCGAPI_KEY` = your tcgapi.dev key.
 5. Repo → Actions → *daily* → **Run workflow**. Wait ~4 minutes.
