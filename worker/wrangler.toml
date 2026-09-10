@@ -26,7 +26,7 @@ routes = [{ pattern = "marketharo.io", custom_domain = true }]
 # the satellite's once Clerk assigns one (comma-separated; the first is where
 # the keys are fetched from). The publishable key is public.
 CLERK_ISSUER = "https://clerk.gundeck.ai,https://clerk.marketharo.io"
-CLERK_PUBLISHABLE_KEY = "pk_live_replace-me"
+CLERK_PUBLISHABLE_KEY = "pk_live_Y2xlcmsuZ3VuZGVjay5haSQ"
 # This domain is a Clerk *satellite* of gundeck.ai (Clerk dashboard -> Domains
 # -> Add satellite domain -> marketharo.io, plus the CNAME it asks for). Sign-in
 # and sign-up happen on gundeck.ai's pages and return here.
