@@ -1,4 +1,4 @@
-// Market Haro at marketharo.gundeck.ai: one Worker that serves one page.
+// Market Haro at marketharo.io: one Worker that serves one page.
 //
 // What it does, and all it does:
 //   GET  /                 the report, if the caller is a signed-in GUNDECK
@@ -13,14 +13,18 @@
 //   GET  /health
 //
 // Identity is Clerk's. The same Clerk instance that signs people in to
-// gundeck.ai (clerk.gundeck.ai) hands the browser a short-lived RS256 session
-// token; Clerk's script on this domain keeps it in the `__session` cookie.
-// This Worker verifies that token against Clerk's published keys and reads
-// the entitlement Stripe wrote onto the user (via the gundeck.ai webhook).
-// No password, no session store, no call to Clerk or Stripe at request time.
+// gundeck.ai hands the browser a short-lived RS256 session token; Clerk's
+// script on this domain keeps it in the `__session` cookie. This domain is a
+// Clerk *satellite* of gundeck.ai (CLERK_SATELLITE_DOMAIN): sign-in and
+// sign-up happen on gundeck.ai's pages and come back here; the session is
+// the same. This Worker verifies the token against Clerk's published keys
+// and reads the entitlement Stripe wrote onto the user (via the gundeck.ai
+// webhook). No password, no session store, no call to Clerk or Stripe at
+// request time.
 //
-// Vars (wrangler.toml): CLERK_ISSUER, CLERK_PUBLISHABLE_KEY, CHECKOUT_URL,
-//   MANAGE_URL, ENTITLEMENT_PATH, ENTITLEMENT_VALUES, ENTITLEMENT_PLAN
+// Vars (wrangler.toml): CLERK_ISSUER (one or more, comma-separated),
+//   CLERK_PUBLISHABLE_KEY, CLERK_SATELLITE_DOMAIN, SIGN_IN_URL, SIGN_UP_URL,
+//   CHECKOUT_URL, MANAGE_URL, ENTITLEMENT_PATH, ENTITLEMENT_VALUES, ENTITLEMENT_PLAN
 // Secret (`npx wrangler secret put ADMIN_SECRET`): shared with the pipeline.
 
 const MAX_BODY = 64 * 1024;
@@ -28,9 +32,10 @@ const MAX_PAGE = 12 * 1024 * 1024;
 const LEEWAY_S = 30;
 
 // ---------------------------------------------------------------- identity
+const issuers = env => String(env.CLERK_ISSUER || '').split(',').map(s => s.trim().replace(/\/$/, '')).filter(Boolean);
 const jwksCache = { at: 0, keys: null, issuer: null };
 async function jwks(env) {
-  const issuer = env.CLERK_ISSUER.replace(/\/$/, '');
+  const issuer = issuers(env)[0];
   if (jwksCache.keys && jwksCache.issuer === issuer && Date.now() - jwksCache.at < 3600e3) return jwksCache.keys;
   const r = await fetch(`${issuer}/.well-known/jwks.json`, { cf: { cacheTtl: 3600 } });
   if (!r.ok) throw new Error('jwks unavailable');
@@ -61,7 +66,7 @@ export async function verifyToken(tok, env, keys = null) {
   const now = Date.now() / 1000;
   if (typeof payload.exp !== 'number' || payload.exp + LEEWAY_S < now) return null;
   if (typeof payload.nbf === 'number' && payload.nbf - LEEWAY_S > now) return null;
-  if (payload.iss !== env.CLERK_ISSUER.replace(/\/$/, '')) return null;
+  if (!issuers(env).includes(String(payload.iss || '').replace(/\/$/, ''))) return null;
   if (!payload.sub) return null;
   const list = keys || await jwks(env);
   const jwk = list.find(k => k.kid === header.kid) || (list.length === 1 ? list[0] : null);
@@ -110,9 +115,21 @@ const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 
 /** Clerk's browser script, which keeps the session cookie fresh on this
  *  domain and lets the splash know who is signed in. */
+function clerkOptions(env) {
+  // A satellite domain must say so, and name the primary's sign-in page.
+  const o = {};
+  if (env.CLERK_SATELLITE_DOMAIN) {
+    o.isSatellite = true;
+    o.domain = env.CLERK_SATELLITE_DOMAIN;
+    o.signInUrl = env.SIGN_IN_URL || 'https://gundeck.ai/sign-in';
+    o.signUpUrl = env.SIGN_UP_URL || 'https://gundeck.ai/sign-up';
+  }
+  return o;
+}
 function clerkScript(env) {
-  const host = env.CLERK_ISSUER.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  return `<script async crossorigin="anonymous" data-clerk-publishable-key="${esc(env.CLERK_PUBLISHABLE_KEY || '')}" src="https://${esc(host)}/npm/@clerk/clerk-js@5/dist/clerk.browser.js" onload="window.Clerk.load().then(function(){window.__clerkLoaded=true;document.dispatchEvent(new Event('clerk:loaded'))})"></script>`;
+  const host = issuers(env)[0].replace(/^https?:\/\//, '');
+  const opts = esc(JSON.stringify(clerkOptions(env)));   // inside an attribute: quotes as &quot;
+  return `<script async crossorigin="anonymous" data-clerk-publishable-key="${esc(env.CLERK_PUBLISHABLE_KEY || '')}" src="https://${esc(host)}/npm/@clerk/clerk-js@5/dist/clerk.browser.js" onload="window.Clerk.load(${opts}).then(function(){window.__clerkLoaded=true;document.dispatchEvent(new Event('clerk:loaded'))})"></script>`;
 }
 
 function splash(env, state) {
@@ -163,6 +180,7 @@ footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);color:v
   ? `<span class="who" id="who">Signed in. This account has no Market Haro subscription yet — pick a plan above.</span> <a class="btn quiet" href="${esc(manage)}">Manage account</a> <a class="btn quiet" href="#" id="signout">Sign out</a>`
   : `<a class="btn quiet" href="#" id="signin">Already subscribed? Sign in</a>`}</div>
 <div class="row"><a class="btn quiet" href="${track}">See the public track record</a></div>
+<p class="tag" style="margin-top:14px">Signing in or up takes you to gundeck.ai for a moment and brings you straight back.</p>
 <footer>Market Haro is published by GUNDECK.AI. Every number describes what a card has already done. Nothing here is a forecast, a recommendation or financial advice; trading cards can lose value.</footer>
 </div>
 ${clerkScript(env)}
@@ -194,7 +212,7 @@ ${clerkScript(env)}
     })();
   }
 
-  document.addEventListener('clerk:loaded', function(){
+  function onClerk(){
     var C = window.Clerk;
     if (afterCheckout) { waitForEntitlement(C); return; }
     if (state === 'anon' && C.user) {
@@ -207,19 +225,26 @@ ${clerkScript(env)}
       var who = $('who'); var em = C.user.primaryEmailAddress && C.user.primaryEmailAddress.emailAddress;
       if (who && em) who.innerHTML = 'Signed in as <b>' + em.replace(/[<>&]/g, '') + '</b>. This account has no Market Haro subscription yet — pick a plan above.';
     }
-    // The plan buttons: a stranger creates the GUNDECK account right here,
-    // in Clerk's modal, and lands on checkout when it is done; someone
-    // already signed in goes straight to checkout.
+    // The plan buttons: a stranger creates the GUNDECK account first --
+    // on gundeck.ai's sign-up page (this domain is a satellite, so Clerk
+    // sends them there and back) -- and lands on checkout when it is done;
+    // someone already signed in goes straight to checkout.
+    var satellite = ${JSON.stringify(!!env.CLERK_SATELLITE_DOMAIN)};
     document.querySelectorAll('a[data-plan]').forEach(function(a){
       a.onclick = function(e){
         e.preventDefault();
         if (C.user) { location.href = a.href; return; }
-        C.openSignUp({ forceRedirectUrl: a.href, signInForceRedirectUrl: a.href });
+        if (satellite) C.redirectToSignUp({ redirectUrl: a.href, signInForceRedirectUrl: a.href, signUpForceRedirectUrl: a.href });
+        else C.openSignUp({ forceRedirectUrl: a.href, signInForceRedirectUrl: a.href });
       };
     });
     var so = $('signout'); if (so) so.onclick = function(e){ e.preventDefault(); C.signOut().then(function(){ location.reload(); }); };
-    var si = $('signin'); if (si) si.onclick = function(e){ e.preventDefault(); if (C.user) { location.reload(); return; } C.openSignIn({ forceRedirectUrl: location.origin + '/' }); };
-  });
+    var si = $('signin'); if (si) si.onclick = function(e){ e.preventDefault(); if (C.user) { location.reload(); return; }
+      if (satellite) C.redirectToSignIn({ redirectUrl: location.origin + '/', signInForceRedirectUrl: location.origin + '/' });
+      else C.openSignIn({ forceRedirectUrl: location.origin + '/' }); };
+  }
+  // Clerk's script is async and may finish before or after this one runs.
+  if (window.__clerkLoaded) onClerk(); else document.addEventListener('clerk:loaded', onClerk);
   if (afterCheckout) { setTimeout(function(){ if (!window.__clerkLoaded) waitForEntitlement(null); }, 8000); }
 })();
 </script>

@@ -12,7 +12,7 @@ tcgapi.dev ──sync──▶ SQLite (cache) ◀──restore── data/histor
                         │ invest                       │ export
                         ▼                              │
    measure ─▶ score/gate ─▶ live shelf ─▶ sealed · depth · playbook · track ─▶ out/
-                                                                            ├ dashboard.html    ─▶ Worker /admin/report ─▶ marketharo.gundeck.ai/  (entitled sessions)
+                                                                            ├ dashboard.html    ─▶ Worker /admin/report ─▶ marketharo.io/  (entitled sessions)
                                                                             ├ track-record.html ─▶ Worker /admin/track  ─▶ …/track-record        (public)
                                                                             └ dashboard.csv
 ```
@@ -50,7 +50,8 @@ tcgapi.dev ──sync──▶ SQLite (cache) ◀──restore── data/histor
 
 ## The Worker
 
-`worker/src/index.js`, one KV namespace, at marketharo.gundeck.ai. Identity is Clerk's
+`worker/src/index.js`, one KV namespace, at marketharo.io — a Clerk satellite domain of
+gundeck.ai, so sign-in happens on gundeck.ai's pages and returns. Identity is Clerk's
 (gundeck.ai's instance): the session token in the `__session` cookie or a bearer header,
 RS256, verified against `clerk.gundeck.ai/.well-known/jwks.json`; the entitlement is the
 `public_metadata.marketHaro.status` claim Stripe's webhook wrote onto the user. `GET /`

@@ -3,6 +3,13 @@
 Newest first. Dates are the day the work landed; issue dates are the price date the
 report carries.
 
+## 2026-09-10 — marketharo.io, a satellite
+
+- The site moves to `marketharo.io` itself so gundeck.ai's DNS is never touched. The .io is a
+  Clerk satellite domain of gundeck.ai: the Worker loads Clerk with `isSatellite`, sign-in and
+  sign-up go to gundeck.ai's pages and return, tokens may carry either issuer. `wrangler.toml`
+  gains `CLERK_SATELLITE_DOMAIN`, `SIGN_IN_URL`, `SIGN_UP_URL`; the route is the apex.
+
 ## 2026-09-09 — marketharo.gundeck.ai
 
 - **Ghost is gone.** The site is one Cloudflare Worker at marketharo.gundeck.ai that serves

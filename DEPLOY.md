@@ -5,8 +5,8 @@ can't be lost, and you can open the dashboard from your phone without the world
 being able to.
 
 The shape that gets you there is **GitHub Actions for the schedule, git for the
-data, one Cloudflare Worker for the page, and gundeck.ai's Clerk and Stripe for
-who is signed in and who has paid**. Nothing here needs a server of your own,
+data, one Cloudflare Worker on marketharo.io for the page, and gundeck.ai's Clerk
+and Stripe for who is signed in and who has paid**. Nothing here needs a server of your own,
 and nothing beyond the API plan costs money.
 
 ---
@@ -86,7 +86,7 @@ The point count should match `python -m radar stats` against your real database.
 | Name | Value |
 |---|---|
 | `TCGAPI_KEY` | your tcgapi.dev key |
-| `HARO_ADMIN_SECRET` | the Worker's admin secret (step 5); without it the page is built but not pushed |
+| `HARO_ADMIN_SECRET` | the Worker's admin secret (step 5b); without it the page is built but not pushed |
 
 Secrets are write-only once saved and are not exposed to forked-PR runs. Do not
 put the key in `config.yaml` — that file is committed.
@@ -113,7 +113,7 @@ Trigger it once manually and watch it go green before trusting the schedule.
 > failing — which is exactly when you'd want it not to. Turn on Actions failure
 > notifications: **Settings → Notifications → Actions → email on failure**.
 
-### 5. The site: one Worker at marketharo.gundeck.ai
+### 5. The site: one Worker at marketharo.io
 
 `worker/` is the whole server. It holds the report the pipeline pushes each
 morning, shows it to signed-in GUNDECK users whose account carries a Market Haro
@@ -123,57 +123,55 @@ follows them across devices. It never talks to Clerk or Stripe at request time:
 it verifies Clerk's session token against Clerk's published keys and reads the
 entitlement Stripe's webhook wrote onto the user.
 
-**5a. Cloudflare.** `cd worker && npm install`, then `npx wrangler login`. Create
+It lives on `marketharo.io`, not on a gundeck.ai subdomain, so nothing about
+gundeck.ai's DNS is touched. The price of that is one extra Clerk step: the .io
+is registered as a *satellite domain* of gundeck.ai, and sign-in/sign-up happen
+on gundeck.ai's pages and return here (the same session, the same account).
+
+**5a. The zone.** `marketharo.io` is registered at Namecheap; Cloudflare runs
+its DNS. Cloudflare → *Add a site* → `marketharo.io` → Free → copy the two
+nameservers → Namecheap → Domain List → Manage → *Nameservers → Custom DNS* →
+paste → save. Wait for Cloudflare to say the site is active. SSL/TLS → Full.
+
+**5b. Cloudflare.** `cd worker && npm install`, then `npx wrangler login`. Create
 the KV namespace — `npx wrangler kv namespace create HARO` — and paste the id
 it prints into `wrangler.toml`. Set the one secret: `npx wrangler secret put
-ADMIN_SECRET` (make it long and random; the same value goes into the GitHub
-secret `HARO_ADMIN_SECRET`). Fill in `CLERK_PUBLISHABLE_KEY` (the `pk_live_…`
-from the Clerk dashboard; it is public), `CHECKOUT_URL` (the gundeck.ai
-subscribe route, appendix item A2 in docs/LAUNCH.md) and `MANAGE_URL` in
-`[vars]`. `npx wrangler deploy`. The `routes` line attaches the custom domain:
-if the DNS record does not exist, wrangler creates it; if you manage DNS by
-hand, add `marketharo CNAME market-haro.<your-subdomain>.workers.dev`, proxied.
+ADMIN_SECRET` (long and random; the same value goes into the GitHub secret
+`HARO_ADMIN_SECRET`). Fill in `CLERK_PUBLISHABLE_KEY` (the `pk_live_…` from the
+Clerk dashboard; it is public) and, if Manus gives you different paths,
+`CHECKOUT_URL` / `MANAGE_URL` / `SIGN_IN_URL` / `SIGN_UP_URL`. `npx wrangler
+deploy` attaches the apex `marketharo.io` as the Worker's custom domain. Add a
+redirect rule for www: *Rules → Redirect Rules* → `www.marketharo.io` →
+`https://marketharo.io${path}`, 301 (and a proxied `CNAME www → marketharo.io`
+record so the rule has something to catch).
 
-**5b. Clerk** (in the Clerk dashboard for the gundeck.ai instance; see
-docs/LAUNCH.md for the gundeck.ai side).
+**5c. Clerk** (in the Clerk dashboard for the gundeck.ai instance).
+- *Domains → Add satellite domain* → `marketharo.io`. Clerk shows a DNS record
+  for it (a CNAME like `clerk.marketharo.io → frontend-api.clerk.services`):
+  add it in the Cloudflare zone, **DNS only** (grey cloud), and wait for Clerk
+  to mark it verified. Once it is, `https://clerk.marketharo.io` is a second
+  issuer for tokens on this domain; `CLERK_ISSUER` in `wrangler.toml` already
+  lists both.
 - *Sessions → Customize session token*: add `"public_metadata": "{{user.public_metadata}}"`
-  so the entitlement rides in the token. This is the one setting the gate
-  cannot work without.
-- The Worker's domain is a subdomain of the instance's primary domain, so the
-  signed-in state carries over on its own. If the splash still shows "sign in"
-  while you are signed in on gundeck.ai, add `marketharo.gundeck.ai` under
-  *Domains* as a satellite and redeploy.
+  so the entitlement rides in the token. The one setting the gate cannot work without.
+- gundeck.ai's sign-in and sign-up pages must accept a `redirect_url` back to
+  `https://marketharo.io/...` — that is in the handoff.
 
-**5c. The entitlement.** The Worker's defaults expect Stripe's webhook to write
+**5d. The entitlement.** The Worker's defaults expect Stripe's webhook to write
 `publicMetadata.marketHaro = {status: "active"|"trialing"|…, plan, currentPeriodEnd}`
-on the Clerk user (either spelling of the key works). If your webhook writes a
+on the Clerk user (either spelling of the key works). If the webhook writes a
 different shape, set `ENTITLEMENT_PATH` (dotted path to the status) and
 `ENTITLEMENT_VALUES` in `wrangler.toml`; if you move to Clerk Billing, set
 `ENTITLEMENT_PLAN` to the plan slug instead and leave the path empty.
 
-**5d. The vanity domain.** `marketharo.io` is a redirect, not a host: the app stays
-on `marketharo.gundeck.ai` because that shares a root domain with gundeck.ai and
-so shares its signed-in state; a different root domain would need Clerk's
-satellite-domain setup. *Rules → Redirect Rules* → root and www → `https://marketharo.gundeck.ai${path}`,
-301. The domain is registered at Namecheap; leave it there and point its
-nameservers at Cloudflare (Add a site → Free → copy the two nameservers →
-Namecheap → Manage → Nameservers → Custom DNS), because Namecheap's own redirect
-is HTTP-only and cannot preserve paths. In Cloudflare add a proxied placeholder
-`A @ 192.0.2.1` and `CNAME www → marketharo.io` so the proxy terminates the
-request, set SSL/TLS to Full, then the rule: filter
-`(http.host eq "marketharo.io") or (http.host eq "www.marketharo.io")`, dynamic
-target `concat("https://marketharo.gundeck.ai", http.request.uri.path)`, 301,
-preserve query string. Say `marketharo.io` everywhere people read; the redirect does the rest. If
-the product ever needs to stand alone, that is the day to make the .io a satellite
-domain and move the Worker's route.
-
-**5e. Check it.** `curl https://marketharo.gundeck.ai/health` → `{"ok":true}`;
-`/me` → `{"signed_in":false,"entitled":false}`.
-Locally, `HARO_ADMIN_SECRET=… python -m radar publish` pushes the report and
-the track record; open the site signed out (splash), signed in without a
-subscription (splash, "no Market Haro subscription yet"), and signed in with one
-(the report, and the watchlist status line says "synced to your account").
-`cd worker && npm test` runs the gate against signed test tokens.
+**5e. Check it.** `curl https://marketharo.io/health` → `{"ok":true}`;
+`/me` → `{"signed_in":false,"entitled":false}`. Locally, `HARO_ADMIN_SECRET=…
+python -m radar publish` pushes the report and the track record; open the site
+signed out (splash), click *Already subscribed? Sign in* (a hop to gundeck.ai and
+back), signed in without a subscription (splash, "no Market Haro subscription
+yet"), and signed in with one (the report, and the watchlist status line says
+"synced to your account"). `cd worker && npm test` runs the gate against signed
+test tokens.
 
 ### 6. Where the report lives
 

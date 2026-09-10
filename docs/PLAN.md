@@ -1,6 +1,6 @@
 # Market Haro — the plan to go live
 
-For Aaron. Six blocks, in order; each says what you do, where, how long, and how you know it worked. Blocks 1–3 are yours alone and can happen today. Block 4 is Manus's (the handoff is `docs/HANDOFF-gundeck.md`) and runs in parallel. Blocks 5–6 need both done. Realistic elapsed time: launch on the day after Manus finishes.
+For Aaron. Six blocks, in order; each says what you do, where, how long, and how you know it worked. Blocks 1–3 are yours alone and can happen today (block 3 waits on block 2's DNS going active). Block 4 is Manus's (the handoff is `docs/HANDOFF-gundeck.md`) and runs in parallel. Blocks 5–6 need both done. Realistic elapsed time: launch on the day after Manus finishes.
 
 ---
 
@@ -18,30 +18,44 @@ Where: your machine, GitHub.
 
 **Done when:** the run is green, a new commit "history: 2026-09-xx" appeared, and the run's artifact (`issue-…`) downloads and its `dashboard.html` opens in your browser.
 
-## 2. The site Worker — 45 minutes, today
+## 2. marketharo.io onto Cloudflare — 15 minutes plus DNS propagation, today
 
-Where: your terminal, Cloudflare dashboard, Clerk dashboard. Step list also in `DEPLOY.md §5`.
+Where: Cloudflare, Namecheap. gundeck.ai is not touched at any point.
 
-1. `cd worker && npm install && npx wrangler login`.
-2. `npx wrangler kv namespace create HARO` → paste the printed `id` into `wrangler.toml` under `[[kv_namespaces]]`.
-3. `npx wrangler secret put ADMIN_SECRET` → paste a long random string (make one: `openssl rand -hex 32`). Keep it; step 6 uses it.
-4. Edit `wrangler.toml` `[vars]`: `CLERK_PUBLISHABLE_KEY` = the `pk_live_…` from Clerk → API keys. Leave `CHECKOUT_URL` and `MANAGE_URL` as they are unless Manus tells you different paths.
-5. `npx wrangler deploy`. It attaches `marketharo.gundeck.ai` as a custom domain (creates the DNS record in the gundeck.ai zone; if the zone isn't in your Cloudflare account, add a CNAME `marketharo` → the `workers.dev` URL it prints, proxied).
-6. GitHub → the repo's secrets → **`HARO_ADMIN_SECRET`** = the same string from step 3. Re-run the *daily* workflow; its last step now pushes the pages.
-7. Clerk dashboard → **Sessions → Customize session token** → add `"public_metadata": "{{user.public_metadata}}"` → save. Check Clerk → User & authentication that sign-ups are on.
+1. Cloudflare → **Add a site** → `marketharo.io` → Free → it scans (nothing to keep) → copy the two nameservers.
+2. Namecheap → Domain List → marketharo.io → Manage → **Nameservers → Custom DNS** → paste both → save.
+3. Wait for Cloudflare's "site is active" email (minutes to a few hours). Then Cloudflare → SSL/TLS → **Full**.
+4. DNS: add `CNAME` `www` → `marketharo.io`, proxied (orange). Rules → Redirect Rules → Create: expression `http.host eq "www.marketharo.io"`, dynamic target `concat("https://marketharo.io", http.request.uri.path)`, 301, preserve query string → Deploy.
 
-**Done when:** `https://marketharo.gundeck.ai/health` → `{"ok":true}`; `/me` → `{"signed_in":false,"entitled":false}`; the bare URL shows the splash; `/track-record` shows the track record; and signed in to gundeck.ai in the same browser, the bare URL shows the splash with "Signed in as you@… no Market Haro subscription yet" (this proves Clerk carries over; if it still says "sign in", add the subdomain as a satellite domain in Clerk → Domains and redeploy).
+**Done when:** the zone shows Active in Cloudflare. (The apex itself gets its record from the Worker in block 3.)
 
-## 3. marketharo.io — 15 minutes plus DNS propagation, today
+## 3. The site Worker — 30 minutes, once block 2 is active
 
-Where: Cloudflare, Namecheap. Also in `DEPLOY.md §5d`.
+Where: cmd on the PC, Clerk dashboard, GitHub.
 
-1. Cloudflare → Add a site → `marketharo.io` → Free → copy the two nameservers.
-2. Namecheap → Domain List → Manage → Nameservers → *Custom DNS* → paste both → save.
-3. Cloudflare → DNS: `A @ 192.0.2.1` proxied; `CNAME www marketharo.io` proxied. SSL/TLS → Full.
-4. Rules → Redirect Rules → create: expression `(http.host eq "marketharo.io") or (http.host eq "www.marketharo.io")`, dynamic redirect to `concat("https://marketharo.gundeck.ai", http.request.uri.path)`, 301, preserve query string.
+1. `node --version`. If not recognized: `winget install OpenJS.NodeJS.LTS`, then a new cmd window.
+2. ```
+   cd %USERPROFILE%\Downloads\gundam-price-radar\worker
+   npm install
+   npx wrangler login
+   npx wrangler kv namespace create HARO
+   ```
+   Paste the printed `id` into `wrangler.toml` (Notepad) in place of `replace-with-your-kv-namespace-id`. In the same file set `CLERK_PUBLISHABLE_KEY` to the `pk_live_…` from Clerk → API keys. Save.
+3. `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` — copy the string; it's your admin secret, used twice.
+4. `npx wrangler secret put ADMIN_SECRET` → paste it.
+5. `npx wrangler deploy` → attaches `marketharo.io` as the Worker's custom domain (the zone is in Cloudflare now). `https://marketharo.io/health` → `{"ok":true}`; the bare URL → the splash.
+6. Clerk dashboard → **Domains → Add satellite domain** → `marketharo.io`. Clerk shows a CNAME to add (something like `clerk.marketharo.io → frontend-api.clerk.services`): Cloudflare → DNS → add it exactly, **DNS only (grey cloud)**. Back in Clerk, wait for it to verify (minutes).
+7. Clerk dashboard → **Sessions → Customize session token** → add `"public_metadata": "{{user.public_metadata}}"` → save. Check User & authentication that sign-ups are enabled.
+8. GitHub → repo → Settings → Secrets → **`HARO_ADMIN_SECRET`** = the string from step 3. Actions → *daily* → Run workflow; its last step now pushes the pages. `https://marketharo.io/track-record` shows the track record.
+9. Commit the config so the repo matches what's deployed (the KV id and publishable key aren't secrets):
+   ```
+   cd ..
+   git add worker/wrangler.toml
+   git commit -m "worker: KV id and publishable key"
+   git push
+   ```
 
-**Done when:** `https://marketharo.io/track-record` lands on the track record (may take up to a day for nameservers; usually an hour).
+**Done when:** `/health` ok; splash on the bare URL; `/track-record` live; *Already subscribed? Sign in* hops to gundeck.ai's sign-in and returns you to marketharo.io, and the splash then says "Signed in as you@… no Market Haro subscription yet". If the return lands you on gundeck.ai instead of back on marketharo.io, gundeck.ai's sign-in page isn't honouring `redirect_url` for our origin — that's in the handoff for Manus.
 
 ## 4. Manus builds the gundeck.ai side — their time; send the handoff today
 

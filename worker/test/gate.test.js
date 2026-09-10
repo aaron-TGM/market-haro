@@ -17,7 +17,8 @@ async function sign(priv, claims, header = { alg: 'RS256', typ: 'JWT', kid: 'k1'
   const sig = await subtle.sign('RSASSA-PKCS1-v1_5', priv, new TextEncoder().encode(`${h}.${p}`));
   return `${h}.${p}.${b64u(sig)}`;
 }
-const env = { CLERK_ISSUER: 'https://clerk.gundeck.ai', CLERK_PUBLISHABLE_KEY: 'pk_test', ADMIN_SECRET: 's3', ENTITLEMENT_VALUES: 'active,trialing' };
+const env = { CLERK_ISSUER: 'https://clerk.gundeck.ai, https://clerk.marketharo.io', CLERK_PUBLISHABLE_KEY: 'pk_test', ADMIN_SECRET: 's3',
+              ENTITLEMENT_VALUES: 'active,trialing', CLERK_SATELLITE_DOMAIN: 'marketharo.io', SIGN_IN_URL: 'https://gundeck.ai/sign-in' };
 const now = () => Math.floor(Date.now() / 1000);
 
 test('a good token verifies; expired, wrong issuer, wrong key and tampered ones do not', async () => {
@@ -27,6 +28,7 @@ test('a good token verifies; expired, wrong issuer, wrong key and tampered ones 
   assert.equal((await verifyToken(tok, env, jwks)).sub, 'user_1');
   assert.equal(await verifyToken(await sign(priv, { ...claims, exp: now() - 120 }), env, jwks), null);
   assert.equal(await verifyToken(await sign(priv, { ...claims, iss: 'https://clerk.example.com' }), env, jwks), null);
+  assert.equal((await verifyToken(await sign(priv, { ...claims, iss: 'https://clerk.marketharo.io' }), env, jwks)).sub, 'user_1');
   const other = await keypair();
   assert.equal(await verifyToken(tok, env, other.jwks), null);
   const [h, p, s] = tok.split('.');
@@ -54,48 +56,49 @@ test('the front door: splash for strangers, splash for the unsubscribed, the rep
   globalThis.fetch = async (u) => String(u).endsWith('/.well-known/jwks.json') ? new Response(JSON.stringify({ keys: jwks })) : realFetch(u);
   const e = { ...env, HARO: kv };
   try {
-    let r = await worker.fetch(new Request('https://marketharo.gundeck.ai/admin/report', { method: 'PUT', headers: { 'X-Admin-Secret': 's3' }, body: '<!doctype html><html><head><title>t</title></head><body>REPORT</body></html>' }), e);
+    let r = await worker.fetch(new Request('https://marketharo.io/admin/report', { method: 'PUT', headers: { 'X-Admin-Secret': 's3' }, body: '<!doctype html><html><head><title>t</title></head><body>REPORT</body></html>' }), e);
     assert.equal(r.status, 200);
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/admin/report', { method: 'PUT', headers: { 'X-Admin-Secret': 'wrong' }, body: '<html>' }), e);
+    r = await worker.fetch(new Request('https://marketharo.io/admin/report', { method: 'PUT', headers: { 'X-Admin-Secret': 'wrong' }, body: '<html>' }), e);
     assert.equal(r.status, 403);
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/admin/track', { method: 'PUT', headers: { 'X-Admin-Secret': 's3' }, body: '<!doctype html><html><body>TRACK</body></html>' }), e);
+    r = await worker.fetch(new Request('https://marketharo.io/admin/track', { method: 'PUT', headers: { 'X-Admin-Secret': 's3' }, body: '<!doctype html><html><body>TRACK</body></html>' }), e);
     assert.equal(r.status, 200);
 
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/'), e);
+    r = await worker.fetch(new Request('https://marketharo.io/'), e);
     assert.equal(r.status, 200); let body = await r.text();
     assert.match(body, /Start monthly/); assert.match(body, /Sign in/); assert.doesNotMatch(body, /REPORT/);
     assert.equal(r.headers.get('cache-control'), 'private, no-store');
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/track-record'), e);
+    r = await worker.fetch(new Request('https://marketharo.io/track-record'), e);
     assert.match(await r.text(), /TRACK/);
-    assert.match(body, /subscribe\?plan=monthly/); assert.match(body, /openSignUp/); assert.match(body, /checkout.*success/);
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/me'), e);
+    assert.match(body, /subscribe\?plan=monthly/); assert.match(body, /redirectToSignUp/); assert.match(body, /checkout.*success/);
+    assert.match(body, /&quot;isSatellite&quot;:true/); assert.match(body, /&quot;signInUrl&quot;:&quot;https:\/\/gundeck.ai\/sign-in&quot;/);
+    r = await worker.fetch(new Request('https://marketharo.io/me'), e);
     assert.deepEqual(await r.json(), { signed_in: false, entitled: false });
 
-    const noplan = await sign(priv, { iss: env.CLERK_ISSUER, sub: 'user_2', exp: now() + 60, public_metadata: {} });
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/', { headers: { Cookie: `__session=${noplan}` } }), e);
+    const noplan = await sign(priv, { iss: 'https://clerk.gundeck.ai', sub: 'user_2', exp: now() + 60, public_metadata: {} });
+    r = await worker.fetch(new Request('https://marketharo.io/', { headers: { Cookie: `__session=${noplan}` } }), e);
     body = await r.text(); assert.match(body, /no Market Haro subscription/); assert.doesNotMatch(body, /REPORT/);
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/positions', { headers: { Cookie: `__session=${noplan}` } }), e);
+    r = await worker.fetch(new Request('https://marketharo.io/positions', { headers: { Cookie: `__session=${noplan}` } }), e);
     assert.equal(r.status, 403);
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/me', { headers: { Cookie: `__session=${noplan}` } }), e);
+    r = await worker.fetch(new Request('https://marketharo.io/me', { headers: { Cookie: `__session=${noplan}` } }), e);
     assert.deepEqual(await r.json(), { signed_in: true, entitled: false });
 
-    const sub = await sign(priv, { iss: env.CLERK_ISSUER, sub: 'user_1', exp: now() + 60, public_metadata: { marketHaro: { status: 'trialing', plan: 'monthly' } } });
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/', { headers: { Cookie: `__session=${sub}` } }), e);
-    body = await r.text(); assert.match(body, /REPORT/); assert.match(body, /clerk.browser.js/);
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/', { headers: { Authorization: `Bearer ${sub}` } }), e);
+    const sub = await sign(priv, { iss: 'https://clerk.marketharo.io', sub: 'user_1', exp: now() + 60, public_metadata: { marketHaro: { status: 'trialing', plan: 'monthly' } } });
+    r = await worker.fetch(new Request('https://marketharo.io/', { headers: { Cookie: `__session=${sub}` } }), e);
+    body = await r.text(); assert.match(body, /REPORT/); assert.match(body, /clerk.browser.js/); assert.match(body, /&quot;isSatellite&quot;:true/);
+    r = await worker.fetch(new Request('https://marketharo.io/', { headers: { Authorization: `Bearer ${sub}` } }), e);
     assert.match(await r.text(), /REPORT/);
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/me', { headers: { Authorization: `Bearer ${sub}` } }), e);
+    r = await worker.fetch(new Request('https://marketharo.io/me', { headers: { Authorization: `Bearer ${sub}` } }), e);
     assert.deepEqual(await r.json(), { signed_in: true, entitled: true });
 
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/positions', { method: 'PUT', headers: { Cookie: `__session=${sub}`, 'Content-Type': 'application/json' },
+    r = await worker.fetch(new Request('https://marketharo.io/positions', { method: 'PUT', headers: { Cookie: `__session=${sub}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ positions: { '1|Normal': { qty: 2, cost: 10.5, since: '2026-09-01T00:00:00Z' }, bad: 'x', '2|Normal': { qty: -1, cost: 'no' } } }) }), e);
     assert.equal((await r.json()).count, 2);
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/positions', { headers: { Cookie: `__session=${sub}` } }), e);
+    r = await worker.fetch(new Request('https://marketharo.io/positions', { headers: { Cookie: `__session=${sub}` } }), e);
     const got = await r.json();
     assert.deepEqual(got.positions['1|Normal'], { qty: 2, cost: 10.5, since: '2026-09-01' });
     assert.deepEqual(got.positions['2|Normal'], { qty: null, cost: null, since: null });
     assert.equal(store.has('u:user_1'), true);
-    r = await worker.fetch(new Request('https://marketharo.gundeck.ai/positions'), e);
+    r = await worker.fetch(new Request('https://marketharo.io/positions'), e);
     assert.equal(r.status, 401);
   } finally { globalThis.fetch = realFetch; }
 });

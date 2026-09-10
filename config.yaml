@@ -153,4 +153,4 @@ publish:
   pricing_note: "$8/mo or $88/yr, single paid tier, 7-day trial, no free tier"
   # The Worker's URL. Empty = nothing is published and the page keeps the
   # watchlist in the browser only.
-  site_url: "https://marketharo.gundeck.ai"
+  site_url: "https://marketharo.io"

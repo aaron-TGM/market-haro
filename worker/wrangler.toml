@@ -1,11 +1,12 @@
-# Market Haro at marketharo.gundeck.ai. Deploy: `cd worker && npx wrangler deploy`.
+# Market Haro at marketharo.io. Deploy: `cd worker && npx wrangler deploy`.
 #
 # One Worker, one page. It serves the report the pipeline pushes each morning
 # to signed-in GUNDECK users whose account carries a Market Haro subscription,
 # the splash page to everyone else, the public track record, and each user's
 # watchlist so it follows them across devices. Identity is Clerk's -- the same
-# instance gundeck.ai signs people in with -- verified here against its
-# published keys. Billing is Stripe's, on gundeck.ai; its webhook writes the
+# instance gundeck.ai signs people in with; marketharo.io is registered there
+# as a satellite domain of gundeck.ai -- verified here against its published
+# keys. Billing is Stripe's, on gundeck.ai; its webhook writes the
 # entitlement onto the Clerk user and this Worker only reads it.
 #
 # Secret (set with `npx wrangler secret put ADMIN_SECRET`): shared with the
@@ -15,14 +16,23 @@ name = "market-haro"
 main = "src/index.js"
 compatibility_date = "2026-06-01"
 
-# The custom domain. Add the DNS record in the Cloudflare dashboard first
-# (marketharo CNAME to the workers.dev address, proxied) or let this create it.
-routes = [{ pattern = "marketharo.gundeck.ai", custom_domain = true }]
+# The custom domain: the marketharo.io zone lives in Cloudflare (nameservers
+# pointed there from Namecheap); wrangler attaches the apex as a custom domain.
+# www is a redirect rule in the dashboard, not a route here.
+routes = [{ pattern = "marketharo.io", custom_domain = true }]
 
 [vars]
-# Clerk. The issuer is the Frontend API host; the publishable key is public.
-CLERK_ISSUER = "https://clerk.gundeck.ai"
+# Clerk. The issuer(s) tokens may carry -- the primary Frontend API host, and
+# the satellite's once Clerk assigns one (comma-separated; the first is where
+# the keys are fetched from). The publishable key is public.
+CLERK_ISSUER = "https://clerk.gundeck.ai,https://clerk.marketharo.io"
 CLERK_PUBLISHABLE_KEY = "pk_live_replace-me"
+# This domain is a Clerk *satellite* of gundeck.ai (Clerk dashboard -> Domains
+# -> Add satellite domain -> marketharo.io, plus the CNAME it asks for). Sign-in
+# and sign-up happen on gundeck.ai's pages and return here.
+CLERK_SATELLITE_DOMAIN = "marketharo.io"
+SIGN_IN_URL = "https://gundeck.ai/sign-in"
+SIGN_UP_URL = "https://gundeck.ai/sign-up"
 # The one gundeck.ai route that starts a subscription for the signed-in user
 # (?plan=monthly|annual -> Stripe Checkout -> back here with ?checkout=success),
 # and the account page where it is managed. Sign-up and sign-in happen on the

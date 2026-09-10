@@ -13,7 +13,7 @@
 #   secrets.HARO_ADMIN_SECRET      the site Worker's admin secret       optional
 #
 # With the secret set, every run pushes the report and the track record to
-# marketharo.gundeck.ai. Without it the report is still built and kept as a
+# marketharo.io. Without it the report is still built and kept as a
 # workflow artifact; nothing fails, the publish step is skipped.
 #
 # THE PROMISE TO SUBSCRIBERS
@@ -128,6 +128,6 @@ jobs:
             git push
           fi
 
-      - name: Push the page to marketharo.gundeck.ai
+      - name: Push the page to marketharo.io
         if: env.HARO_ADMIN_SECRET != ''
         run: python -m radar publish

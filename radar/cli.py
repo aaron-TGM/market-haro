@@ -441,7 +441,7 @@ def _today() -> str:
 
 
 def cmd_publish(cfg, args) -> int:
-    """Push today's report and the track record to the Worker at marketharo.gundeck.ai.
+    """Push today's report and the track record to the Worker at marketharo.io.
 
     Reads what `radar invest` wrote to out/ rather than rebuilding, so what
     is served is byte-for-byte what was tested. The Worker's URL is config
