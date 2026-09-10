@@ -1,0 +1,7 @@
+# Keep LF everywhere; the pipeline runs on Linux and the shell scripts break with CRLF.
+* text=auto eol=lf
+*.sh text eol=lf
+*.png binary
+*.jpg binary
+*.webp binary
+*.db binary
