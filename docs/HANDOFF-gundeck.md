@@ -44,7 +44,7 @@ This is the part that's entirely yours, and it's a bigger change than anything a
 
 - **GUNDECK Pass ($3 for 30 days, one-time) becomes a subscription: $3/month.** A new recurring Price; the old one-time Pass stops being sold. People who already bought a Pass finish their 30 days as normal and see the new subscription when it ends. Nobody gets converted to a subscription automatically — that needs their consent through Checkout.
 - **A GUNDECK annual price: $29/year.** Same product, second recurring Price (Stripe's fee on a $3 charge is ~13%; on $29 it's ~4%, which is the main reason it exists).
-- **GUNDECK Lifetime goes from $29 to $59.** Existing Lifetime holders keep what they have. Aaron will announce the increase with a short window at the old price before it takes effect (he'll give you the date), so the old Price needs to stay purchasable until then.
+- **GUNDECK Lifetime goes from $29 to $59.** Existing Lifetime holders keep what they have. The cutover is **October 30, 2026** — the Stardust Trails (GD06) release day — so the $29 Price stays purchasable through October 29 and the $59 Price takes over on the 30th. Aaron announces it about two weeks ahead (around October 16). If the switch can be a dated configuration change rather than a deploy on the day, so much the better.
 
 So GUNDECK ends up with monthly / annual / Lifetime, and Market Haro with monthly / annual — two products, one account, each bought on its own.
 
@@ -66,7 +66,7 @@ That last one is Clerk's satellite sync doing its job — a user who is signed i
 
 ## Notes on your Sep 10 readiness review
 
-Thanks — it's a careful read and we agree with all of it. The two items on our side are done in the Worker (`azp` is now checked against this domain and gundeck.ai's origin, configurable; `worker/package.json` was being hidden by an over-broad ignore rule and is in the repo now). On `redirectToSignIn` vs `buildSignInUrl`: in clerk-js the former is `navigate(buildSignInUrl(...))`, so they carry the same sync parameters — and in practice the hop to your sign-in page already works from marketharo.io; the missing piece is the return, which is the `allowedRedirectOrigins` + guard change you identified. We'll stay on the documented primitive if the real-device test says otherwise. "Section 9" in the plan meant the "How we'd know it's working" list; fixed. The Lifetime cutover date is with Aaron.
+Thanks — it's a careful read and we agree with all of it. The two items on our side are done in the Worker (`azp` is now checked against this domain and gundeck.ai's origin, configurable; `worker/package.json` was being hidden by an over-broad ignore rule and is in the repo now). On `redirectToSignIn` vs `buildSignInUrl`: in clerk-js the former is `navigate(buildSignInUrl(...))`, so they carry the same sync parameters — and in practice the hop to your sign-in page already works from marketharo.io; the missing piece is the return, which is the `allowedRedirectOrigins` + guard change you identified. We'll stay on the documented primitive if the real-device test says otherwise. "Section 9" in the plan meant the "How we'd know it's working" list; fixed. The Lifetime cutover date is October 30, 2026 (above).
 
 ## What we'll never do
 

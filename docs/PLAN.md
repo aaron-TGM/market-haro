@@ -47,7 +47,7 @@ Still to do from this block: GitHub → repo → Settings → Secrets and variab
 
 Sent Sep 10; Manus's readiness review came back the same day and agrees with the architecture. Their finding that changes the timeline: gundeck.ai's current code has no subscriptions at all (only the two one-time purchases), so Block 4 is a full billing build — recurring checkout, lifecycle webhooks, a per-product subscription table, the Customer Portal, the redirect fix — not a patch. Budget accordingly; nothing else in this plan changes. `docs/HANDOFF-gundeck.md` is self-contained and, as of Sep 10, it also carries GUNDECK's own pricing change (Pass → $3/month, new $29/year, Lifetime $29 → $59) and the two post-checkout cross-sell screens — so it's a bigger job for Manus than the Market Haro plumbing alone. What comes back to you: confirmation of the subscribe route path (`/market-haro/subscribe`), the account page path, and the pricing page path (our post-checkout banner links to it, assumed `/pricing`); if any differ, change `CHECKOUT_URL` / `MANAGE_URL` / `GUNDECK_URL` in the Worker's Settings → Variables (two minutes).
 
-Your own piece of Block 4: pick the date the Lifetime price goes to $59 and tell Manus; the announcement to your list ("last two weeks at $29") goes out the day they confirm the new Prices are live.
+Your own piece of Block 4: the Lifetime price goes to $59 on **October 30, 2026** (Stardust Trails / GD06 release day) — Manus has the date. The announcement to your list ("last two weeks at $29") goes out around **October 16**, once the new subscription Prices are live; if Manus isn't done by then, the announcement waits and the cutover moves with it — don't announce a date the site can't honour.
 
 Ask them to run the handoff's "How we'd know it's working" list in Stripe test mode before saying done. Their Sep 10 readiness review adds a longer test-mode gate (duplicate-checkout protection, event replay, metadata integrity, portal); that's the one to hold them to.
 
@@ -76,6 +76,7 @@ Where: a phone and a laptop, a second email address, Stripe test mode first, the
 - **Daily, 30 seconds:** did the Action run green? (Email on failure covers this.)
 - **Weekly, 10 minutes:** Stripe trials → paid → churn; skim the report once as a subscriber.
 - **Sep 10 onward:** the track record's first 30-day window closes; the "of N calls resolved…" sentence appears on `/track-record` by itself.
+- **Oct 16:** the Lifetime-increase announcement. **Oct 30:** GD06 releases; Lifetime is $59 from today; tick the *backfill* box on the next manual run so the new cards get their history.
 - **Monthly (1st), 5 minutes:** read the verdict line the workflow appended to `data/validation_history.json`.
 - **Quarterly:** rotate `ADMIN_SECRET` (Worker) and `HARO_ADMIN_SECRET` (GitHub) together; `npx wrangler kv key list` → export watchlists.
 - **When anything breaks:** the last green run's artifact is the fallback page; `/me` tells you what the Worker sees for a user; the three checks at the end of the handoff ("What we'll never do") cover almost every "I can't see it".

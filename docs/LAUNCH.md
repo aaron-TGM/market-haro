@@ -52,7 +52,7 @@ With a second email on a phone: subscribe (trial) → open the report → star t
 >
 > [Open Market Haro] · [See the public track record]
 >
-> One more thing, about GUNDECK itself. The 30-day Pass is becoming a plain $3/month subscription (or $29 a year), and on [date] Lifetime goes from $29 to $59. If you've been meaning to grab Lifetime, the next two weeks are the time. Anyone who already has it keeps it, obviously.
+> One more thing, about GUNDECK itself. The 30-day Pass is becoming a plain $3/month subscription (or $29 a year), and on October 30 — the day Stardust Trails (GD06) releases — Lifetime goes from $29 to $59. If you've been meaning to grab Lifetime, the next two weeks are the time. Anyone who already has it keeps it, obviously.
 >
 > — Aaron
 
