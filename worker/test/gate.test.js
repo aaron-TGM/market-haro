@@ -86,6 +86,9 @@ test('the front door: splash for strangers, splash for the unsubscribed, the rep
     const sub = await sign(priv, { iss: 'https://clerk.marketharo.io', sub: 'user_1', exp: now() + 60, public_metadata: { marketHaro: { status: 'trialing', plan: 'monthly' } } });
     r = await worker.fetch(new Request('https://marketharo.io/', { headers: { Cookie: `__session=${sub}` } }), e);
     body = await r.text(); assert.match(body, /REPORT/); assert.match(body, /clerk.browser.js/); assert.match(body, /&quot;isSatellite&quot;:true/);
+    assert.doesNotMatch(body, /haro-welcome/);   // the GUNDECK cross-sell shows once, right after checkout, not every day
+    r = await worker.fetch(new Request('https://marketharo.io/?welcome=1', { headers: { Cookie: `__session=${sub}` } }), e);
+    body = await r.text(); assert.match(body, /haro-welcome/); assert.match(body, /gundeck.ai\/pricing/); assert.match(body, /<body><div id="haro-welcome"/);
     r = await worker.fetch(new Request('https://marketharo.io/', { headers: { Authorization: `Bearer ${sub}` } }), e);
     assert.match(await r.text(), /REPORT/);
     r = await worker.fetch(new Request('https://marketharo.io/me', { headers: { Authorization: `Bearer ${sub}` } }), e);

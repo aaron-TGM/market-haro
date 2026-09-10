@@ -6,8 +6,7 @@ sealed product, shows what is under every box, marks every chart with the set ca
 scores its own past calls in public. No newsletter, no written commentary beyond a one-line
 case per card: the numbers are the product and the reader draws the conclusion.
 
-One paid tier: **$8 a month or $88 a year, 7-day trial, no free tier** — an add-on to a
-GUNDECK.AI account. One page at marketharo.io, rebuilt daily by GitHub Actions and
+One paid tier: **$8 a month or $88 a year, 7-day trial, no free tier** — a standalone subscription, signed in with a GUNDECK.AI account (free). GUNDECK itself is a separate product on the same account; each is offered once, briefly, after checkout of the other. The report is
 served by one Cloudflare Worker to signed-in GUNDECK users with the subscription; identity
 is Clerk's and billing is Stripe's, both gundeck.ai's own (the .io is a Clerk satellite
 domain, so nothing on gundeck.ai's DNS changes). DEPLOY.md has the setup.

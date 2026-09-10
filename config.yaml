@@ -150,7 +150,7 @@ publish:
   brand: Market Haro
   # Pricing is set in Stripe on gundeck.ai, not here. Recorded so the repo
   # says what the product is.
-  pricing_note: "$8/mo or $88/yr, single paid tier, 7-day trial, no free tier"
+  pricing_note: "$8/mo or $88/yr, single paid tier, 7-day trial, no free tier; a standalone subscription on a GUNDECK.AI account (GUNDECK itself is a separate $3/mo, $29/yr or $59 Lifetime product)"
   # The Worker's URL. Empty = nothing is published and the page keeps the
   # watchlist in the browser only.
   site_url: "https://marketharo.io"

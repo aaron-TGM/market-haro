@@ -45,6 +45,9 @@ SIGN_UP_URL = "https://gundeck.ai/sign-up"
 # splash itself, in Clerk's modal.
 CHECKOUT_URL = "https://gundeck.ai/market-haro/subscribe"
 MANAGE_URL = "https://gundeck.ai/account"
+# Where the one-time cross-sell banner after checkout sends people (GUNDECK is
+# a separate subscription on the same account).
+GUNDECK_URL = "https://gundeck.ai/pricing"
 # The entitlement, as Stripe's webhook writes it onto the Clerk user and
 # Clerk's session-token template copies it into the token. Defaults look at
 # public_metadata.marketHaro.status (or market_haro) for active|trialing.

@@ -172,14 +172,14 @@ footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);color:v
 </style></head><body><div class="wrap">
 <div class="brand">from GUNDECK.AI</div><h1>Market Haro</h1>
 <p class="tag">Today's Gundam Card Game market, ranked. Rebuilt every morning from the whole English market on TCGplayer.</p>
-<p>Every single worth holding, scored 0–100 on value, liquidity, trend, stability and scarcity and gated on the things that make a card un-holdable. Every box and deck measured against what is inside it. A 90-day chart on every row with every set release marked. Your watchlist and holdings, with P&amp;L, following your GUNDECK account across devices. And a public record of every call, scored 30 days later, losers kept.</p>
+<p>Every single worth holding, scored 0–100 on value, liquidity, trend, stability and scarcity and gated on the things that make a card un-holdable. Every box and deck measured against what is inside it. A 90-day chart on every row with every set release marked. Your watchlist and holdings, with P&amp;L, following your account across devices. And a public record of every call, scored 30 days later, losers kept.</p>
 <ul><li>~130 singles pass the screen each day, from ~200 that qualify</li><li>Sealed: boxes, decks, cases against release and against the set beneath them</li><li>What every release did to prices, on our own record</li><li>No newsletter, no hot takes. Numbers, and you draw the conclusion.</li></ul>
 <div id="pending" class="plan" hidden><div class="l">One moment</div><div class="v" style="font-size:18px">Finishing your subscription…</div><div class="f" id="pending-f">Stripe is telling your GUNDECK account about it. This usually takes a few seconds.</div></div>
 <div class="plans" id="plans">
   <div class="plan"><div class="l">Monthly</div><div class="v">$8<small> / month</small></div><div class="f">7-day free trial · cancel any time</div><a class="btn" href="${esc(monthly)}" data-plan="monthly">Start monthly</a></div>
   <div class="plan"><div class="l">Annual</div><div class="v">$88<small> / year</small></div><div class="f">7-day free trial · eleven months for twelve</div><a class="btn" href="${esc(annual)}" data-plan="annual">Start annual</a></div>
 </div>
-<p class="tag">Card entered at sign-up, nothing charged for seven days. An add-on to GUNDECK.AI — one account for both, billed separately. Prices from tcgapi.dev under commercial licence.</p>
+<p class="tag">Card entered at sign-up, nothing charged for seven days. Sign in with a GUNDECK.AI account — free to create, and the same login if you already play with GUNDECK. Prices from tcgapi.dev under commercial licence.</p>
 <div class="row" id="auth">${state === 'noplan'
   ? `<span class="who" id="who">Signed in. This account has no Market Haro subscription yet — pick a plan above.</span> <a class="btn quiet" href="${esc(manage)}">Manage account</a> <a class="btn quiet" href="#" id="signout">Sign out</a>`
   : `<a class="btn quiet" href="#" id="signin">Already subscribed? Sign in</a>`}</div>
@@ -209,7 +209,7 @@ ${clerkScript(env)}
         var h = tok ? { Authorization: 'Bearer ' + tok } : {};
         return fetch('/me', { credentials: 'same-origin', headers: h }).then(function(r){ return r.json(); });
       }).then(function(me){
-        if (me && me.entitled) { location.replace('/'); return; }
+        if (me && me.entitled) { location.replace('/?welcome=1'); return; }
         if (tries < 20) setTimeout(poll, 3000);
         else $('pending-f').textContent = 'This is taking longer than usual. Your payment is safe; reload this page in a minute, or check your GUNDECK account page.';
       }).catch(function(){ if (tries < 20) setTimeout(poll, 3000); });
@@ -257,9 +257,22 @@ ${clerkScript(env)}
 
 /** The report page as the pipeline built it, with Clerk's script added so
  *  the session cookie stays fresh while the reader keeps the tab open. */
-function withClerk(html, env) {
+function withClerk(html, env, banner = '') {
   const tag = clerkScript(env);
-  return html.includes('</head>') ? html.replace('</head>', tag + '</head>') : tag + html;
+  let out = html.includes('</head>') ? html.replace('</head>', tag + '</head>') : tag + html;
+  if (banner) out = out.includes('<body>') ? out.replace('<body>', '<body>' + banner) : banner + out;
+  return out;
+}
+
+/** Shown once, on the first view of the report after checkout: the other
+ *  product, one line, dismissible. GUNDECK and Market Haro are separate
+ *  subscriptions on one account; this is the whole cross-sell on our side. */
+function welcomeBanner(env) {
+  const url = env.GUNDECK_URL || 'https://gundeck.ai/pricing';
+  return `<div id="haro-welcome" style="font:13px/1.5 ui-monospace,Menlo,monospace;background:#0d1117;color:#f2ead8;border-bottom:1px solid #2a2418;padding:12px 20px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+<span><b style="color:#e0a030">You're in.</b> Play the game too? <b>GUNDECK.AI</b> — deck building and play tools for the Gundam Card Game — is a separate subscription on this same account, $3/month or $29/year.</span>
+<a href="${esc(url)}" style="color:#07090c;background:#e0a030;text-decoration:none;font-weight:700;font-size:11px;letter-spacing:.12em;text-transform:uppercase;padding:8px 12px;border-radius:2px">See GUNDECK</a>
+<a href="/" style="color:#9a917f;font-size:12px">Not now</a></div>`;
 }
 
 // ---------------------------------------------------------------- http
@@ -332,7 +345,8 @@ export default {
       if (!entitled(who, env)) return html(splash(env, 'noplan'));
       const page = await env.HARO.get('report');
       if (!page) return html('<!doctype html><title>Market Haro</title><p style="font-family:monospace;padding:2rem">Today\'s report is not published yet. Check back shortly.</p>', 503, { 'Retry-After': '600' });
-      return html(withClerk(page, env));
+      const banner = url.searchParams.has('welcome') ? welcomeBanner(env) : '';
+      return html(withClerk(page, env, banner));
     }
 
     return json({ error: 'not found' }, 404);

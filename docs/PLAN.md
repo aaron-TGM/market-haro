@@ -45,7 +45,9 @@ Still to do from this block: GitHub → repo → Settings → Secrets and variab
 
 ## 4. Manus builds the gundeck.ai side — their time; send the handoff today
 
-Send `docs/HANDOFF-gundeck.md`. It is self-contained. What comes back to you: confirmation of the subscribe route path (`/market-haro/subscribe`) and the account page path; if either differs, change `CHECKOUT_URL` / `MANAGE_URL` in `wrangler.toml` and `npx wrangler deploy` (two minutes).
+Send `docs/HANDOFF-gundeck.md`. It is self-contained and, as of Sep 10, it also carries GUNDECK's own pricing change (Pass → $3/month, new $29/year, Lifetime $29 → $59) and the two post-checkout cross-sell screens — so it's a bigger job for Manus than the Market Haro plumbing alone. What comes back to you: confirmation of the subscribe route path (`/market-haro/subscribe`), the account page path, and the pricing page path (our post-checkout banner links to it, assumed `/pricing`); if any differ, change `CHECKOUT_URL` / `MANAGE_URL` / `GUNDECK_URL` in the Worker's Settings → Variables (two minutes).
+
+Your own piece of Block 4: pick the date the Lifetime price goes to $59 and tell Manus; the announcement to your list ("last two weeks at $29") goes out the day they confirm the new Prices are live.
 
 Ask them to run section 9 of the handoff in Stripe test mode before saying done.
 
@@ -53,19 +55,19 @@ Ask them to run section 9 of the handoff in Stripe test mode before saying done.
 
 Where: a phone and a laptop, a second email address, Stripe test mode first, then live mode once.
 
-1. Signed out, phone: `marketharo.io` → splash → *Start monthly* → sign up as the second email → Checkout → test card → back → "Finishing…" → the report. Star three cards; enter copies and cost on one.
+1. Signed out, phone: `marketharo.io` → splash → *Start monthly* → sign up as the second email → Checkout → test card → back → "Finishing…" → the report, with the one-time GUNDECK banner across the top (*Not now* dismisses it). Star three cards; enter copies and cost on one.
 2. Laptop, same account: sign in → the starred cards and the holding are there ("Watchlist synced to your account").
-3. gundeck.ai: the account page shows *Market Haro · active until …*; paid GUNDECK features work on this account.
+3. gundeck.ai: the account page shows *Market Haro · active until …*.
 4. Cancel from the account page → the report still opens (period not over) → in Stripe test dashboard delete the subscription → reload → the splash says "no Market Haro subscription".
 5. Switch Stripe to live. Subscribe yourself with a real card on the annual plan (you'll want the real receipt and portal flow once). Leave it running; you're the first subscriber.
-6. Sign in as a Lifetime holder → Checkout shows a 30-day trial.
+6. Buy GUNDECK (test mode) as a third account → the post-checkout page offers Market Haro. And the reverse: the Market Haro subscriber from step 1 does *not* have GUNDECK's paid features.
 
 **Done when:** all six, and `data/rankings/` in the repo has one more day than yesterday (the pipeline kept running through all this).
 
 ## 6. Launch — one morning
 
 1. Nav item and pricing cards live on gundeck.ai (Manus).
-2. The email to your GUNDECK list, from GUNDECK.AI, the text in `docs/LAUNCH.md` Phase 4. Send once; a reminder to non-openers five days later; stop.
+2. The email to your GUNDECK list, from GUNDECK.AI, the text in `docs/LAUNCH.md` Phase 4 — it now carries both stories: Market Haro is live, and GUNDECK's pricing is changing (Lifetime to $59 on the date you set). Send once; a reminder to non-openers five days later; stop.
 3. One post wherever your audience is, linking `marketharo.io` and `marketharo.io/track-record`.
 4. That evening: Stripe → Subscriptions, count trials. Actions tab: still green.
 
@@ -80,4 +82,4 @@ Where: a phone and a laptop, a second email address, Stripe test mode first, the
 
 ## What you will spend
 
-tcgapi.dev Pro (already paying). Cloudflare free. GitHub free. Clerk and Stripe as today plus Stripe's fee per charge. Break-even is about thirty subscribers.
+tcgapi.dev Pro (already paying). Cloudflare free. GitHub free. Clerk and Stripe as today plus Stripe's fee per charge. Break-even is about thirty Market Haro subscribers.
