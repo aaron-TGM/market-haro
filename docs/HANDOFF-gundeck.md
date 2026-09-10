@@ -18,7 +18,9 @@ We look at the user's Clerk **public metadata** for something like:
 
 and we treat `status` of `active` or `trialing` as "subscribed" and anything else as not. We chose Stripe's subscription status verbatim so nothing has to be translated. If a different key name or shape is more natural in your metadata conventions, that's fine — our side has a config setting for the path and the values, just let Aaron know what you landed on before we go live.
 
-For the field to reach us, Clerk's session token has to carry public metadata. That's a dashboard setting — **Sessions → Customize session token**, adding `"public_metadata": "{{user.public_metadata}}"` — and it's honestly the single most likely thing to be missed, so I'm mentioning it twice. The other Clerk dashboard step is **Domains → Add satellite domain → `marketharo.io`**; Clerk then asks for a CNAME in the marketharo.io zone, which is Aaron's side.
+For the field to reach us, Clerk's session token has to carry public metadata. Aaron has already done that in the dashboard (**Sessions → Customize session token** now has `"public_metadata": "{{user.public_metadata}}"`), and he's added `marketharo.io` as a satellite domain under **Domains** with its CNAME verified — so nothing in the Clerk dashboard is waiting on you.
+
+One thing we noticed while doing it, which you'll already know but is worth saying so nobody is surprised: the session-token preview for Aaron's own account shows `public_metadata: {}`. So GUNDECK's Pass/Lifetime status lives in your own database rather than in Clerk public metadata today, and the Market Haro field will be the first thing written there. That's fine on our end — we only need `marketHaro` itself in public metadata — and your GUNDECK-side checks (including the Lifetime → 30-day-trial rule below) can keep reading from wherever they read from now. It just means the webhook needs to write to Clerk specifically, not only to your database.
 
 ## What we're hoping gundeck.ai does
 
