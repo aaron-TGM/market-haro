@@ -24,7 +24,9 @@
 //
 // Vars (wrangler.toml): CLERK_ISSUER (one or more, comma-separated),
 //   CLERK_PUBLISHABLE_KEY, CLERK_SATELLITE_DOMAIN, SIGN_IN_URL, SIGN_UP_URL,
-//   CHECKOUT_URL, MANAGE_URL, ENTITLEMENT_PATH, ENTITLEMENT_VALUES, ENTITLEMENT_PLAN
+//   CHECKOUT_URL, MANAGE_URL, GUNDECK_URL, ENTITLEMENT_PATH, ENTITLEMENT_VALUES,
+//   ENTITLEMENT_PLAN, CLERK_AUTHORIZED_PARTIES (optional; defaults to this
+//   domain and the sign-in URL's origin)
 // Secret (`npx wrangler secret put ADMIN_SECRET`): shared with the pipeline.
 
 const MAX_BODY = 64 * 1024;
@@ -32,6 +34,14 @@ const MAX_PAGE = 12 * 1024 * 1024;
 const LEEWAY_S = 30;
 
 // ---------------------------------------------------------------- identity
+const authorizedParties = env => {
+  const set = String(env.CLERK_AUTHORIZED_PARTIES || '').split(',').map(s => s.trim().replace(/\/$/, '')).filter(Boolean);
+  if (set.length) return set;
+  const d = [];
+  if (env.CLERK_SATELLITE_DOMAIN) d.push('https://' + env.CLERK_SATELLITE_DOMAIN);
+  for (const u of [env.SIGN_IN_URL, env.SIGN_UP_URL]) { try { d.push(new URL(u).origin); } catch {} }
+  return d;
+};
 const issuers = env => String(env.CLERK_ISSUER || '').split(',').map(s => s.trim().replace(/\/$/, '')).filter(Boolean);
 const jwksCache = { at: 0, keys: null, issuer: null };
 async function jwks(env) {
@@ -68,6 +78,10 @@ export async function verifyToken(tok, env, keys = null) {
   if (typeof payload.nbf === 'number' && payload.nbf - LEEWAY_S > now) return null;
   if (!issuers(env).includes(String(payload.iss || '').replace(/\/$/, ''))) return null;
   if (!payload.sub) return null;
+  // Authorized party: Clerk stamps the origin the token was minted for. When
+  // present it must be one of ours -- this domain, or the primary's, which is
+  // where the satellite sync comes from. (Clerk's manual-verification guide.)
+  if (payload.azp && !authorizedParties(env).includes(String(payload.azp).replace(/\/$/, ''))) return null;
   const list = keys || await jwks(env);
   const jwk = list.find(k => k.kid === header.kid) || (list.length === 1 ? list[0] : null);
   if (!jwk) return null;

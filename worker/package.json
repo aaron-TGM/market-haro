@@ -1,0 +1,7 @@
+{
+  "name": "market-haro-worker",
+  "private": true,
+  "type": "module",
+  "scripts": { "deploy": "wrangler deploy", "dev": "wrangler dev", "test": "node --test test/*.test.js" },
+  "devDependencies": { "wrangler": "^3.90.0" }
+}

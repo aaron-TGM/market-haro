@@ -29,6 +29,11 @@ test('a good token verifies; expired, wrong issuer, wrong key and tampered ones 
   assert.equal(await verifyToken(await sign(priv, { ...claims, exp: now() - 120 }), env, jwks), null);
   assert.equal(await verifyToken(await sign(priv, { ...claims, iss: 'https://clerk.example.com' }), env, jwks), null);
   assert.equal((await verifyToken(await sign(priv, { ...claims, iss: 'https://clerk.marketharo.io' }), env, jwks)).sub, 'user_1');
+  // azp: minted for one of our origins, or absent -- never for a stranger's
+  assert.equal((await verifyToken(await sign(priv, { ...claims, azp: 'https://marketharo.io' }), env, jwks)).sub, 'user_1');
+  assert.equal((await verifyToken(await sign(priv, { ...claims, azp: 'https://gundeck.ai' }), env, jwks)).sub, 'user_1');
+  assert.equal(await verifyToken(await sign(priv, { ...claims, azp: 'https://evil.example' }), env, jwks), null);
+  assert.equal(await verifyToken(await sign(priv, { ...claims, azp: 'https://gundeck.ai' }), { ...env, CLERK_AUTHORIZED_PARTIES: 'https://marketharo.io' }, jwks), null);
   const other = await keypair();
   assert.equal(await verifyToken(tok, env, other.jwks), null);
   const [h, p, s] = tok.split('.');

@@ -31,7 +31,9 @@ venv/
 .DS_Store
 Thumbs.db
 
-# node (screenshot tooling only, not part of the project)
+# node (screenshot tooling at the root is not part of the project; the
+# Worker's own manifest is)
 node_modules/
-package.json
-package-lock.json
+/package.json
+/package-lock.json
+!worker/package.json

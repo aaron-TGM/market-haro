@@ -64,6 +64,10 @@ The end-to-end we'll run (test mode is fine; we only read `status`): sign up col
 
 That last one is Clerk's satellite sync doing its job — a user who is signed in on gundeck.ai and opens marketharo.io should be recognised after a quick hop through gundeck.ai. It's the part I couldn't test from our side, so I'd rather see it on a test account than a customer's.
 
+## Notes on your Sep 10 readiness review
+
+Thanks — it's a careful read and we agree with all of it. The two items on our side are done in the Worker (`azp` is now checked against this domain and gundeck.ai's origin, configurable; `worker/package.json` was being hidden by an over-broad ignore rule and is in the repo now). On `redirectToSignIn` vs `buildSignInUrl`: in clerk-js the former is `navigate(buildSignInUrl(...))`, so they carry the same sync parameters — and in practice the hop to your sign-in page already works from marketharo.io; the missing piece is the return, which is the `allowedRedirectOrigins` + guard change you identified. We'll stay on the documented primitive if the real-device test says otherwise. "Section 9" in the plan meant the "How we'd know it's working" list; fixed. The Lifetime cutover date is with Aaron.
+
 ## What we'll never do
 
 Write to Clerk or Stripe, store an email, send mail, or call gundeck.ai. If a subscriber ever can't see the report, the three checks in order are: does the session token carry `public_metadata`, did the webhook write `marketHaro.status`, is it `active` or `trialing`. `/me` shows what our server sees for whoever is signed in.

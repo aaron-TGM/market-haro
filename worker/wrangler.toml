@@ -39,6 +39,9 @@ CLERK_PUBLISHABLE_KEY = "pk_live_Y2xlcmsuZ3VuZGVjay5haSQ"
 CLERK_SATELLITE_DOMAIN = "marketharo.io"
 SIGN_IN_URL = "https://gundeck.ai/sign-in"
 SIGN_UP_URL = "https://gundeck.ai/sign-up"
+# Origins a session token may have been minted for (its `azp` claim). Empty =
+# this domain plus the sign-in URL's origin, which is what a satellite sees.
+CLERK_AUTHORIZED_PARTIES = ""
 # The one gundeck.ai route that starts a subscription for the signed-in user
 # (?plan=monthly|annual -> Stripe Checkout -> back here with ?checkout=success),
 # and the account page where it is managed. Sign-up and sign-in happen on the
