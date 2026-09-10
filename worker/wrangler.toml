@@ -1,4 +1,10 @@
-# Market Haro at marketharo.io. Deploy: `cd worker && npx wrangler deploy`.
+# Market Haro at marketharo.io.
+#
+# DEPLOYED THROUGH THE CLOUDFLARE DASHBOARD (Sep 2026): the code is pasted into
+# Workers & Pages -> market-haro -> Edit code, and the vars, secret, KV binding
+# and custom domain below are set there. This file mirrors that configuration
+# for reference and for `wrangler dev`. Do not `wrangler deploy` -- it would
+# replace the dashboard's settings with this file's.
 #
 # One Worker, one page. It serves the report the pipeline pushes each morning
 # to signed-in GUNDECK users whose account carries a Market Haro subscription,

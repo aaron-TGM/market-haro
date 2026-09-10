@@ -1,10 +1,10 @@
 # Market Haro — the plan to go live
 
-For Aaron. Six blocks, in order; each says what you do, where, how long, and how you know it worked. Blocks 1–3 are yours alone and can happen today (block 3 waits on block 2's DNS going active). Block 4 is Manus's (the handoff is `docs/HANDOFF-gundeck.md`) and runs in parallel. Blocks 5–6 need both done. Realistic elapsed time: launch on the day after Manus finishes.
+For Aaron. Six blocks, in order; each says what you do, where, how long, and how you know it worked. Blocks 1–3 are done (Sep 10). Block 4 is Manus's (the handoff is `docs/HANDOFF-gundeck.md`) and runs in parallel. Blocks 5–6 need both done. Realistic elapsed time: launch on the day after Manus finishes.
 
 ---
 
-## 1. Repo and the daily run — 30 minutes, today
+## 1. Repo and the daily run — done Sep 9
 
 Where: your machine, GitHub.
 
@@ -18,7 +18,7 @@ Where: your machine, GitHub.
 
 **Done when:** the run is green, a new commit "history: 2026-09-xx" appeared, and the run's artifact (`issue-…`) downloads and its `dashboard.html` opens in your browser.
 
-## 2. marketharo.io onto Cloudflare — 15 minutes plus DNS propagation, today
+## 2. marketharo.io onto Cloudflare — done Sep 10
 
 Where: Cloudflare, Namecheap. gundeck.ai is not touched at any point.
 
@@ -29,33 +29,19 @@ Where: Cloudflare, Namecheap. gundeck.ai is not touched at any point.
 
 **Done when:** the zone shows Active in Cloudflare. (The apex itself gets its record from the Worker in block 3.)
 
-## 3. The site Worker — 30 minutes, once block 2 is active
+## 3. The site Worker — done Sep 10, through the Cloudflare dashboard
 
-Where: cmd on the PC, Clerk dashboard, GitHub.
+Where: Cloudflare dashboard, Clerk dashboard, GitHub. No command line was needed; the Worker is one file, pasted into Cloudflare's editor.
 
-1. `node --version`. If not recognized: `winget install OpenJS.NodeJS.LTS`, then a new cmd window.
-2. ```
-   cd %USERPROFILE%\Downloads\gundam-price-radar\worker
-   npm install
-   npx wrangler login
-   npx wrangler kv namespace create HARO
-   ```
-   Paste the printed `id` into `wrangler.toml` (Notepad) in place of `replace-with-your-kv-namespace-id`. In the same file set `CLERK_PUBLISHABLE_KEY` to the `pk_live_…` from Clerk → API keys. Save.
-3. `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` — copy the string; it's your admin secret, used twice.
-4. `npx wrangler secret put ADMIN_SECRET` → paste it.
-5. `npx wrangler deploy` → attaches `marketharo.io` as the Worker's custom domain (the zone is in Cloudflare now). `https://marketharo.io/health` → `{"ok":true}`; the bare URL → the splash.
-6. Clerk dashboard → **Domains → Add satellite domain** → `marketharo.io`. Clerk shows a CNAME to add (something like `clerk.marketharo.io → frontend-api.clerk.services`): Cloudflare → DNS → add it exactly, **DNS only (grey cloud)**. Back in Clerk, wait for it to verify (minutes).
-7. Clerk dashboard → **Sessions → Customize session token** → add `"public_metadata": "{{user.public_metadata}}"` → save. Check User & authentication that sign-ups are enabled.
-8. GitHub → repo → Settings → Secrets → **`HARO_ADMIN_SECRET`** = the string from step 3. Actions → *daily* → Run workflow; its last step now pushes the pages. `https://marketharo.io/track-record` shows the track record.
-9. Commit the config so the repo matches what's deployed (the KV id and publishable key aren't secrets):
-   ```
-   cd ..
-   git add worker/wrangler.toml
-   git commit -m "worker: KV id and publishable key"
-   git push
-   ```
+What exists now, for the record:
 
-**Done when:** `/health` ok; splash on the bare URL; `/track-record` live; *Already subscribed? Sign in* hops to gundeck.ai's sign-in and returns you to marketharo.io, and the splash then says "Signed in as you@… no Market Haro subscription yet". If the return lands you on gundeck.ai instead of back on marketharo.io, gundeck.ai's sign-in page isn't honouring `redirect_url` for our origin — that's in the handoff for Manus.
+- Cloudflare → Workers & Pages → **market-haro**: the code from `worker/src/index.js`; Settings → Variables: the eight `CLERK_*`/URL/entitlement values from `wrangler.toml` plus the secret `ADMIN_SECRET`; Bindings: KV namespace `HARO` → `HARO`; Domains: custom domain `marketharo.io`.
+- Clerk → Domains → Satellites: `marketharo.io`, DNS verified (`clerk.marketharo.io` CNAME, DNS-only, in the Cloudflare zone). Sessions → session token carries `public_metadata`.
+- Tested: `/health` ok; the splash on the bare URL; *Sign in* hops to gundeck.ai, and a signed-in GUNDECK account is recognised on marketharo.io ("Signed in as … no Market Haro subscription yet"). The return-to-marketharo.io after sign-in is the one gap, and it's on Manus's list (handoff, "A way to start checkout").
+
+**To change the Worker later:** edit `worker/src/index.js` in the repo, run `npm test` in `worker/`, then Cloudflare → market-haro → Edit code → replace all → Deploy. The dashboard is the source of truth for the deployed settings; `wrangler.toml` mirrors them for reference. Don't run `wrangler deploy` — it would replace the dashboard's configuration with the file's.
+
+Still to do from this block: GitHub → repo → Settings → Secrets and variables → Actions → **`HARO_ADMIN_SECRET`** = the same value as the Worker's `ADMIN_SECRET`; Actions → *daily* → Run workflow. When it's green, `https://marketharo.io/track-record` is live.
 
 ## 4. Manus builds the gundeck.ai side — their time; send the handoff today
 
