@@ -3,6 +3,19 @@
 Newest first. Dates are the day the work landed; issue dates are the price date the
 report carries.
 
+## 2026-09-11 — Launched
+
+- Live at marketharo.io. Production trial end to end: sign-up on gundeck.ai, Stripe
+  checkout, webhook → Clerk `marketHaro.status`, report; account linkage confirmed.
+- The public page is now the preview (`/preview`): today's real top ten with art, then
+  the plans; `/track-record` redirects there. `radar/preview.py`.
+- Worker: satellite domain via `data-clerk-domain`, `azp` check, one-time GUNDECK
+  cross-sell banner after checkout (`?welcome=1`), deployed through the Cloudflare
+  dashboard (not wrangler).
+- Products decoupled: Market Haro no longer includes GUNDECK; GUNDECK moves to
+  $3/mo · $29/yr · Lifetime $59 from Oct 30 (Manus's build). 7-day trial for everyone.
+- `CLAUDE.md` added: the briefing for whoever picks this up next.
+
 ## 2026-09-10 — marketharo.io, a satellite
 
 - The site moves to `marketharo.io` itself so gundeck.ai's DNS is never touched. The .io is a

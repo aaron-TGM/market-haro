@@ -1,6 +1,6 @@
 # Market Haro — the plan to go live
 
-For Aaron. Six blocks, in order; each says what you do, where, how long, and how you know it worked. Blocks 1–3 are done (Sep 10). Block 4 is Manus's (the handoff is `docs/HANDOFF-gundeck.md`) and runs in parallel. Blocks 5–6 need both done. Realistic elapsed time: launch on the day after Manus finishes.
+**Launched September 11, 2026.** All six blocks are done: Manus built the gundeck.ai side from `docs/HANDOFF-gundeck.md`, the production trial went through end to end (sign-up, checkout, entitlement, report, account linkage), and the site is live at marketharo.io. What remains is the standing list at the bottom, and the October dates. The blocks are kept below as the record of how it was done.
 
 ---
 
