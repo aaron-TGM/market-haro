@@ -13,7 +13,7 @@ tcgapi.dev ──sync──▶ SQLite (cache) ◀──restore── data/histor
                         ▼                              │
    measure ─▶ score/gate ─▶ live shelf ─▶ sealed · depth · playbook · track ─▶ out/
                                                                             ├ dashboard.html    ─▶ Worker /admin/report ─▶ marketharo.io/  (entitled sessions)
-                                                                            ├ preview.html      ─▶ Worker /admin/preview ─▶ …/preview            (public)
+                                                                            ├ preview.html      ─▶ Worker /admin/preview ─▶ marketharo.io/  (everyone else: the front door)
                                                                             └ dashboard.csv
 ```
 
@@ -33,7 +33,7 @@ tcgapi.dev ──sync──▶ SQLite (cache) ◀──restore── data/histor
 | `releases.py` | the set calendar | codes from card numbers (GD05, ST11–14); marks on every chart; next-release tile |
 | `playbook.py` | what releases did | prior set / new set / market at +30/60/90, medians with n |
 | `track.py` | the track record | every issue's top 20 vs its pool; its one-line summary sits on the preview |
-| `preview.py` | the public page | today's top ten with art, the plans; served at `/preview` |
+| `preview.py` | the front door | the report's tiles and its top ten (first row open, big chart), ghosts, the plans; the Worker fills its markers and serves it at `/` to anyone not entitled |
 | `art.py` | card art | cached under `data/images/`, 240px WebP data URIs in the page |
 | `haro.py` | the page | one file: CSS, JS, JSON payload; nothing decided on the page that a test cannot check |
 | `digest.py` | the stored rankings | snapshot per issue in `data/rankings/`; the diff between two issues |
@@ -56,8 +56,8 @@ gundeck.ai, so sign-in happens on gundeck.ai's pages and returns. Identity is Cl
 (gundeck.ai's instance): the session token in the `__session` cookie or a bearer header,
 RS256, verified against `clerk.gundeck.ai/.well-known/jwks.json`; the entitlement is the
 `public_metadata.marketHaro.status` claim Stripe's webhook wrote onto the user. `GET /`
-serves the report to entitled sessions and the splash to everyone else; `GET
-/preview` is public (`/track-record` redirects to it); `GET/PUT /positions` per user id; `PUT /admin/report` and
+serves the report to entitled sessions and the front door to everyone else (`/preview`
+and `/track-record` redirect to `/`); `GET/PUT /positions` per user id; `PUT /admin/report` and
 `/admin/preview` from the pipeline with the admin secret. The served report has Clerk's
 script injected so the cookie stays fresh. `npm test` signs tokens with a generated key
 and walks every door.

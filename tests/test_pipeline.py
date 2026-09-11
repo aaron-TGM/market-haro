@@ -1414,6 +1414,82 @@ def test_haro_embeds_cached_art_and_leaves_the_rest_remote():
     assert "placeholder(r)" in haro.JS and 'referrerpolicy="no-referrer"' in haro.JS
 
 
+def test_front_door_is_the_report_cut_to_ten_with_the_markers_the_worker_fills():
+    """The public page is the real dashboard, limited: the same tiles as the
+    report, exactly ten real rows (the first open, with the big chart), then
+    ghosts and the plans. Nothing about identity or billing is in it -- the
+    Worker fills three markers and the plan buttons' hrefs -- and no card art
+    is fetched from a CDN at view time: embedded or a labelled frame."""
+    import sys
+
+    from radar import haro, invest, preview
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import make_preview
+
+    rows = invest.evaluate(make_preview.parse(), {"min_price": 10.0})
+    for r in rows:
+        r["series"] = [(f"2026-07-{d:02d}", 10.0 + d) for d in range(1, 31)]
+    releases = [{"date": "2026-07-15", "label": "GD05", "names": ["Freedom Ascension"]},
+                {"date": "2026-09-25", "label": "ST11–14", "names": ["Starter Deck 11"]}]
+    html = preview.render(rows, obs_date="2026-08-09", market={"priced": 100, "up_7d": 20},
+                          releases=releases, today="2026-08-10",
+                          record={"calls_30": 20, "calls_beat_pct": 55, "calls_median": 3.1})
+    n_pass = sum(1 for r in rows if not r.get("disqualified"))
+    assert n_pass > 10
+
+    # The Worker's markers, once each, and nothing already filled in.
+    for m in ("<!--haro:head-->", "<!--haro:auth-->", "<!--haro:script-->"):
+        assert html.count(m) == 1, m
+    assert html.count('href="#" data-plan="monthly"') == 1 and html.count('href="#" data-plan="annual"') == 1
+    assert "<script" not in html and "clerk" not in html.lower() and "gundeck.ai/" not in html.replace("GUNDECK.AI", "")
+    assert 'id="pending"' in html and 'id="plans"' in html and 'id="auth"' in html
+
+    # Ten real rows, the first open with the big chart, then ghosts.
+    assert html.count('<div class="row open"') == 1 and html.count('<div class="row"') == 9
+    assert html.count('<div class="row ghost"') == preview.GHOSTS
+    assert html.count('viewBox="0 0 1200 150"') == 1 and html.count('viewBox="0 0 300 80"') == 9 + preview.GHOSTS
+    assert 'class="rl mid" style="left:' in html and ">GD05<" in html      # the release mark on the big chart
+    assert f"+{n_pass - 10}</b> more rows" in html
+
+    # The same tiles as the report, from the same function.
+    tiles = haro.kpi_tiles([r for r in rows if not r.get("disqualified")], [r for r in rows if r.get("disqualified")],
+                           market={"priced": 100, "up_7d": 20}, releases=releases, record={"calls_30": 20, "calls_beat_pct": 55, "calls_median": 3.1},
+                           today="2026-08-10", obs_date="2026-08-09", screened_href=None)
+    assert tiles in html
+    assert "Market breadth" in html and "Next release" in html and "The record" in html and "55%" in html
+    assert 'href="#screened-out"' not in html   # no list to jump to on the public page
+
+    # Art: embedded or a frame, never a remote URL the page cannot swap out.
+    assert "product-images.tcgplayer.com" not in html
+    assert 'class="ph"' in html
+    # One stylesheet, the report's own, so the two pages cannot drift apart.
+    assert haro.CSS in html
+    assert "financial advice" in html and "can lose value" in html
+
+
+def test_haro_row_opens_in_place_with_one_image_and_one_chart():
+    """The detail is the row itself, opened: no second image, no second
+    chart, the parts animated with transforms and opacity, off under
+    prefers-reduced-motion, and the click handler animates rather than
+    re-rendering the whole list."""
+    from radar import haro
+
+    js, css = haro.JS, haro.CSS
+    assert "bigArtHTML" not in js and 'class="dart"' not in js and 'class="bigchart"' not in js
+    assert "function toggleRow(" in js and "toggleRow(row, findRow(row.dataset.key))" in js
+    assert "getBoundingClientRect" in js and "transform = `translate(" in js and "scale(" in js
+    assert "prefers-reduced-motion: reduce" in js and "prefers-reduced-motion:reduce" in css
+    assert "upgradeArt(" in js and "new Image()" in js      # the same <img>, sharpened after the grow
+    assert "transitionend" in js
+    assert 'class="dx detail"' in js and 'class="dg dgrid detail"' in js
+    assert ".row.open{" in css and '"chart chart chart chart chart chart"' in css
+    assert "transition:transform .28s" in css and "transition:opacity .2s" in css
+    assert ".row.animating{transition:height" in css
+    # a row rendered already open (after a sort) is open, no animation needed
+    assert "${openNow ? bigChart(r) : chart(r.series, k)}" in js and "${openNow ? detailHTML(r, plan) : ''}" in js
+
+
 def test_haro_page_is_the_screen_not_the_diff():
     """The issue-to-issue comparison lives in the email, not on the page; the
     filters people touch daily are one row and the rest sit behind one button."""

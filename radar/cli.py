@@ -298,7 +298,6 @@ def cmd_invest(cfg, args) -> int:
         pub_cfg = cfg.raw.get("publish") or {}
         site_url = (pub_cfg.get("site_url") or "").rstrip("/")
         report_url = (site_url + "/") if site_url else None
-        track_url = (site_url + "/preview") if site_url else "preview.html"
         track_html, track_recs = track_mod.build(cfg.path("data"), series, obs, report_url=report_url or "")
         track_sm = track_mod.summary(track_recs)
         track_sm["headline"] = track_mod.headline(track_sm)
@@ -318,7 +317,6 @@ def cmd_invest(cfg, args) -> int:
             depth=depth,
             sync_on=bool(site_url),
             record=track_sm,
-            track_url=track_url,
             art_cache=cfg.path("data/images"),
             fetch_art=not getattr(args, "no_art_fetch", False),
         )
@@ -326,13 +324,13 @@ def cmd_invest(cfg, args) -> int:
         haro.write(html, out)
         (out.parent / "track-record.html").write_text(track_html, encoding="utf-8")
         (out.parent / "track.json").write_text(json.dumps(track_sm, indent=1), encoding="utf-8")
-        # The public preview: today's top ten, the real rows, then the door.
+        # The front door: the same tiles, the top ten as the report draws
+        # them, then the plans. The Worker adds identity when it serves it.
         from . import preview as preview_mod
 
-        n_pass = sum(1 for r in ranked if not r.get("disqualified"))
         (out.parent / "preview.html").write_text(preview_mod.render(
-            ranked, obs_date=obs, total_pass=n_pass, pool_n=len(ranked), sealed_n=len(sealed_rows),
-            record=track_sm, site_url=site_url, art_cache=cfg.path("data/images"),
+            ranked, obs_date=obs, market=market, releases=calendar, today=today,
+            record=track_sm, art_cache=cfg.path("data/images"),
             fetch_art=not getattr(args, "no_art_fetch", False)), encoding="utf-8")
         print(f"Preview   -> {out.parent / 'preview.html'}")
         print(f"\nDashboard -> {out}")

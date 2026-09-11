@@ -65,26 +65,39 @@ test('the front door: splash for strangers, splash for the unsubscribed, the rep
     assert.equal(r.status, 200);
     r = await worker.fetch(new Request('https://marketharo.io/admin/report', { method: 'PUT', headers: { 'X-Admin-Secret': 'wrong' }, body: '<html>' }), e);
     assert.equal(r.status, 403);
-    r = await worker.fetch(new Request('https://marketharo.io/admin/preview', { method: 'PUT', headers: { 'X-Admin-Secret': 's3' }, body: '<!doctype html><html><body>PREVIEW</body></html>' }), e);
-    assert.equal(r.status, 200);
-
+    // Before the pipeline has pushed a front page: the plain door, same
+    // pieces, no card data.
     r = await worker.fetch(new Request('https://marketharo.io/'), e);
     assert.equal(r.status, 200); let body = await r.text();
     assert.match(body, /Start monthly/); assert.match(body, /Sign in/); assert.doesNotMatch(body, /REPORT/);
+    assert.match(body, /data-plan="annual"/); assert.match(body, /id="pending"/);
     assert.equal(r.headers.get('cache-control'), 'private, no-store');
-    r = await worker.fetch(new Request('https://marketharo.io/preview'), e);
-    assert.match(await r.text(), /PREVIEW/); assert.equal(r.headers.get('Cache-Control'), 'public, max-age=600');
-    r = await worker.fetch(new Request('https://marketharo.io/track-record'), e);
-    assert.equal(r.status, 301); assert.equal(r.headers.get('Location'), 'https://marketharo.io/preview');
+    assert.equal(r.headers.get('x-robots-tag'), 'all');   // the stranger's door is the public page
     assert.match(body, /subscribe\?plan=monthly/); assert.match(body, /redirectToSignUp/); assert.match(body, /checkout.*success/);
     assert.match(body, /&quot;isSatellite&quot;:true/); assert.match(body, /&quot;signInUrl&quot;:&quot;https:\/\/gundeck.ai\/sign-in&quot;/);
     assert.match(body, /data-clerk-domain="marketharo.io"/);   // clerk-js reads the satellite domain from the tag
+    assert.doesNotMatch(body, /<!--haro:/);                     // every marker filled
+
+    // The pipeline's front page: the Worker fills its markers and nothing else.
+    const door = '<!doctype html><html><head><title>d</title><!--haro:head--></head><body><div id="auth"><!--haro:auth--></div>TOP TEN <a href="#" data-plan="monthly">m</a><!--haro:script--></body></html>';
+    r = await worker.fetch(new Request('https://marketharo.io/admin/preview', { method: 'PUT', headers: { 'X-Admin-Secret': 's3' }, body: door }), e);
+    assert.equal(r.status, 200);
+    r = await worker.fetch(new Request('https://marketharo.io/'), e);
+    body = await r.text();
+    assert.match(body, /TOP TEN/); assert.match(body, /<head><title>d<\/title><script async/); assert.match(body, /id="signin"/);
+    assert.match(body, /subscribe\?plan=monthly/); assert.match(body, /redirectToSignUp/); assert.doesNotMatch(body, /<!--haro:/);
+    assert.doesNotMatch(body, /id="signout"/);   // a stranger gets sign-in, not sign-out
+    r = await worker.fetch(new Request('https://marketharo.io/preview'), e);
+    assert.equal(r.status, 301); assert.equal(r.headers.get('Location'), 'https://marketharo.io/');
+    r = await worker.fetch(new Request('https://marketharo.io/track-record'), e);
+    assert.equal(r.status, 301); assert.equal(r.headers.get('Location'), 'https://marketharo.io/');
     r = await worker.fetch(new Request('https://marketharo.io/me'), e);
     assert.deepEqual(await r.json(), { signed_in: false, entitled: false });
 
     const noplan = await sign(priv, { iss: 'https://clerk.gundeck.ai', sub: 'user_2', exp: now() + 60, public_metadata: {} });
     r = await worker.fetch(new Request('https://marketharo.io/', { headers: { Cookie: `__session=${noplan}` } }), e);
-    body = await r.text(); assert.match(body, /no Market Haro subscription/); assert.doesNotMatch(body, /REPORT/);
+    body = await r.text(); assert.match(body, /no Market Haro subscription/); assert.match(body, /TOP TEN/); assert.match(body, /id="signout"/); assert.doesNotMatch(body, /REPORT/);
+    assert.equal(r.headers.get('x-robots-tag'), 'noindex');
     r = await worker.fetch(new Request('https://marketharo.io/positions', { headers: { Cookie: `__session=${noplan}` } }), e);
     assert.equal(r.status, 403);
     r = await worker.fetch(new Request('https://marketharo.io/me', { headers: { Cookie: `__session=${noplan}` } }), e);

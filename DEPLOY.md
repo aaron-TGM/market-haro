@@ -117,8 +117,8 @@ Trigger it once manually and watch it go green before trusting the schedule.
 
 `worker/` is the whole server. It holds the report the pipeline pushes each
 morning, shows it to signed-in GUNDECK users whose account carries a Market Haro
-subscription, shows the splash (sign in / subscribe) to everyone else, serves the
-public preview — today's top ten, then the plans — at `/preview` (the old `/track-record` redirects there), and keeps each user's watchlist so it
+subscription, shows the front door to everyone else — the pipeline's own top-ten page
+with the sign-in and plan pieces filled in (`/preview` and `/track-record` redirect to `/`) — and keeps each user's watchlist so it
 follows them across devices. It never talks to Clerk or Stripe at request time:
 it verifies Clerk's session token against Clerk's published keys and reads the
 entitlement Stripe's webhook wrote onto the user.
@@ -166,7 +166,7 @@ different shape, set `ENTITLEMENT_PATH` (dotted path to the status) and
 
 **5e. Check it.** `curl https://marketharo.io/health` → `{"ok":true}`;
 `/me` → `{"signed_in":false,"entitled":false}`. Locally, `HARO_ADMIN_SECRET=…
-python -m radar publish` pushes the report and the preview; open the site
+python -m radar publish` pushes the report and the front door; open the site
 signed out (splash), click *Already subscribed? Sign in* (a hop to gundeck.ai and
 back), signed in without a subscription (splash, "no Market Haro subscription
 yet"), and signed in with one (the report, and the watchlist status line says
