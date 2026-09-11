@@ -3,7 +3,28 @@
 Newest first. Dates are the day the work landed; issue dates are the price date the
 report carries.
 
+## 2026-09-11 — The front door, and rows that open in place
+
+- The splash is the product. `/` for a stranger or an unsubscribed account is now
+  the real dashboard cut to ten rows: the report's KPI tiles, the top card open with
+  its full-width 90-day chart and release marks, nine more rows with art and
+  sparklines, three blurred rows, then the plans. Built by the pipeline every morning
+  (`radar/preview.py`, using the report's own stylesheet and `haro.kpi_tiles`); the
+  Worker fills three markers and the plan hrefs, and knows nothing about cards. Everything
+  the old splash did stays: `?checkout=success` waiting state, "Signed in as … no
+  subscription yet", plan buttons through Clerk sign-up, Manage, Sign out. `/preview`
+  and `/track-record` redirect to `/`. A plain door is served if the Worker is deployed
+  before the pipeline's next run.
+- Report: a clicked row opens in place. Its own image grows to 200×280, its own chart
+  grows to full width and gains the range switch, the detail fades in beneath; no
+  second image, no second chart. Transforms and opacity, ~280 ms, the row's height
+  tweened so the rows below slide; instant under prefers-reduced-motion. Collapse
+  reverses it. After the grow the same image quietly upgrades to the CDN's sharp copy.
+- Tests: 55 in the pipeline (two new: the front door's contract, the open row's), the
+  Worker's 3 updated to the new door.
+
 ## 2026-09-11 — Launched
+
 
 - Live at marketharo.io. Production trial end to end: sign-up on gundeck.ai, Stripe
   checkout, webhook → Clerk `marketHaro.status`, report; account linkage confirmed.

@@ -10,19 +10,23 @@ that explains the method lives in tooltips and one collapsed "how to read".
 The v3 pass (this file) was a usability review from a person's point of view:
 
   - Card art is embedded in the file (radar/art.py). The CDN was never the
-    problem; sandboxed previews were. Art is 120x168 in the row, 200x280 in
-    the detail, and a card that has no image gets a labelled frame, never a
-    broken-image glyph.
+    problem; sandboxed previews were. Art is 120x168 in the row and grows to
+    200x280 when the row opens -- the same image, not a second one -- and a
+    card that has no image gets a labelled frame, never a broken-image glyph.
   - Filters are two layers. What you touch every day -- search, the three
     views, sort -- is one row. Everything else -- set, rarity, price, score,
     sales -- is behind one "Filters" button that shows how many are on. The
     "only what fits" checkbox is gone; that was the Sized view wearing a
     second hat.
-  - The detail panel reads top-down like a card, not a spreadsheet: art, the
-    name, three verdict chips (timing, trend, exit), four hero numbers, then
-    the case and what would break it as a callout, then score / shelf / your
-    money / checklist as four boxes. Colour is on the verdicts and signed
-    numbers only, so it means something when it appears.
+  - The detail is the row itself, opened (v4): the row's own art grows to
+    the large size, its own 90-day chart grows to full width and gains the
+    range switch, and beneath them the detail fades in -- three verdict chips
+    (timing, trend, exit), four hero numbers, the case and what would break
+    it as a callout, then score / shelf / your money / checklist as four
+    boxes. Nothing is drawn twice. The switch is animated with transforms and
+    opacity (about a quarter of a second, none under prefers-reduced-motion).
+    Colour is on the verdicts and signed numbers only, so it means something
+    when it appears.
   - The "since last issue" panel is gone from the page; that comparison is
     the email digest's job.
 
@@ -123,11 +127,9 @@ details.panel>summary+*{margin-top:10px}
 .chart .rl{position:absolute;top:-1px;font-size:8.5px;letter-spacing:.06em;color:var(--text-muted);white-space:nowrap;
   transform:translateX(-50%);pointer-events:none;line-height:1}
 .chart .rl.start{transform:none} .chart .rl.end{transform:translateX(-100%)}
-.bigchart .chart .rl{font-size:10px;top:0}
-.bigchart{margin-top:16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px 8px}
-.bigchart .bl{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
-.bigchart .bl span:last-child{color:var(--text-muted);text-transform:none;letter-spacing:.04em}
-.bigchart .chart svg{height:150px}
+.chart .bl{display:flex;justify-content:space-between;gap:8px 14px;flex-wrap:wrap;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+.chart .bl span:last-child{color:var(--text-muted);text-transform:none;letter-spacing:.04em}
+.chart .bl .ranges{margin-left:auto}
 .ranges{display:inline-flex;border:1px solid var(--border-2);border-radius:var(--r);overflow:hidden}
 .ranges button{background:transparent;color:var(--text-muted);border:0;padding:4px 10px;font:inherit;font-size:10px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
 .ranges button.on{background:var(--accent);color:var(--bg)} .ranges button[disabled]{opacity:.4;cursor:default}
@@ -209,7 +211,30 @@ a.kpi{display:block;color:inherit} a.kpi:hover{text-decoration:none;border-color
   gap:0 16px;align-items:center;background:var(--surface);border:1px solid var(--border);
   border-radius:var(--r);padding:10px 14px;cursor:pointer;position:relative}
 .row:hover{border-color:var(--accent-dim)}
-.row.open{border-color:var(--accent);border-bottom-color:transparent;border-radius:var(--r) var(--r) 0 0}
+.row.open{border-color:var(--accent);align-items:start;
+  grid-template-columns:44px 200px minmax(0,1fr) 92px 96px 36px;grid-template-areas:
+    "rank art who score size star" "rank art stats stats stats stats" "rank art dx dx dx dx"
+    "chart chart chart chart chart chart" "dg dg dg dg dg dg"}
+.row.open .rank{grid-area:rank} .row.open .art{grid-area:art;width:200px;height:280px;border-radius:6px}
+.row.open .who{grid-area:who} .row.open .chart{grid-area:chart;margin-top:16px} .row.open .stats{grid-area:stats;margin-top:12px;grid-template-columns:repeat(6,minmax(70px,auto))}
+.row.open .score{grid-area:score} .row.open .size{grid-area:size} .row.open .star{grid-area:star}
+.row.open .dx{grid-area:dx;margin-top:14px} .row.open .dg{grid-area:dg}
+.row.open .who .nm{font-size:20px}
+.row.open .chart svg{height:150px} .row.open .chart .rl{font-size:10px;top:0}
+.row.open .art .ph{font-size:10px;letter-spacing:.14em;gap:8px} .row.open .art .ph b{font-size:14px}
+/* the open/close motion: FLIP transforms on the parts, opacity on the detail,
+   one height tween on the row so what is below slides rather than jumps */
+.row>*{transform-origin:0 0} .chart svg{transform-origin:0 0}
+.row.animating{transition:height .28s cubic-bezier(.4,0,.2,1);overflow:hidden;will-change:height}
+.row.animating>*,.row.animating .chart svg{transition:transform .28s cubic-bezier(.4,0,.2,1)}
+.row.animating .detail,.row.animating .chart .bl,.row.animating .chart .legend,.row.animating .chart .cap,.row.animating .chart .rl{
+  transition:opacity .2s ease .08s,transform .28s cubic-bezier(.4,0,.2,1)}
+.row .enter{opacity:0!important;transform:translateY(6px)}
+.row .pinned{position:absolute;pointer-events:none;margin:0} .row .leaving{opacity:0}
+@media (prefers-reduced-motion:reduce){
+  .row.animating,.row.animating>*,.row.animating .chart svg,.row.animating .detail,.row.animating .chart .bl,
+  .row.animating .chart .legend,.row.animating .chart .cap,.row.animating .chart .rl{transition:none!important}
+}
 .row.sized{box-shadow:inset 3px 0 0 var(--accent)}
 .row.watched .star{color:var(--accent)}
 .rank{display:flex;flex-direction:column;align-items:center;gap:2px}
@@ -219,11 +244,10 @@ a.kpi{display:block;color:inherit} a.kpi:hover{text-decoration:none;border-color
 .art{width:120px;height:168px;border-radius:4px;overflow:hidden;background:var(--surface-2);
   display:flex;align-items:center;justify-content:center;position:relative;flex:none}
 .art img{width:100%;height:100%;object-fit:cover;display:block}
-.art .ph,.dart .ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+.art .ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:6px;padding:10px;text-align:center;border:1px dashed var(--border-2);border-radius:4px;
   font-size:9px;letter-spacing:.12em;color:var(--text-muted);text-transform:uppercase;line-height:1.4}
-.art .ph b,.dart .ph b{font-size:11px;color:var(--text);letter-spacing:.04em;text-transform:none}
-.dart .ph{font-size:10px;letter-spacing:.14em;gap:8px} .dart .ph b{font-size:14px}
+.art .ph b{font-size:11px;color:var(--text);letter-spacing:.04em;text-transform:none}
 .who .nm{font-size:16px;font-weight:700;line-height:1.25}
 .who .nm a{color:var(--text)}
 .who .meta{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-top:4px}
@@ -233,7 +257,7 @@ a.kpi{display:block;color:inherit} a.kpi:hover{text-decoration:none;border-color
 .tag.flag{color:var(--down);border-color:var(--down)}
 .tag.pos{color:var(--cyan);border-color:var(--cyan)}
 .tag.broke{color:var(--bg);background:var(--down);border-color:var(--down)}
-.chart{position:relative}
+.chart .cv{position:relative}
 .chart svg{display:block;width:100%;height:80px}
 .chart .cap{display:flex;justify-content:space-between;font-size:9.5px;letter-spacing:.08em;
   text-transform:uppercase;color:var(--text-muted);margin-top:2px}
@@ -256,17 +280,9 @@ a.kpi{display:block;color:inherit} a.kpi:hover{text-decoration:none;border-color
 .star{background:transparent;border:0;color:var(--text-muted);cursor:pointer;line-height:0;padding:4px}
 .star:hover{color:var(--accent)}
 
-/* detail: reads top-down like a card ----------------------------------- */
-.detail{background:var(--surface);border:1px solid var(--accent);border-top:0;
-  border-radius:0 0 var(--r) var(--r);margin:-8px 0 0;padding:18px 18px 18px}
-.dtop{display:grid;grid-template-columns:200px 1fr;gap:22px;align-items:start}
-.dart{width:200px;height:280px;border-radius:6px;overflow:hidden;background:var(--surface-2);position:relative}
-.dart img{width:100%;height:100%;object-fit:cover;display:block}
-.dart .ph{font-size:10px}
-.dhead .nm{font-size:22px;font-weight:700;line-height:1.2}
-.dhead .nm a{color:var(--text)}
-.dhead .meta{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin-top:4px}
-.verdicts{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 14px}
+/* detail: what the open row adds beneath its own art and chart --------- */
+.detail{cursor:default}
+.verdicts{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
 .vchip{display:inline-flex;flex-direction:column;gap:1px;padding:7px 11px;border-radius:var(--r);
   border:1px solid var(--border-2);background:var(--surface-2);min-width:150px}
 .vchip .vt{font-size:12px;font-weight:700}
@@ -291,7 +307,7 @@ a.kpi{display:block;color:inherit} a.kpi:hover{text-decoration:none;border-color
   font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;border-radius:var(--r);background:var(--accent);color:var(--bg)}
 .cta:hover{text-decoration:none;filter:brightness(1.1)}
 .cta.quiet{background:transparent;color:var(--accent)}
-.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:18px}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:16px}
 .dbox{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px}
 .dbox h5{margin:0 0 10px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);
   display:flex;align-items:center;gap:6px}
@@ -364,6 +380,10 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--border);color
   .rank{grid-area:rank} .art{grid-area:art;width:104px;height:146px} .who{grid-area:who}
   .chart{grid-area:chart;margin-top:8px} .stats{grid-area:stats;margin-top:8px}
   .score{grid-area:score} .size{grid-area:size;margin-top:8px} .star{grid-area:star}
+  .row.open{grid-template-columns:40px 200px minmax(0,1fr) 88px 36px;grid-template-areas:
+    "rank art who score star" "rank art stats stats size" "rank art dx dx dx"
+    "chart chart chart chart chart" "dg dg dg dg dg"}
+  .row.open .stats{grid-template-columns:repeat(3,minmax(70px,auto))}
 }
 @media (max-width:640px){
   .wrap{padding:14px 10px 48px}
@@ -379,10 +399,13 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--border);color
   .size{text-align:left}
   .stats{grid-template-columns:repeat(3,1fr)}
   .kpis{grid-template-columns:repeat(2,1fr)}
-  .detail{padding:14px 12px}
-  .dtop{grid-template-columns:1fr}
-  .dart{width:140px;height:196px}
-  .dhead .nm{font-size:18px}
+  .row.open{grid-template-columns:140px minmax(0,1fr) 32px;grid-template-areas:
+    "art who star" "art score score" "art stats stats" "dx dx dx" "chart chart chart" "dg dg dg"}
+  .row.open .art{width:140px;height:196px;border-radius:5px}
+  .row.open .who .nm{font-size:16px}
+  .row.open .stats{grid-template-columns:repeat(2,1fr);margin-top:8px}
+  .row.open .chart svg{height:120px} .row.open .chart{margin-top:12px}
+  .row.open .size{margin-top:6px}
   .heroes{grid-template-columns:repeat(2,1fr)}
   .dgrid{grid-template-columns:1fr}
 }
@@ -417,21 +440,27 @@ const cardURL = r => r.tcgplayer_url || (r.tcgplayer_id ? 'https://www.tcgplayer
 
 // ---- card art ------------------------------------------------------------
 // The thumbnail is embedded in the file, so it shows with the network
-// unplugged. The detail asks the CDN for a sharp copy and falls back to the
-// thumbnail; a card with neither gets a labelled frame, never a broken glyph.
+// unplugged. There is one image per row: when the row opens, that same image
+// grows, then asks the CDN for a sharp copy (preloaded, so nothing flashes)
+// and keeps the thumbnail if the CDN is out of reach; a card with neither
+// gets a labelled frame, never a broken glyph. A row rendered already open
+// (after a sort or a filter) asks for the sharp copy directly and falls
+// back the same way.
 function placeholder(r){
   return `<div class="ph"><b>${esc(r.name)}</b>${esc(r.number||'')}<span>no image</span></div>`;
 }
-function artHTML(r){
-  const src = r.thumb || r.image_url;
-  if (!src) return placeholder(r);
-  return `<img src="${esc(src)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-ph="${esc(key(r))}">`;
+function artHTML(r, open){
+  const small = r.thumb || r.image_url, big = open ? (r.image_large || '') : '';
+  if (!small && !big) return placeholder(r);
+  const fallback = (big && small) ? ` data-fallback="${esc(small)}"` : '';
+  return `<img src="${esc(big||small)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"${fallback} data-ph="${esc(key(r))}"${big?' data-big="1"':''}>`;
 }
-function bigArtHTML(r){
-  const big = r.image_large || r.image_url, small = r.thumb || '';
-  if (!big && !small) return placeholder(r);
-  const fallback = small ? `data-fallback="${esc(small)}"` : '';
-  return `<img src="${esc(big||small)}" alt="" decoding="async" referrerpolicy="no-referrer" ${fallback} data-ph="${esc(key(r))}">`;
+function upgradeArt(row, r){
+  const img = row.querySelector('.art img'); if (!img || !r.image_large || img.dataset.big) return;
+  img.dataset.big = '1';
+  const pre = new Image(); pre.referrerPolicy = 'no-referrer'; pre.decoding = 'async';
+  pre.onload = () => { if (row.isConnected && row.classList.contains('open')) img.src = r.image_large; };
+  pre.src = r.image_large;
 }
 document.addEventListener('error', e=>{
   const img = e.target; if (!(img instanceof HTMLImageElement) || !img.dataset.ph) return;
@@ -610,8 +639,20 @@ function marksFor(series){
     if (a > 0){ const c = (b-a)/a*100; if (Math.abs(c) >= ANOMALY_PCT) anomalies.push({i, pct:c}); } }
   return {rel, anomalies};
 }
+function chartHead(r){
+  // Above the open row's chart: the range switch and what the marks mean.
+  const has1y = r && r.series_long && r.series_long.length > 2;
+  const btns = [['30','30 days'],['90','90 days'],['1y','1 year']].map(([v,l]) =>
+    `<button data-range="${v}" class="${state.range===v?'on':''}"${v==='1y'&&!has1y?' disabled title="No weekly history yet for this card"':''}>${l}</button>`).join('');
+  return `<div class="bl"><span>Market price</span><span class="ranges">${btns}</span><span>dashed marks are set releases, rings are ${state.range==='1y'?'weeks':'days'} that moved ${ANOMALY_PCT}%+</span></div>`;
+}
+function chartLegend(r){
+  return `<div class="legend"><span><i></i>set release</span><span><b></b>${ANOMALY_PCT}%+ in a ${state.range==='1y'?'week':'day'}</span>${r&&r.change_1y!=null?`<span>1 year: ${pct(r.change_1y)}</span>`:''}${r&&r.change_180d!=null?`<span>6 months: ${pct(r.change_180d)}</span>`:''}</div>`;
+}
+const bigChart = r => chart(seriesFor(r, state.range), key(r), true, state.range);
 function chart(series, id, big, range){
-  if (!series || series.length < 2) return '<div class="chart"><div class="empty" style="padding:22px">no history</div></div>';
+  const head = big ? chartHead(findRow(id)) : '', legend = big ? chartLegend(findRow(id)) : '';
+  if (!series || series.length < 2) return `<div class="chart">${head}<div class="empty" style="padding:22px">no history</div></div>`;
   const rangeAttr = range ? ` data-range="${esc(range)}"` : '';
   const fmt = id === '__index' ? (v => v.toFixed(1)) : money;
   // The big chart's viewBox is wide so rings and the end dot stay round:
@@ -633,7 +674,7 @@ function chart(series, id, big, range){
   const relLabels = rel.map(m => { const f = m.i/(series.length-1); const pos = f > 0.85 ? 'end' : (f < 0.1 ? 'start' : 'mid');
     return `<span class="rl ${pos}" style="left:${(X(m.i)/w*100).toFixed(2)}%">${esc(m.label)}</span>`; }).join('');
   const anomSVG = anomalies.map(a => `<circle cx="${X(a.i).toFixed(1)}" cy="${Y(series[a.i][1]).toFixed(1)}" r="${big?5:3.5}" fill="none" stroke="var(--warn)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`).join('');
-  return `<div class="chart" data-chart="${esc(id)}"${rangeAttr}>
+  return `<div class="chart" data-chart="${esc(id)}"${rangeAttr}>${head}<div class="cv">
     <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${id==='__index'?'index level':'market price'}, ${fmt(first[1])} to ${fmt(last[1])}${rel.length?'; releases marked: '+rel.map(m=>m.label).join(', '):''}">
       <path d="${area}" fill="${stroke}" opacity=".12"/>
       ${relSVG}
@@ -642,8 +683,8 @@ function chart(series, id, big, range){
       <line class="xh" x1="0" x2="0" y1="0" y2="${h}" stroke="var(--text-muted)" stroke-width="1" opacity="0"/>
       <circle class="dot" cx="${X(series.length-1).toFixed(1)}" cy="${Y(last[1]).toFixed(1)}" r="4" fill="${stroke}" stroke="var(--surface)" stroke-width="2"/>
     </svg>
-    ${relLabels}
-    <div class="cap"><span>${shortDate(first[0])} ${fmt(first[1])} → ${shortDate(last[0])} ${fmt(last[1])}</span><span>high ${fmt(hi)}</span></div>
+    ${relLabels}</div>
+    <div class="cap"><span>${shortDate(first[0])} ${fmt(first[1])} → ${shortDate(last[0])} ${fmt(last[1])}</span><span>high ${fmt(hi)}</span></div>${legend}
   </div>`;
 }
 function chartHover(e){
@@ -735,6 +776,7 @@ function rankDelta(r){
   if (d === 0) return '<span class="d">—</span>';
   return `<span class="d ${d>0?'up':'down'}" data-tip="Was #${prev} in the previous issue.">${d>0?'+':'−'}${Math.abs(d)}</span>`;
 }
+let PLANS = new Map();   // this issue's sizing at the current budget, for rows opened by hand
 function rowHTML(r, plan){
   const k = key(r), openNow = state.open.has(k), sized = plan && plan.affordable;
   const url = cardURL(r);
@@ -745,9 +787,9 @@ function rowHTML(r, plan){
     : `<span class="${prem>5?'down':(prem<-2?'up':'flat')}">${prem>0?'+':''}${prem.toFixed(0)}%</span>`;
   return `<div class="row${openNow?' open':''}${sized?' sized':''}${isWatched(r)?' watched':''}" data-key="${esc(k)}" role="button" aria-expanded="${openNow}">
     <div class="rank"><span class="n">${r.rank}</span>${rankDelta(r)}</div>
-    <div class="art">${artHTML(r)}</div>
+    <div class="art">${artHTML(r, openNow)}</div>
     <div class="who"><div class="nm">${nm}</div><div class="meta">${meta}</div><div class="tags">${tagsHTML(r)}</div></div>
-    ${chart(r.series, k)}
+    ${openNow ? bigChart(r) : chart(r.series, k)}
     <div class="stats">
       <div class="s" data-tip="${esc(DATA.tips.price)}"><div class="l">Price</div><div class="v">${money(r.market_price)}</div></div>
       ${isSealed(r) ? `<div class="s" data-tip="Change over 30 days, from stored daily closes."><div class="l">30d</div><div class="v">${pct(r.change_30d)}</div></div>`
@@ -763,7 +805,82 @@ function rowHTML(r, plan){
       : `<div class="score${r.invest_score>=TOP_SCORE?' top':''}" data-tip="${esc(DATA.tips.score)}"><div class="n">${r.invest_score.toFixed(0)}</div><div class="bar"><i style="width:${Math.max(3,r.invest_score)}%"></i></div><div class="l">score</div></div>
          <div class="size" data-tip="${esc(DATA.tips.buy)}">${sized?`<span class="pill">${plan.qty} · $${plan.cost.toFixed(0)}</span>`:'<span class="pill none">—</span>'}<div class="l">size</div></div>`}
     <button class="star" data-star="${esc(k)}" aria-label="${isWatched(r)?'Remove from':'Add to'} watchlist" title="Watchlist"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.8.8-5 4.6 1.3 6.7L12 17.5l-6 3.3 1.3-6.7-5-4.6 6.8-.8z" fill="${isWatched(r)?'currentColor':'none'}" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
-  </div>` + (openNow ? detailHTML(r, plan) : '');
+    ${openNow ? detailHTML(r, plan) : ''}
+  </div>`;
+}
+
+// ---- opening and closing a row ---------------------------------------------
+// The row does not get a second image or a second chart: its own art grows to
+// the large size, its own chart grows to full width, and the detail fades in
+// beneath. FLIP: measure every part before and after the layout switch, start
+// each one transformed back to where it was, then let it travel. The row's
+// height is tweened so the rows below slide rather than jump. Reduced motion:
+// the switch is instant.
+const MOTION_MS = 280;
+const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+function snapshot(row){
+  const o = {row: row.getBoundingClientRect()};
+  for (const el of row.children){ const name = el.classList[0]; if (name && !el.classList.contains('detail')) o[name] = el.getBoundingClientRect(); }
+  const svg = row.querySelector('.chart svg'); o.svg = svg ? svg.getBoundingClientRect() : null;
+  return o;
+}
+function toggleRow(row, r){
+  if (!r || row.classList.contains('animating')) return;
+  const k = key(r), opening = !state.open.has(k);
+  const before = snapshot(row);
+  let leaving = [];
+  if (opening){
+    state.open.add(k); row.classList.add('open'); row.setAttribute('aria-expanded', 'true');
+    row.querySelector('.chart').outerHTML = bigChart(r);
+    row.insertAdjacentHTML('beforeend', detailHTML(r, PLANS.get(k)));
+  } else {
+    state.open.delete(k); row.classList.remove('open'); row.setAttribute('aria-expanded', 'false');
+    // The detail stays where it is, out of the flow, and fades while the
+    // row shrinks beneath it.
+    leaving = Array.from(row.querySelectorAll('.detail'));
+    for (const el of leaving){ const b = el.getBoundingClientRect();
+      Object.assign(el.style, {top: (b.top - before.row.top - row.clientTop) + 'px', left: (b.left - before.row.left - row.clientLeft) + 'px', width: b.width + 'px'});
+      el.classList.add('pinned'); }
+    row.querySelector('.chart').outerHTML = chart(r.series, k);
+  }
+  const after = snapshot(row);
+  const fresh = row.querySelectorAll(opening ? '.detail, .chart .bl, .chart .legend, .chart .cap, .chart .rl' : '.chart .cap, .chart .rl');
+  const finish = () => {
+    row.classList.remove('animating'); row.style.height = ''; row.style.overflow = '';
+    for (const el of leaving) el.remove();
+    for (const el of row.children) el.style.transform = '';
+    const svg = row.querySelector('.chart svg'); if (svg) svg.style.transform = '';
+    if (opening) upgradeArt(row, r);
+  };
+  if (reducedMotion()){ finish(); return; }
+  for (const el of row.children){
+    const name = el.classList[0], f = before[name], l = after[name];
+    if (!f || !l || el.classList.contains('detail')) continue;
+    el.style.transform = `translate(${f.left - l.left}px,${f.top - l.top}px)` + (name === 'art' ? ` scale(${f.width / l.width},${f.height / l.height})` : '');
+  }
+  const svg = row.querySelector('.chart svg');
+  if (svg && before.svg && after.svg && before.chart && after.chart){
+    // Inside a chart box that is itself translated back, so the svg's own
+    // start is measured against that.
+    const pdx = before.chart.left - after.chart.left, pdy = before.chart.top - after.chart.top;
+    svg.style.transform = `translate(${before.svg.left - (after.svg.left + pdx)}px,${before.svg.top - (after.svg.top + pdy)}px) scale(${before.svg.width / after.svg.width},${before.svg.height / after.svg.height})`;
+  }
+  fresh.forEach(el => el.classList.add('enter'));
+  row.style.height = before.row.height + 'px'; row.style.overflow = 'hidden';
+  void row.offsetHeight;   // commit the start state before the transitions switch on
+  row.classList.add('animating');
+  row.style.height = after.row.height + 'px';
+  for (const el of row.children) if (!el.classList.contains('pinned')) el.style.transform = '';
+  if (svg) svg.style.transform = '';
+  fresh.forEach(el => el.classList.remove('enter'));
+  for (const el of leaving) el.classList.add('leaving');
+  // Done when the row's height lands; a timer covers a transition that never
+  // fires (a height that did not change, a tab in the background).
+  let done = false;
+  const once = () => { if (done) return; done = true; row.removeEventListener('transitionend', onEnd); finish(); };
+  const onEnd = e => { if (e.target === row && e.propertyName === 'height') once(); };
+  row.addEventListener('transitionend', onEnd);
+  setTimeout(once, before.row.height === after.row.height ? MOTION_MS + 60 : 1500);
 }
 
 // ---- the detail ------------------------------------------------------------
@@ -800,7 +917,6 @@ const cleanWatch = s => { const t = String(s||'').replace(/^Watch:\s*/i,'').repl
 function detailHTML(r, plan){
   const url = cardURL(r);
   const k = key(r), w = watch[k] || {};
-  const meta = [r.set_name, r.number, realRarity(r) ? r.rarity : null, r.printing && r.printing!=='Normal' ? r.printing : null].filter(Boolean).map(esc).join(' · ');
 
   let pos;
   if (isSealed(r)) pos = '<p class="sub2">Sealed is not sized by the budget tool — it is priced per unit at the listing, not from a Near Mint shelf. Enter what you hold below.</p>';
@@ -846,28 +962,15 @@ function detailHTML(r, plan){
   const changes = [['3d',r.change_3d],['7d',r.change_7d],['30d',r.change_30d],['90d',r.change_90d]]
     .map(([l,v])=>`<div><div class="l">${l}</div><div class="v">${pct(v)}</div></div>`).join('');
 
-  return `<div class="detail" data-detail="${esc(k)}">
-    <div class="dtop">
-      <div class="dart">${bigArtHTML(r)}</div>
-      <div class="dhead">
-        <div class="nm">${url?`<a href="${esc(url)}" target="_blank" rel="noopener">${esc(r.name)}</a>`:esc(r.name)}</div>
-        <div class="meta">${meta}</div>
-        <div class="verdicts">${verdicts(r)}</div>
-        <div class="heroes">${heroes}</div>
-        <div class="callout"><span class="cl">The case</span>${esc(r.thesis||'')}</div>
-        ${watchTxt ? `<div class="callout ${calm?'good':'warn'}"><span class="cl">${calm?'Nothing flashing':'What would break it'}</span>${esc(watchTxt)}</div>` : ''}
-        <div class="dbtns">${url?`<a class="cta" href="${esc(url)}" target="_blank" rel="noopener">Open on TCGplayer</a>`:''}
-          <button class="cta quiet" data-star="${esc(k)}">${isWatched(r)?'Remove from watchlist':'Add to watchlist'}</button></div>
-      </div>
+  return `<div class="dx detail" data-detail="${esc(k)}">
+      <div class="verdicts">${verdicts(r)}</div>
+      <div class="heroes">${heroes}</div>
+      <div class="callout"><span class="cl">The case</span>${esc(r.thesis||'')}</div>
+      ${watchTxt ? `<div class="callout ${calm?'good':'warn'}"><span class="cl">${calm?'Nothing flashing':'What would break it'}</span>${esc(watchTxt)}</div>` : ''}
+      <div class="dbtns">${url?`<a class="cta" href="${esc(url)}" target="_blank" rel="noopener">Open on TCGplayer</a>`:''}
+        <button class="cta quiet" data-star="${esc(k)}">${isWatched(r)?'Remove from watchlist':'Add to watchlist'}</button></div>
     </div>
-    <div class="bigchart">
-      <div class="bl"><span>Market price</span>
-        <span class="ranges">${[['30','30 days'],['90','90 days'],['1y','1 year']].map(([v,l])=>`<button data-range="${v}" class="${state.range===v?'on':''}"${v==='1y'&&!(r.series_long&&r.series_long.length>2)?' disabled title="No weekly history yet for this card"':''}>${l}</button>`).join('')}</span>
-        <span>dashed marks are set releases, rings are ${state.range==='1y'?'weeks':'days'} that moved ${ANOMALY_PCT}%+</span></div>
-      ${chart(seriesFor(r, state.range), k, true, state.range)}
-      <div class="legend"><span><i></i>set release</span><span><b></b>${ANOMALY_PCT}%+ in a ${state.range==='1y'?'week':'day'}</span>${r.change_1y!=null?`<span>1 year: ${pct(r.change_1y)}</span>`:''}${r.change_180d!=null?`<span>6 months: ${pct(r.change_180d)}</span>`:''}</div>
-    </div>
-    <div class="dgrid">
+    <div class="dg dgrid detail">
       ${isSealed(r) ? `<div class="dbox">
         <h5>Since release</h5>
         <div class="kv"><span class="k">Set released</span><span class="vv">${r.release_date ? esc(r.release_date) : '—'}</span></div>
@@ -909,8 +1012,7 @@ function detailHTML(r, plan){
       <div class="dbox">
         <h5>Before you buy</h5><ol class="checklist">${(isSealed(r) ? DATA.sealed_checklist : DATA.checklist).map(x=>`<li>${x}</li>`).join('')}</ol>
       </div>
-    </div>
-  </div>`;
+    </div>`;
 }
 
 const SORTERS = {
@@ -946,6 +1048,7 @@ function apply(){
   // the same budget gives the same plan whatever you are looking at.
   const byScore = DATA.rows.slice().sort((a,b)=>b.invest_score-a.invest_score);
   const plans = state.budget ? allocate(byScore, state.budget) : new Map();
+  PLANS = plans;
   if (state.view==='sized') rows = state.budget ? rows.filter(r => (plans.get(key(r))||{}).affordable) : [];
   renderPlanSummary(plans, byScore);
   const shown = rows.slice(0, state.limit);
@@ -1021,7 +1124,9 @@ document.addEventListener('click', e=>{
   const jump = e.target.closest('[data-view-jump]');
   if (jump){ state.view = jump.dataset.viewJump; state.limit = 30; apply(); document.getElementById('rows').scrollIntoView({behavior:'smooth'}); return; }
   const rng = e.target.closest('[data-range]');
-  if (rng){ e.stopPropagation(); state.range = rng.dataset.range; apply(); return; }
+  if (rng){ e.stopPropagation(); state.range = rng.dataset.range;
+    document.querySelectorAll('.row.open').forEach(row => { const r = findRow(row.dataset.key); if (r) row.querySelector('.chart').outerHTML = bigChart(r); });
+    return; }
   if (e.target.closest('.info')){ e.stopPropagation(); const el = e.target.closest('[data-tip]'); if (tipAnchor===el && tip.classList.contains('on')){hideTip(); tipAnchor=null;} else {tipAnchor=el; showTip(el);} return; }
   const setBtn = e.target.closest('[data-set]');
   if (setBtn){ state.set = (state.set===setBtn.dataset.set)?'':setBtn.dataset.set; state.limit=30; apply(); return; }
@@ -1030,7 +1135,8 @@ document.addEventListener('click', e=>{
   if (e.target.closest('a, input, select, button, .detail')) { return; }
   hideTip();  // a tap on a chart leaves a readout behind on touch screens
   const row = e.target.closest('.row');
-  if (row){ const k = row.dataset.key; state.open.has(k) ? state.open.delete(k) : state.open.add(k); apply(); return; }
+  if (row && row.classList.contains('open') && e.target.closest('.chart')) return;   // the open chart is for reading, not closing
+  if (row){ toggleRow(row, findRow(row.dataset.key)); return; }
   if (tipAnchor && !e.target.closest('#tip')){ hideTip(); tipAnchor = null; }
 });
 document.addEventListener('input', e=>{
@@ -1189,6 +1295,65 @@ def _freshness(obs_date: str, today: str | None) -> str:
             f'market column as history until the feed catches up.</div>')
 
 
+def kpi_tiles(
+    candidates: Sequence[dict],
+    rejected: Sequence[dict],
+    *,
+    market: dict[str, Any] | None,
+    releases: Sequence[dict],
+    record: dict[str, Any] | None,
+    today: str | None,
+    obs_date: str,
+    screened_href: str | None = "#screened-out",
+    track_url: str = "",
+) -> str:
+    """The strip of tiles under the header. One function, so the front door
+    (radar/preview.py) shows exactly the tiles a subscriber sees: breadth,
+    pass the screen, liquid, screened out, the next release, the record.
+    `screened_href=None` renders the screened-out tile without a link (the
+    public page has no list to jump to)."""
+    market = market or {}
+    liquid = sum(1 for r in candidates if (r.get("avg_daily_sales") or 0) >= 1.0)
+    total = len(candidates) + len(rejected)
+    breadth = None
+    if market.get("priced") and market.get("up_7d") is not None:
+        breadth = round(100 * market["up_7d"] / market["priced"])
+    breadth_word = ("—" if breadth is None else "falling market" if breadth < 35
+                    else "rising market" if breadth > 55 else "mixed market")
+    breadth_cls = (" down" if breadth is not None and breadth < 35
+                   else " up" if breadth is not None and breadth > 55 else " cyan")
+    nxt = next((m for m in releases if m["date"] > (today or obs_date)), None)
+    next_tile = ""
+    if nxt:
+        from datetime import date as _d
+
+        try:
+            days = (_d.fromisoformat(nxt["date"]) - _d.fromisoformat(today or obs_date)).days
+            when = f"in {days} days" if days > 1 else "tomorrow"
+        except (ValueError, TypeError):
+            when = nxt["date"]
+        names = ", ".join(nxt.get("names") or [])
+        next_tile = (f'<div class="kpi cyan"><div class="l" data-tip="{_esc(names)}">Next release<span class="info">?</span></div>'
+                     f'<div class="v">{_esc(nxt["label"])}</div><div class="f">{_esc(nxt["date"])} · {when}</div></div>')
+
+    record_tile = ""
+    if record and record.get("calls_30"):
+        tag, href = ("a", f' href="{_esc(track_url or "#")}"') if track_url else ("div", "")
+        record_tile = (f'<{tag} class="kpi"{href} data-tip="Every top-20 pick, scored 30 days after the issue it appeared in against that issue&#39;s whole pool. Public, committed to git the day it is published, never edited."><div class="l">The record<span class="info">?</span></div>'
+                       f'<div class="v">{record["calls_beat_pct"]}%</div><div class="f">of {record["calls_30"]} calls beat their pool at +30d · median {record["calls_median"]:+.1f}%</div></{tag}>')
+
+    if screened_href:
+        screened = (f'<a class="kpi" href="{_esc(screened_href)}"><div class="l" data-tip="Cards in the pool that failed a gate today. Click to jump to the list at the bottom of the page: every one is named with the gate it failed, so nothing is dropped silently.">Screened out<span class="info">?</span></div><div class="v">{len(rejected)}</div><div class="f">every one listed with its reason · see the list ↓</div></a>')
+    else:
+        screened = (f'<div class="kpi"><div class="l" data-tip="Cards in the pool that failed a gate today. The full report names every one with the gate it failed.">Screened out<span class="info">?</span></div><div class="v">{len(rejected)}</div><div class="f">every one named in the report, with its reason</div></div>')
+    return (
+        f'  <div class="kpi{breadth_cls}"><div class="l" data-tip="Share of every priced product in the game that is up over 7 days. Whether your candidates are rising with the market or against it.">Market breadth<span class="info">?</span></div><div class="v">{f"{breadth}%" if breadth is not None else "—"}</div><div class="f">{breadth_word} · {market.get("up_7d", 0):,} of {market.get("priced", 0):,} up over 7d</div></div>\n'
+        f'  <div class="kpi"><div class="l" data-tip="The pool is every English single priced $10+ and up over 30 days. Five gates then take a card out: down over 90 days, no recorded sale in 90 days, under 45 days of history, daily swings over 8%, or no history yet. What is left is scored and ranked; the score never removes a card, it only orders them.">Pass the screen<span class="info">?</span></div><div class="v">{len(candidates)}</div><div class="f">of {total:,} screened</div></div>\n'
+        f'  <div class="kpi up"><div class="l" data-tip="Candidates selling at least one copy a day. Below that, exiting a stack takes weeks.">Liquid enough<span class="info">?</span></div><div class="v">{liquid}</div><div class="f">1+ sales a day</div></div>\n'
+        f'  {screened}\n'
+        f'  {next_tile}{record_tile}')
+
+
 def render(
     ranked: Sequence[dict],
     *,
@@ -1241,30 +1406,8 @@ def render(
     sets = sorted({r["set_name"] for r in rows if r.get("set_name")})
     rarities = sorted({r["rarity"] for r in rows if r.get("rarity") and r["rarity"] not in ("—", "None")},
                       key=_rarity_order)
-    liquid = sum(1 for r in rows if (r.get("avg_daily_sales") or 0) >= 1.0)
-    breadth = None
-    if market.get("priced") and market.get("up_7d") is not None:
-        breadth = round(100 * market["up_7d"] / market["priced"])
-    breadth_word = ("—" if breadth is None else "falling market" if breadth < 35
-                    else "rising market" if breadth > 55 else "mixed market")
-    nxt = next((m for m in releases if m["date"] > (today or obs_date)), None)
-    next_tile = ""
-    if nxt:
-        from datetime import date as _d
-
-        try:
-            days = (_d.fromisoformat(nxt["date"]) - _d.fromisoformat(today or obs_date)).days
-            when = f"in {days} days" if days > 1 else "tomorrow"
-        except (ValueError, TypeError):
-            when = nxt["date"]
-        names = ", ".join(nxt.get("names") or [])
-        next_tile = (f'<div class="kpi cyan"><div class="l" data-tip="{_esc(names)}">Next release<span class="info">?</span></div>'
-                     f'<div class="v">{_esc(nxt["label"])}</div><div class="f">{_esc(nxt["date"])} · {when}</div></div>')
-
-    record_tile = ""
-    if record and record.get("calls_30"):
-        record_tile = (f'<a class="kpi" href="{_esc(track_url or "#")}" data-tip="Every top-20 pick, scored 30 days after the issue it appeared in against that issue&#39;s whole pool. Public, committed to git the day it is published, never edited."><div class="l">The record<span class="info">?</span></div>'
-                       f'<div class="v">{record["calls_beat_pct"]}%</div><div class="f">of {record["calls_30"]} calls beat their pool at +30d · median {record["calls_median"]:+.1f}%</div></a>')
+    kpis = kpi_tiles(candidates, rejected, market=market, releases=releases, record=record,
+                     today=today, obs_date=obs_date, screened_href="#screened-out", track_url=track_url)
 
     payload = json.dumps({
         "rows": rows, "obs_date": obs_date, "checklist": CHECKLIST,
@@ -1315,11 +1458,7 @@ def render(
 </div>
 
 <div class="kpis">
-  <div class="kpi{' down' if breadth is not None and breadth < 35 else ' up' if breadth is not None and breadth > 55 else ' cyan'}"><div class="l" data-tip="Share of every priced product in the game that is up over 7 days. Whether your candidates are rising with the market or against it.">Market breadth<span class="info">?</span></div><div class="v">{f'{breadth}%' if breadth is not None else '—'}</div><div class="f">{breadth_word} · {market.get('up_7d', 0):,} of {market.get('priced', 0):,} up over 7d</div></div>
-  <div class="kpi"><div class="l" data-tip="The pool is every English single priced $10+ and up over 30 days. Five gates then take a card out: down over 90 days, no recorded sale in 90 days, under 45 days of history, daily swings over 8%, or no history yet. What is left is scored and ranked; the score never removes a card, it only orders them.">Pass the screen<span class="info">?</span></div><div class="v">{len(candidates)}</div><div class="f">of {len(ranked):,} screened</div></div>
-  <div class="kpi up"><div class="l" data-tip="Candidates selling at least one copy a day. Below that, exiting a stack takes weeks.">Liquid enough<span class="info">?</span></div><div class="v">{liquid}</div><div class="f">1+ sales a day</div></div>
-  <a class="kpi" href="#screened-out"><div class="l" data-tip="Cards in the pool that failed a gate today. Click to jump to the list at the bottom of the page: every one is named with the gate it failed, so nothing is dropped silently.">Screened out<span class="info">?</span></div><div class="v">{len(rejected)}</div><div class="f">every one listed with its reason \u00b7 see the list \u2193</div></a>
-  {next_tile}{record_tile}
+{kpis}
 </div>
 
 <div class="toolbar">

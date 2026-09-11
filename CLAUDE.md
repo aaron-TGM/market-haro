@@ -17,7 +17,7 @@ code map; `docs/METHOD.md` is the score.
 
 - **GitHub Actions, `daily`, 13:10 UTC** (`.github/workflows/daily.yml`): restore the
   database from the archive → sync prices from tcgapi.dev → build the report and the
-  public preview → tests → commit the archive → push both pages to the site. It has
+  front door → tests → commit the archive → push both pages to the site. It has
   run green on its own since Sep 9. Secrets it uses: `TCGAPI_KEY`, `HARO_ADMIN_SECRET`.
 - **The site**: one Cloudflare Worker, `market-haro`, custom domain `marketharo.io`,
   KV namespace `HARO`. Code is `worker/src/index.js`. **It was deployed through the
@@ -60,12 +60,12 @@ code map; `docs/METHOD.md` is the score.
 
 | | |
 |---|---|
-| Pipeline | `radar/` — `cli.py` (commands), `invest.py` (score), `haro.py` (report), `preview.py` (public page), `track.py` (record), `depth.py`, `sealed.py`, `db.py`, `art.py` |
+| Pipeline | `radar/` — `cli.py` (commands), `invest.py` (score), `haro.py` (report), `preview.py` (the front door), `track.py` (record), `depth.py`, `sealed.py`, `db.py`, `art.py` |
 | Data | `data/history/*.ndjson` (the archive, in git), `data/rankings/YYYY-MM-DD.json` (every issue), `data/cards.ndjson`, `data/sets.ndjson` (set calendar — Stardust Trails GD06 is 2026-10-30) |
 | Worker | `worker/src/index.js`, `worker/test/gate.test.js` (`npm test`), `worker/wrangler.toml` (mirror) |
-| Tests | `python tests/test_pipeline.py` (53) and the Worker's 3 |
+| Tests | `python tests/test_pipeline.py` (55) and the Worker's 3 |
 | Docs | `docs/PLAN.md` (the launch plan, all blocks done), `docs/LAUNCH.md`, `docs/HANDOFF-gundeck.md`, `docs/REPLY-implementation-plan.md`, `DEPLOY.md`, `docs/ARCHITECTURE.md`, `docs/METHOD.md` |
-| Pages | `/` report (gated) or splash · `/preview` public, today's top ten · `/track-record` → `/preview` · `/me` · `/positions` · `/health` |
+| Pages | `/` report (gated) or the front door (today's top ten from the pipeline, sign-in/plans from the Worker) · `/preview` and `/track-record` → `/` · `/me` · `/positions` · `/health` |
 
 Local run: `pip install -r requirements.txt`, a `.env` with `TCGAPI_KEY=…`, then
 `python -m radar restore && python -m radar invest --out out/index.html`. Without the key
@@ -78,9 +78,12 @@ you can still build from the archive with `--no-fetch`-style paths; see `DEPLOY.
   offers the other once, right after checkout (ours: the `?welcome=1` banner).
 - No commentary, no newsletter, no alerts, no Market Haro 50 index, no Lifetime for
   Market Haro. Numbers; the reader draws the conclusion.
-- The public page is the preview (top ten, real numbers), not the track record. The
-  record is still computed every issue and its one-line summary appears on the preview
-  once calls are 30 days old.
+- The public page is the front door at `/` (the real dashboard cut to ten rows, real
+  numbers), not the track record. The record is still computed every issue and shows as
+  a tile once calls are 30 days old.
+- The front door's card data comes only from the pipeline (`radar/preview.py`); the
+  Worker fills three markers (`<!--haro:head-->`, `<!--haro:auth-->`, `<!--haro:script-->`)
+  and the plan buttons' hrefs. Neither side learns the other's business.
 
 ## Standing list after launch
 

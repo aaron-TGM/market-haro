@@ -47,7 +47,7 @@ previous set's top 20, the new set's top 20 and the whole market at +30/60/90 da
 with n on every cell. The new set's chase cards fell a median 20–30% in their first two
 months after every release measured.
 
-**The preview.** The one public page (`/preview`): today's real top ten with card art, price, change and score, a faded strip for the rest, and the two plans — the taste of the product a stranger gets from a link. The track record — every issue's top 20 scored against its own
+**The front door.** What marketharo.io shows anyone not subscribed: the real dashboard cut to ten rows — the same tiles as the report, the top card open with its full-width chart, nine more rows with art and sparklines, three blurred rows for the rest, and the two plans. The product itself is the pitch; the only prose is one line under the title. The track record — every issue's top 20 scored against its own
 candidate pool at +30/60/90 days, spread shown, losers kept, plus the monthly walk-forward
 validation of the score itself — and one sentence at the top, per call: "Of N top-20 calls
 resolved at 30 days, X% beat their pool." Every issue is committed to git the day it goes
@@ -88,7 +88,7 @@ cp .env.example .env            # your tcgapi.dev key; never committed
 python -m radar doctor          # verifies the key and every endpoint used
 python -m radar restore         # rebuild the database from data/history
 python -m radar run             # sync, measure, score, render
-open out/dashboard.html         # the report; out/preview.html is the public page
+open out/dashboard.html         # the report; out/preview.html is the front door
 python tests/test_pipeline.py   # 53 tests
 ```
 
@@ -103,9 +103,9 @@ points across 13 months, so a fresh clone does not need to.
 | `radar doctor` | verify the API key, game slug and every endpoint used |
 | `radar sync [--no-history]` | catalogue + today's prices; dated by the API |
 | `radar backfill --range quarter\|year` | history for cards that lack it |
-| `radar invest [--date] [--today] [--no-fetch] [--no-art-fetch]` | the whole issue: report, preview, track record, CSV |
+| `radar invest [--date] [--today] [--no-fetch] [--no-art-fetch]` | the whole issue: report, front door, track record, CSV |
 | `radar run` | sync then invest (what the workflow calls) |
-| `radar publish [--dry-run]` | push the report and the preview to the site Worker |
+| `radar publish [--dry-run]` | push the report and the front door to the site Worker |
 | `radar export` / `radar restore` | the NDJSON archive, both directions |
 | `radar validate [--horizon]` | walk-forward: does the score still separate winners? |
 | `radar snipe` | live entry prices and copy counts for the movers |

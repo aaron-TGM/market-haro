@@ -3,14 +3,15 @@
 // What it does, and all it does:
 //   GET  /                 the report, if the caller is a signed-in GUNDECK
 //                          user with a Market Haro subscription; otherwise the
-//                          splash (sign in / subscribe)
+//                          front door: today's top ten as the pipeline built
+//                          it, with the sign-in / subscribe pieces filled in
 //   GET  /me               {signed_in, entitled} for the page's own scripts
-//   GET  /preview          the public preview: today's top ten, then the plans
-//   GET  /track-record     301 -> /preview
+//   GET  /preview          301 -> /   (the front door is the preview now)
+//   GET  /track-record     301 -> /
 //   GET  /positions        the caller's watchlist + holdings   (signed in)
 //   PUT  /positions        replace them                        (signed in)
 //   PUT  /admin/report     today's report HTML, from the pipeline   (X-Admin-Secret)
-//   PUT  /admin/preview    the preview HTML, from the pipeline      (X-Admin-Secret)
+//   PUT  /admin/preview    the front door HTML, from the pipeline   (X-Admin-Secret)
 //   GET  /health
 //
 // Identity is Clerk's. The same Clerk instance that signs people in to
@@ -151,71 +152,44 @@ function clerkScript(env) {
   return `<script async crossorigin="anonymous" data-clerk-publishable-key="${esc(env.CLERK_PUBLISHABLE_KEY || '')}"${domain} src="https://${esc(host)}/npm/@clerk/clerk-js@5/dist/clerk.browser.js" onload="window.Clerk.load(${opts}).then(function(){window.__clerkLoaded=true;document.dispatchEvent(new Event('clerk:loaded'))})"></script>`;
 }
 
-function splash(env, state) {
-  // state: 'anon' (no valid session) | 'noplan' (signed in, not subscribed)
-  // The one route on gundeck.ai that starts a subscription for the signed-in
-  // user: CHECKOUT_URL + ?plan=monthly|annual opens Stripe Checkout and, on
-  // success, returns to this page with ?checkout=success. Sign-up happens
-  // here, in Clerk's own modal, before that hand-off.
-  const track = '/preview';
+/** The front door, for a stranger ('anon') or a signed-in reader with no
+ *  subscription ('noplan').
+ *
+ *  The page itself comes from the pipeline (radar/preview.py): today's
+ *  tiles, the top ten with art and charts, the plan cards. It carries three
+ *  markers this function fills -- <!--haro:head--> (Clerk's script),
+ *  <!--haro:auth--> (the state line and its buttons), <!--haro:script-->
+ *  (the door's behaviour) -- and two plan buttons, `href="#" data-plan="…"`,
+ *  whose href becomes the checkout link. So the Worker never learns a card,
+ *  and the pipeline never learns a URL. If the page in KV has no markers (the Worker deployed
+ *  before the pipeline's next run), a plain door is served instead.
+ *
+ *  The one route on gundeck.ai that starts a subscription for the signed-in
+ *  user: CHECKOUT_URL + ?plan=monthly|annual opens Stripe Checkout and, on
+ *  success, returns to this page with ?checkout=success. Sign-up happens
+ *  first, on gundeck.ai's page (this domain is a satellite), and comes back
+ *  to the checkout link. */
+function splash(env, state, page) {
   const checkout = env.CHECKOUT_URL || 'https://gundeck.ai/market-haro/subscribe';
-  const monthly = `${checkout}?plan=monthly`, annual = `${checkout}?plan=annual`;
   const manage = env.MANAGE_URL || 'https://gundeck.ai/account';
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Market Haro — from GUNDECK.AI</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap">
-<style>
-:root{--bg:#07090c;--surface:#0d1117;--line:#2a2418;--text:#f2ead8;--muted:#9a917f;--accent:#e0a030;--up:#5fd08a}
-*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 "JetBrains Mono",ui-monospace,Menlo,monospace}
-.wrap{max-width:760px;margin:0 auto;padding:40px 20px 80px}
-.brand{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent)}
-h1{margin:6px 0 4px;font-size:34px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
-.tag{color:var(--muted);font-size:13px;margin:0 0 26px}
-p{margin:0 0 14px;max-width:64ch}
-.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:26px 0 12px}
-.plan{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:2px;padding:18px 18px 16px}
-.plan::before{content:"";position:absolute;top:-1px;left:-1px;width:12px;height:12px;border:2px solid var(--accent);border-right:0;border-bottom:0}
-.plan .l{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
-.plan .v{font-size:30px;font-weight:700;color:var(--accent);line-height:1.1;margin:6px 0 2px}.plan .v small{font-size:13px;color:var(--muted);font-weight:400}
-.plan .f{font-size:12px;color:var(--muted);margin-bottom:14px}
-a.btn{display:inline-block;background:var(--accent);color:var(--bg);text-decoration:none;font-weight:700;font-size:11px;letter-spacing:.12em;text-transform:uppercase;padding:11px 16px;border-radius:2px}
-a.btn.quiet{background:transparent;color:var(--accent);border:1px solid var(--accent)}
-.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
-.who{font-size:12px;color:var(--muted);margin-top:14px}.who b{color:var(--text)}
-ul{padding-left:18px;color:var(--muted)}li{margin:4px 0}
-footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:11px;line-height:1.6}
-</style></head><body><div class="wrap">
-<div class="brand">from GUNDECK.AI</div><h1>Market Haro</h1>
-<p class="tag">Today's Gundam Card Game market, ranked. Rebuilt every morning from the whole English market on TCGplayer.</p>
-<p>Every single worth holding, scored 0–100 on value, liquidity, trend, stability and scarcity and gated on the things that make a card un-holdable. Every box and deck measured against what is inside it. A 90-day chart on every row with every set release marked. Your watchlist and holdings, with P&amp;L, following your account across devices. And a public record of every call, scored 30 days later, losers kept.</p>
-<ul><li>~130 singles pass the screen each day, from ~200 that qualify</li><li>Sealed: boxes, decks, cases against release and against the set beneath them</li><li>What every release did to prices, on our own record</li><li>No newsletter, no hot takes. Numbers, and you draw the conclusion.</li></ul>
-<div id="pending" class="plan" hidden><div class="l">One moment</div><div class="v" style="font-size:18px">Finishing your subscription…</div><div class="f" id="pending-f">Stripe is telling your GUNDECK account about it. This usually takes a few seconds.</div></div>
-<div class="plans" id="plans">
-  <div class="plan"><div class="l">Monthly</div><div class="v">$8<small> / month</small></div><div class="f">7-day free trial · cancel any time</div><a class="btn" href="${esc(monthly)}" data-plan="monthly">Start monthly</a></div>
-  <div class="plan"><div class="l">Annual</div><div class="v">$88<small> / year</small></div><div class="f">7-day free trial · eleven months for twelve</div><a class="btn" href="${esc(annual)}" data-plan="annual">Start annual</a></div>
-</div>
-<p class="tag">Card entered at sign-up, nothing charged for seven days. Sign in with a GUNDECK.AI account — free to create, and the same login if you already play with GUNDECK. Prices from tcgapi.dev under commercial licence.</p>
-<div class="row" id="auth">${state === 'noplan'
-  ? `<span class="who" id="who">Signed in. This account has no Market Haro subscription yet — pick a plan above.</span> <a class="btn quiet" href="${esc(manage)}">Manage account</a> <a class="btn quiet" href="#" id="signout">Sign out</a>`
-  : `<a class="btn quiet" href="#" id="signin">Already subscribed? Sign in</a>`}</div>
-<div class="row"><a class="btn quiet" href="${track}">See today's top 10 — free</a></div>
-<p class="tag" style="margin-top:14px">Signing in or up takes you to gundeck.ai for a moment and brings you straight back.</p>
-<footer>Market Haro is published by GUNDECK.AI. Every number describes what a card has already done. Nothing here is a forecast, a recommendation or financial advice; trading cards can lose value.</footer>
-</div>
-${clerkScript(env)}
-<script>
+  const auth = state === 'noplan'
+    ? `<span class="who-line" id="who">Signed in. This account has no Market Haro subscription yet — pick a plan below.</span> <a class="ghost" href="${esc(manage)}">Manage account</a> <a class="ghost" href="#" id="signout">Sign out</a>`
+    : `<a class="ghost" href="#" id="signin">Already subscribed? Sign in</a>`;
+  const script = `<script>
 (function(){
   var state = ${JSON.stringify(state)};
+  var satellite = ${JSON.stringify(!!env.CLERK_SATELLITE_DOMAIN)};
   var params = new URLSearchParams(location.search);
   var afterCheckout = params.get('checkout') === 'success';
   function $(id){ return document.getElementById(id); }
+  var plans = document.querySelectorAll('a[data-plan]');
 
   // Back from Stripe: the webhook that writes the entitlement onto the
   // account can land a few seconds after the browser does. Ask Clerk for a
   // fresh token, ask this server whether it now sees the subscription, and
   // open the report the moment it does. Give up after a minute, kindly.
   function waitForEntitlement(C){
-    $('pending').hidden = false; $('plans').hidden = true;
+    if ($('pending')) $('pending').hidden = false; if ($('plans')) $('plans').hidden = true;
     var tries = 0;
     (function poll(){
       tries++;
@@ -226,7 +200,7 @@ ${clerkScript(env)}
       }).then(function(me){
         if (me && me.entitled) { location.replace('/?welcome=1'); return; }
         if (tries < 20) setTimeout(poll, 3000);
-        else $('pending-f').textContent = 'This is taking longer than usual. Your payment is safe; reload this page in a minute, or check your GUNDECK account page.';
+        else if ($('pending-f')) $('pending-f').textContent = 'This is taking longer than usual. Your payment is safe; reload this page in a minute, or check your GUNDECK account page.';
       }).catch(function(){ if (tries < 20) setTimeout(poll, 3000); });
     })();
   }
@@ -242,14 +216,13 @@ ${clerkScript(env)}
     }
     if (state === 'noplan' && C.user) {
       var who = $('who'); var em = C.user.primaryEmailAddress && C.user.primaryEmailAddress.emailAddress;
-      if (who && em) who.innerHTML = 'Signed in as <b>' + em.replace(/[<>&]/g, '') + '</b>. This account has no Market Haro subscription yet — pick a plan above.';
+      if (who && em) who.innerHTML = 'Signed in as <b>' + em.replace(/[<>&]/g, '') + '</b>. This account has no Market Haro subscription yet — pick a plan below.';
     }
     // The plan buttons: a stranger creates the GUNDECK account first --
     // on gundeck.ai's sign-up page (this domain is a satellite, so Clerk
     // sends them there and back) -- and lands on checkout when it is done;
     // someone already signed in goes straight to checkout.
-    var satellite = ${JSON.stringify(!!env.CLERK_SATELLITE_DOMAIN)};
-    document.querySelectorAll('a[data-plan]').forEach(function(a){
+    plans.forEach(function(a){
       a.onclick = function(e){
         e.preventDefault();
         if (C.user) { location.href = a.href; return; }
@@ -266,8 +239,53 @@ ${clerkScript(env)}
   if (window.__clerkLoaded) onClerk(); else document.addEventListener('clerk:loaded', onClerk);
   if (afterCheckout) { setTimeout(function(){ if (!window.__clerkLoaded) waitForEntitlement(null); }, 8000); }
 })();
-</script>
-</body></html>`;
+</script>`;
+  const built = page && page.includes('<!--haro:auth-->') && page.includes('<!--haro:script-->');
+  const doc = built ? page : plainDoor();
+  // Function replacements: a plain string would have `$'` and friends
+  // interpreted as patterns, and the script is full of `$`.
+  return doc.replace('<!--haro:head-->', () => clerkScript(env))
+            .replace('<!--haro:auth-->', () => auth)
+            .replace('<!--haro:script-->', () => script)
+            .replace(/href="#"(\s+data-plan="(monthly|annual)")/g, (m, rest, plan) => `href="${esc(checkout)}?plan=${plan}"${rest}`);
+}
+
+/** The door with nothing behind it: served only until the pipeline has
+ *  pushed its first front page. Same markers, same ids, no card data. */
+function plainDoor() {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Market Haro — from GUNDECK.AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+:root{--bg:#07090c;--surface:#0d1117;--line:#2a2418;--text:#f2ead8;--muted:#9a917f;--accent:#e0a030}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 "JetBrains Mono",ui-monospace,Menlo,monospace}
+.wrap{max-width:760px;margin:0 auto;padding:40px 20px 80px}
+.brand{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent)}
+h1{margin:6px 0 4px;font-size:34px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.tag{color:var(--muted);font-size:13px;margin:0 0 26px}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:26px 0 12px}
+.plan,.panel{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:2px;padding:18px 18px 16px}
+.plan::before{content:"";position:absolute;top:-1px;left:-1px;width:12px;height:12px;border:2px solid var(--accent);border-right:0;border-bottom:0}
+.l{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.v{font-size:30px;font-weight:700;color:var(--accent);line-height:1.1;margin:6px 0 2px}.v small{font-size:13px;color:var(--muted);font-weight:400}
+.f{font-size:12px;color:var(--muted);margin-bottom:14px}
+a.btn,a.ghost{display:inline-block;background:var(--accent);color:var(--bg);text-decoration:none;font-weight:700;font-size:11px;letter-spacing:.12em;text-transform:uppercase;padding:11px 16px;border-radius:2px}
+a.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.who-line{font-size:12px;color:var(--muted)}.who-line b{color:var(--text)}
+footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:11px;line-height:1.6}
+</style><!--haro:head--></head><body><div class="wrap">
+<div class="brand">from GUNDECK.AI</div><h1>Market Haro</h1>
+<p class="tag">Today's Gundam Card Game market, ranked — rebuilt every morning from the whole English market on TCGplayer.</p>
+<div id="pending" class="panel" hidden><div class="l">One moment</div><div class="v" style="font-size:18px">Finishing your subscription…</div><div class="f" id="pending-f">Stripe is telling your GUNDECK account about it. This usually takes a few seconds.</div></div>
+<div class="plans" id="plans">
+  <div class="plan"><div class="l">Monthly</div><div class="v">$8<small> / month</small></div><div class="f">7-day free trial · cancel any time</div><a class="btn" href="#" data-plan="monthly">Start monthly</a></div>
+  <div class="plan"><div class="l">Annual</div><div class="v">$88<small> / year</small></div><div class="f">7-day free trial · eleven months for twelve</div><a class="btn" href="#" data-plan="annual">Start annual</a></div>
+</div>
+<p class="tag">Card entered at sign-up, nothing charged for seven days. Sign in with a GUNDECK.AI account — free to create, and the same login if you already play with GUNDECK.</p>
+<div class="row" id="auth"><!--haro:auth--></div>
+<footer>Market Haro is published by GUNDECK.AI. Every number describes what a card has already done. Nothing here is a forecast, a recommendation or financial advice; trading cards can lose value. Prices from tcgapi.dev under commercial licence.</footer>
+</div><!--haro:script--></body></html>`;
 }
 
 /** The report page as the pipeline built it, with Clerk's script added so
@@ -322,14 +340,9 @@ export default {
       return json({ signed_in: !!who, entitled: !!who && entitled(who, env) });
     }
 
-    if (path === '/preview') {
-      const page = await env.HARO.get('preview');
-      return page ? html(page, 200, { 'Cache-Control': 'public, max-age=600', 'X-Robots-Tag': 'all' })
-                  : html('<!doctype html><title>Market Haro</title><p style="font-family:monospace;padding:2rem">Today\'s preview has not been published yet.</p>', 404);
-    }
-    // The track record used to be its own page; its one-line summary now
-    // sits on the preview. Old links keep working.
-    if (path === '/track-record') return Response.redirect(new URL('/preview', url.origin).toString(), 301);
+    // The preview and the track record used to be their own pages; the
+    // front door is the preview now. Old links keep working.
+    if (path === '/preview' || path === '/track-record') return Response.redirect(new URL('/', url.origin).toString(), 301);
 
     if (path === '/positions') {
       const who = await whoami(req, env);
@@ -359,8 +372,13 @@ export default {
     if (path === '/') {
       if (req.method !== 'GET' && req.method !== 'HEAD') return json({ error: 'method' }, 405);
       const who = await whoami(req, env);
-      if (!who) return html(splash(env, 'anon'));
-      if (!entitled(who, env)) return html(splash(env, 'noplan'));
+      if (!who || !entitled(who, env)) {
+        // The front door, as the pipeline built it this morning. A stranger's
+        // copy may be indexed; a signed-in reader's carries their state.
+        const door = await env.HARO.get('preview');
+        const robots = who ? {} : { 'X-Robots-Tag': 'all' };
+        return html(splash(env, who ? 'noplan' : 'anon', door), 200, robots);
+      }
       const page = await env.HARO.get('report');
       if (!page) return html('<!doctype html><title>Market Haro</title><p style="font-family:monospace;padding:2rem">Today\'s report is not published yet. Check back shortly.</p>', 503, { 'Retry-After': '600' });
       const banner = url.searchParams.has('welcome') ? welcomeBanner(env) : '';
