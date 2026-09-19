@@ -22737,6 +22737,7 @@
 {"avg_sales_price":0.0,"card_id":"2178683","market_price":70.16,"obs_date":"2026-08-28","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"avg_sales_price":0.0,"card_id":"2178686","market_price":698.32,"obs_date":"2026-08-28","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"avg_sales_price":0.0,"card_id":"2178691","market_price":538.4,"obs_date":"2026-08-28","printing":"Holofoil","sales_volume":0,"source":"history"}
+{"card_id":"2178704","market_price":54.24,"obs_date":"2026-08-28","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"card_id":"2178710","market_price":37.68,"obs_date":"2026-08-28","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"avg_sales_price":42.95,"card_id":"2178774","market_price":37.47,"obs_date":"2026-08-28","printing":"Holofoil","sales_volume":2,"source":"history"}
 {"avg_sales_price":26.64,"card_id":"2178776","market_price":27.32,"obs_date":"2026-08-28","printing":"Holofoil","sales_volume":4,"source":"history"}
@@ -23298,6 +23299,7 @@
 {"avg_sales_price":0.0,"card_id":"2178683","market_price":70.16,"obs_date":"2026-08-29","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"avg_sales_price":0.0,"card_id":"2178686","market_price":698.32,"obs_date":"2026-08-29","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"avg_sales_price":849.99,"card_id":"2178691","market_price":552.4,"obs_date":"2026-08-29","printing":"Holofoil","sales_volume":1,"source":"history"}
+{"card_id":"2178704","market_price":54.24,"obs_date":"2026-08-29","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"card_id":"2178710","market_price":37.68,"obs_date":"2026-08-29","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"avg_sales_price":0.0,"card_id":"2178774","market_price":37.47,"obs_date":"2026-08-29","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"avg_sales_price":26.6,"card_id":"2178776","market_price":27.33,"obs_date":"2026-08-29","printing":"Holofoil","sales_volume":2,"source":"history"}
@@ -24136,7 +24138,7 @@
 {"card_id":"2178690","low_price":74.78,"market_price":76.66,"obs_date":"2026-08-30","printing":"Holofoil","source":"history"}
 {"avg_sales_price":0.0,"card_id":"2178691","low_price":849.99,"market_price":552.4,"obs_date":"2026-08-30","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"card_id":"2178701","low_price":23.0,"market_price":31.0,"obs_date":"2026-08-30","printing":"Holofoil","source":"history"}
-{"card_id":"2178704","low_price":99.99,"market_price":54.24,"obs_date":"2026-08-30","printing":"Holofoil","source":"history"}
+{"card_id":"2178704","low_price":99.99,"market_price":54.24,"obs_date":"2026-08-30","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"card_id":"2178709","low_price":25.5,"market_price":38.49,"obs_date":"2026-08-30","printing":"Holofoil","source":"history"}
 {"card_id":"2178710","low_price":39.99,"market_price":37.68,"obs_date":"2026-08-30","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"card_id":"2178716","low_price":55.0,"market_price":59.99,"obs_date":"2026-08-30","printing":"Holofoil","source":"history"}
