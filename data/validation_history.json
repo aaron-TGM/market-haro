@@ -5,16 +5,91 @@
     "note": "This is the reference point every later `radar validate` run is compared against. It was measured before the command existed, on the same method the command implements: score on the first 45 days of stored history, measure the next 45. Re-run `radar validate` on your own database to produce a comparable entry with your full universe.",
     "horizon_days": 45,
     "eligible": 117,
-    "score_vs_forward": {"spearman": 0.238, "t": 2.62},
-    "premium_vs_forward": {"spearman": -0.307, "t": -8.2, "n": 1201},
-    "top_quintile": {"n": 23, "mean_pct": 37.8, "median_pct": 44.1, "win_rate_pct": 87},
-    "all_eligible": {"n": 117, "mean_pct": 28.5, "median_pct": 16.8},
-    "bottom_quintile": {"n": 23, "mean_pct": 25.6, "median_pct": 5.7, "win_rate_pct": 57},
+    "score_vs_forward": {
+      "spearman": 0.238,
+      "t": 2.62
+    },
+    "premium_vs_forward": {
+      "spearman": -0.307,
+      "t": -8.2,
+      "n": 1201
+    },
+    "top_quintile": {
+      "n": 23,
+      "mean_pct": 37.8,
+      "median_pct": 44.1,
+      "win_rate_pct": 87
+    },
+    "all_eligible": {
+      "n": 117,
+      "mean_pct": 28.5,
+      "median_pct": 16.8
+    },
+    "bottom_quintile": {
+      "n": 23,
+      "mean_pct": 25.6,
+      "median_pct": 5.7,
+      "win_rate_pct": 57
+    },
     "verdict": "HOLDING UP. rho = +0.24, top quintile +37.8% mean against +28.5% for all eligible.",
     "caveats": [
       "The whole market rose over this window, which is why even the bottom quintile is positive. The edge is the spread, not the headline.",
       "Survivorship bias: the universe was drawn from cards worth $10+ TODAY, so cards that collapsed out of that band are missing.",
       "One window, one game, n=117. Three of the top 23 lost money and the best card in the bottom quintile returned +197%."
     ]
+  },
+  {
+    "ran_at": "2026-10-01",
+    "horizon_days": 45,
+    "universe": 2972,
+    "eligible": 191,
+    "disqualified": 320,
+    "skipped": {
+      "too_short": 2459,
+      "no_features": 2,
+      "no_forward": 0
+    },
+    "score_vs_forward": {
+      "spearman": -0.315,
+      "t": -4.56
+    },
+    "premium_vs_forward": {
+      "spearman": -0.245,
+      "t": -3.12,
+      "n": 154
+    },
+    "top_quintile": {
+      "n": 38,
+      "mean_pct": -15.3,
+      "median_pct": -15.5,
+      "win_rate_pct": 21,
+      "worst_pct": -66.1,
+      "best_pct": 57.7
+    },
+    "bottom_quintile": {
+      "n": 38,
+      "mean_pct": 14.2,
+      "median_pct": 12.6,
+      "win_rate_pct": 71,
+      "worst_pct": -60.1,
+      "best_pct": 79.5
+    },
+    "all_eligible": {
+      "n": 191,
+      "mean_pct": 1.6,
+      "median_pct": 0.6,
+      "win_rate_pct": 50,
+      "worst_pct": -68.8,
+      "best_pct": 107.1
+    },
+    "screened_out": {
+      "n": 320,
+      "mean_pct": 5.9,
+      "median_pct": -2.1,
+      "win_rate_pct": 42,
+      "worst_pct": -69.3,
+      "best_pct": 340.6
+    },
+    "verdict": "INVERTED. rho = -0.32: higher-scoring cards did WORSE over this window. Stop acting on the ranking until you understand why."
   }
 ]
