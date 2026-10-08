@@ -192,14 +192,29 @@ def _stat(label: str, value: str, cls: str = "") -> str:
     return f'<div class="s"><div class="l">{label}</div><div class="v{(" " + cls) if cls else ""}">{value}</div></div>'
 
 
+def _hurdle(v) -> str:
+    """Twin of haro.JS hurdleHTML: green under 10%, amber under 25%, red above."""
+    if v is None:
+        return '<span class="flat">—</span>'
+    v = float(v)
+    cls = "ok" if v <= 10 else "mid" if v <= 25 else "hi"
+    return f'<span class="hurdle {cls}">{"+" if v > 0 else ""}{v:.0f}%</span>'
+
+
+def _age(d) -> str:
+    """Twin of haro.JS ageText."""
+    if d is None:
+        return "—"
+    d = int(d)
+    return f"{d}d" if d < 60 else f"{round(d / 30.4)} mo" if d < 730 else f"{d / 365:.1f} yr"
+
+
 def row(r: dict, releases: Sequence[dict], *, open_: bool = False) -> str:
-    """One row exactly as the report draws it: rank, art, name, chart, stats,
-    score. `open_` is the first row -- the large art and the big chart."""
-    prem = r.get("ask_premium_pct")
-    prem_html = ('<span class="flat">—</span>' if prem is None else
-                 f'<span class="{"down" if prem > 5 else "up" if prem < -2 else "flat"}">{"+" if prem > 0 else ""}{prem:.0f}%</span>')
+    """One row exactly as the report draws it at its default horizon (3–6
+    months): rank, art, name, chart, the buyer's numbers, the hold score.
+    `open_` is the first row -- the large art and the big chart."""
     sales = r.get("avg_daily_sales")
-    score = float(r.get("invest_score") or 0)
+    score = float(r.get("hold_score") or 0)
     meta = " · ".join(_esc(x) for x in (r.get("set_name"), r.get("number")) if x)
     return (
         f'<div class="row{" open" if open_ else ""}" aria-expanded="{"true" if open_ else "false"}">'
@@ -208,15 +223,15 @@ def row(r: dict, releases: Sequence[dict], *, open_: bool = False) -> str:
         f'<div class="who"><div class="nm">{_esc(r.get("name") or "")}</div><div class="meta">{meta}</div><div class="tags">{_tags(r)}</div></div>'
         f'{chart(r.get("series") or [], releases, big=open_, legend=open_)}'
         f'<div class="stats">'
-        f'{_stat("Price", money(r.get("market_price")))}'
-        f'{_stat("Entry", money(r.get("floor_low")))}'
-        f'{_stat("vs sold", prem_html)}'
-        f'{_stat("7d", _pct(r.get("change_7d")))}'
+        f'{_stat("Entry", money(r.get("floor_low")) if r.get("floor_low") else "<span class=\"flat\">not checked</span>")}'
+        f'{_stat("Sells for", money(r.get("sells_for")))}'
+        f'{_stat("Break-even", _hurdle(r.get("hurdle_pct")))}'
         f'{_stat("90d", _pct(r.get("change_90d")))}'
         f'{_stat("Sales/day", "—" if sales is None else f"{float(sales):.1f}", "down" if (sales or 0) < 1 else "")}'
+        f'{_stat("Set age", _age(r.get("set_age_days")))}'
         f'</div>'
         f'<div class="score{" top" if score >= TOP_SCORE else ""}"><div class="n">{score:.0f}</div>'
-        f'<div class="bar"><i style="width:{max(3.0, score):.0f}%"></i></div><div class="l">score</div></div>'
+        f'<div class="bar"><i style="width:{max(3.0, score):.0f}%"></i></div><div class="l">hold score</div></div>'
         f'</div>')
 
 
@@ -232,8 +247,8 @@ def ghost_row(i: int) -> str:
         f'<div class="chart"><div class="cv"><svg viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true">'
         f'<polyline points="{pts}" fill="none" stroke="var(--cyan)" stroke-width="2" vector-effect="non-scaling-stroke"/></svg></div>'
         f'<div class="cap"><span>███ ██ → ███ ██</span><span>███</span></div></div>'
-        f'<div class="stats">{"".join(_stat(l, "$███") for l in ("Price", "Entry", "vs sold", "7d", "90d", "Sales/day"))}</div>'
-        f'<div class="score"><div class="n">██</div><div class="bar"><i style="width:60%"></i></div><div class="l">score</div></div>'
+        f'<div class="stats">{"".join(_stat(l, "$███") for l in ("Entry", "Sells for", "Break-even", "90d", "Sales/day", "Set age"))}</div>'
+        f'<div class="score"><div class="n">██</div><div class="bar"><i style="width:60%"></i></div><div class="l">hold score</div></div>'
         f'</div>')
 
 
@@ -253,10 +268,18 @@ def render(
     pool_n: int | None = None,
     sealed_n: int = 0,
     site_url: str = "",
+    evidence: dict[str, Any] | None = None,
 ) -> str:
     """`total_pass`, `pool_n`, `sealed_n` and `site_url` are accepted for
-    compatibility with older callers and derived from `ranked` when absent."""
-    candidates = [r for r in ranked if not r.get("disqualified")]
+    compatibility with older callers and derived from `ranked` when absent.
+    The rows are the report's default horizon, 3–6 months (radar/horizon.py);
+    `evidence` is the newest walk-forward record, for its tile."""
+    from .horizon import DEFAULT, rank as hz_rank
+
+    if any("horizons" not in r for r in ranked):
+        ranked = hz_rank(ranked, releases={}, as_of=obs_date, regate=False)
+    candidates = sorted((r for r in ranked if not r.get("disqualified")),
+                        key=lambda r: r["horizons"][DEFAULT]["rank"] or 10 ** 9)
     rejected = [r for r in ranked if r.get("disqualified")]
     releases = [{"date": m["date"], "label": m["label"], "names": m.get("names") or []} for m in (releases or [])]
     rows = []
@@ -264,6 +287,8 @@ def render(
         p = _row_payload(r)
         p["rank"] = i
         p["series"] = r.get("series") or []
+        for k in ("hold_score", "sells_for", "hurdle_pct", "set_age_days"):
+            p[k] = r.get(k)
         rows.append(p)
     if art_cache is not None:
         from . import art
@@ -272,7 +297,7 @@ def render(
     n_pass = total_pass if total_pass is not None else len(candidates)
     more = max(n_pass - len(rows), 0)
     kpis = kpi_tiles(candidates, rejected, market=market, releases=releases, record=record,
-                     today=today, obs_date=obs_date, screened_href=None, track_url="")
+                     today=today, obs_date=obs_date, screened_href=None, track_url="", evidence=evidence)
     body_rows = "".join(row(r, releases, open_=(i == 0)) for i, r in enumerate(rows))
     ghosts = "".join(ghost_row(i) for i in range(len(rows) + 1, len(rows) + 1 + GHOSTS))
     return f"""<!doctype html>
@@ -295,7 +320,7 @@ def render(
     <div class="brand"><span>from</span>GUNDECK.AI</div>
     <h1>Market Haro</h1>
     <div class="stamp">Prices through {_esc(obs_date)} · {n_pass} cards pass the screen · English NM only</div>
-    <p class="tagline">Today's Gundam Card Game market, ranked — rebuilt every morning from the whole English market on TCGplayer.</p>
+    <p class="tagline">Today's Gundam Card Game market, ranked for a 3–6 month hold — rebuilt every morning from the whole English market on TCGplayer, with what each card costs to buy and to sell again.</p>
   </div>
   <div class="hbtns" id="auth"><!--haro:auth--></div>
 </header>
@@ -313,7 +338,7 @@ def render(
 <div class="fade"></div>
 
 <div class="door" id="door">
-  <p class="morerow"><b>+{more}</b> more rows below these, every box measured against its singles, the live shelf, your watchlist and holdings <span>— in the full report.</span></p>
+  <p class="morerow"><b>+{more}</b> more rows below these, the ranking for under 30 days and 1 year+, a budget planner with the break-even on every plan, every box measured against its singles, your watchlist and holdings after costs <span>— in the full report.</span></p>
   <div class="plans" id="plans">
     <div class="plan"><div class="l">Monthly</div><div class="v">$8<small> / month</small></div><div class="f">7-day free trial · cancel any time</div><a class="btn" href="#" data-plan="monthly">Start monthly</a></div>
     <div class="plan"><div class="l">Annual</div><div class="v">$88<small> / year</small></div><div class="f">7-day free trial · eleven months for twelve</div><a class="btn" href="#" data-plan="annual">Start annual</a></div>

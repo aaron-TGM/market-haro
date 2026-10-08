@@ -14,8 +14,15 @@ The rules, in full:
   position cap   = budget x max_position_pct. Halved for a `squeeze`, because
                    there you are paying above the last recorded trade rather
                    than below it.
-  quantity       = min(copies listed, floor(cap / unit), floor(remaining / unit))
-  allocation     = greedy down the board by snipe score until the budget runs out.
+  set cap        = budget x max_set_pct, across every card of one set: a new
+                   set's supply or a reprint hits all of a set's cards at once,
+                   and the hold ranking leans to older sets, so without it a
+                   budget can land in one set entirely.
+  quantity       = min(copies listed, floor(cap / unit), floor(remaining / unit),
+                       floor(what is left of the set cap / unit))
+  allocation     = greedy down the board in the order given (the page passes
+                   the ranking of the hold horizon the reader picked) until the
+                   budget runs out.
 
 Greedy is the honest choice here: it is transparent, it never quietly
 reallocates away from the row you were looking at, and every line can be
@@ -53,15 +60,18 @@ def allocate(
     budget: float,
     *,
     max_position_pct: float = 0.25,
+    max_set_pct: float = 1.0,
     squeeze_haircut: float = 0.5,
     fee_pct: float = 0.0,
 ) -> list[dict]:
     """Walk the board in order and size each row against what's left.
 
     Returns one plan dict per input row, in the same order. Rows that don't fit
-    still get a plan explaining why.
+    still get a plan explaining why. `max_set_pct` 1.0 means no set cap.
     """
     remaining = float(budget)
+    by_set_spent: dict[str, float] = {}
+    set_cap = float(budget) * float(max_set_pct)
     plans: list[dict] = []
 
     for row in rows:
@@ -92,10 +102,13 @@ def allocate(
         if row.get("snipe_mode") == "squeeze":
             cap *= float(squeeze_haircut)
 
+        set_key = str(row.get("set_name") or row.get("set_id") or "")
         by_cap = math.floor(cap / unit)
         by_remaining = math.floor(remaining / unit)
         by_supply = copies if copies is not None else by_cap
-        qty = max(0, min(by_cap, by_remaining, by_supply))
+        # A hair of tolerance: 0.1 x 3 is not quite 0.3 in floating point.
+        by_set = math.floor((set_cap - by_set_spent.get(set_key, 0.0)) / unit + 1e-9)
+        qty = max(0, min(by_cap, by_remaining, by_supply, by_set))
 
         if qty < 1:
             # Report the cap before the running total: the cap is a fixed
@@ -109,6 +122,11 @@ def allocate(
                 )
             elif by_remaining < 1:
                 plan["reason"] = f"${remaining:,.2f} left — one copy costs ${unit:,.2f}."
+            elif by_set < 1:
+                plan["reason"] = (
+                    f"{set_key or 'Its set'} already holds the {max_set_pct * 100:.0f}% of the "
+                    f"budget one set may take."
+                )
             else:
                 plan["reason"] = "No copies listed."
             plans.append(plan)
@@ -116,10 +134,13 @@ def allocate(
 
         cost = qty * unit
         remaining -= cost
+        by_set_spent[set_key] = by_set_spent.get(set_key, 0.0) + cost
 
         limit = "the per-position cap"
-        if by_supply <= by_cap and by_supply <= by_remaining:
+        if by_supply <= by_cap and by_supply <= by_remaining and by_supply <= by_set:
             limit = "the number of copies listed"
+        elif by_set < by_cap and by_set <= by_remaining:
+            limit = "the per-set cap"
         elif by_remaining < by_cap:
             limit = "what's left of the budget"
 

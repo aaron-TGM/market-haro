@@ -76,15 +76,37 @@ invest:
   min_history_days: 45
   # Daily volatility above this is a trading card, not a holding.
   max_volatility_pct: 8.0
-  # How many candidates to pull a live entry price for. One request each.
+  # How many of the hold ranking's top cards get a live entry price. One request each.
   entry_lookups: 40
-  # Component weights. Liquidity and trend carry the most because they are the
-  # two things that decide whether a hold works out.
+  # ...and how many of the liquid cards listed furthest under what they sell
+  # for, the candidates for the under-30-days view. One request each.
+  short_lookups: 30
+  # A card whose cheapest copy costs more than this % over what it sells for
+  # is not ranked: the quoted price is not one anyone can buy at. Cards over
+  # $500 sat a median 68% above their market price in September 2026.
+  max_entry_premium_pct: 30
+  # Cards without history get a 90-day pull, up to this many a run.
+  history_lookups: 400
+  # Sales figures come only from the history endpoint (the daily batch has
+  # none). Refresh a card's last month when its newest figure is older than
+  # this many days, up to sales_lookups cards a run. See ingest.refresh_sales.
+  sales_stale_days: 2
+  sales_lookups: 600
+  # The retired score's weights (value/liquidity/trend/stability/scarcity).
+  # Kept so `radar validate --legacy` and the walk-forward can still measure
+  # it; the page ranks by radar/horizon.py since 2026-10-08.
   weight_value: 0.20
   weight_liquidity: 0.25
   weight_trend: 0.25
   weight_stability: 0.20
   weight_scarcity: 0.10
+
+# What selling costs, for the break-even on every row, the budget plan and the
+# track record after costs. TCGplayer marketplace: 10.75% commission plus 2.5%
+# + $0.30 payment processing. eBay's card fee is within a point of it.
+costs:
+  sell_fee_pct: 0.1325
+  sell_fee_fixed: 0.30
 
 # Snipe mode: live listing floors for the cards that are moving.
 #
@@ -121,10 +143,10 @@ snipe:
 plan:
   # Most of the budget any single card may take.
   max_position_pct: 0.25
+  # Most of the budget all the cards of one set may take together.
+  max_set_pct: 0.5
   # A squeeze means paying above the last recorded trade, so size it smaller.
   squeeze_haircut: 0.5
-  # Your selling fee rate, if you want a break-even figure. 0.15 = 15%.
-  fee_pct: 0.0
 
 report:
   top_n: 400   # rows embedded in the dashboard; the page pages through them

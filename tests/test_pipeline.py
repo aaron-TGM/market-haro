@@ -501,13 +501,56 @@ def test_invest_features_from_history():
     assert f is not None
     assert f["history_points"] == 42
     assert f["avg_daily_sales"] > 0
-    assert 0 <= f["days_traded_pct"] <= 100
+    # Points five to eleven days apart say how many sold, not on how many
+    # days: the share of days with a sale is unknown, not guessed.
+    assert f["days_traded_pct"] is None
     assert f["drawdown_pct"] >= 0
 
     # Under 30 points there is nothing to say.
     assert invest.features(series[:20]) is None
     # A zero price is missing data, not a free card.
     assert invest.features([("2026-01-01", 0, 0)] * 40) is None
+
+
+def test_sales_rate_skips_unknown_days_and_reads_weekly_totals_per_day():
+    """The October 2026 bug: the daily batch carries no sales, and every batch
+    row was read as a day with none, so liquidity decayed by itself. Unknown
+    days are skipped now, and a weekly point's week of sales is spread over
+    the week it covers."""
+    from datetime import date, timedelta
+
+    from radar import invest
+
+    d0 = date(2026, 6, 1)
+    day = lambda i: (d0 + timedelta(days=i)).isoformat()  # noqa: E731
+    # 40 days of daily history at 2 sales a day, then 50 batch rows with no sales figure.
+    known = [(day(i), 100.0, 2.0, 100.0) for i in range(40)]
+    batch = [(day(i), 100.0, None, None) for i in range(40, 90)]
+    r = invest.sales_rate(known + batch)
+    assert r["per_day"] == 2.0 and r["covered_days"] == 40 and r["traded_pct"] == 100
+    # The old reading -- unknown as zero -- would have said 0.9 a day.
+    assert round(80 / 90, 1) == 0.9
+
+    # Weekly points carry a week's sales: 14 a point is 2 a day, same as daily.
+    weekly = [(day(7 * i), 100.0, 14.0, 100.0) for i in range(13)]
+    w = invest.sales_rate(weekly)
+    assert w["per_day"] == 2.0
+    assert w["traded_pct"] is None   # a week's total says nothing about which days
+
+    # Too little known history to judge: None, and the gate says so rather
+    # than claiming the card never sells.
+    thin = [(day(i), 100.0, 1.0, 100.0) for i in range(5)] + batch
+    assert invest.sales_rate(thin)["per_day"] is None
+    feats = invest.features(thin + [(day(90 + i), 100.0, None, None) for i in range(20)])
+    row = {"name": "X", "market_price": 50.0, "history_points": 75, "change_90d": 10,
+           "volatility_pct": 1.0, "avg_daily_sales": feats["avg_daily_sales"]}
+    assert "can't be judged" in invest.disqualify(row, {"min_price": 10.0})
+    assert "no way out" in invest.disqualify({**row, "avg_daily_sales": 0.0}, {"min_price": 10.0})
+
+    # The settled price reads the last 14 days by date: a run of sales-less
+    # batch rows after the sales stopped leaves it blank, not stale.
+    assert invest.settled(known + batch)["settled_price"] is None
+    assert invest.settled(known)["settled_price"] == 100.0
 
 
 def test_short_window_changes_come_from_history_not_the_api_field():
@@ -1313,14 +1356,14 @@ def test_haro_page_carries_the_subscriber_contract():
     import re
     import sys
 
-    from radar import haro, invest
+    from radar import haro, horizon
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import make_preview
 
-    rows = invest.evaluate(make_preview.parse(), {"min_price": 10.0})
-    prev = {f"{r['card_id']}|{r.get('printing') or 'Normal'}": i + 3
-            for i, r in enumerate(rows) if not r.get("disqualified")}
+    rows = horizon.rank(make_preview.parse(), releases={}, as_of="2026-08-09", cfg={"min_price": 10.0})
+    prev = {f"{r['card_id']}|{r.get('printing') or 'Normal'}": r["horizons"]["mid"]["rank"] + 2
+            for r in rows if not r.get("disqualified")}
     releases = [{"date": "2026-07-24", "kind": "booster", "label": "GD05", "names": ["Freedom Ascension"]},
                 {"date": "2026-09-25", "kind": "starter", "label": "ST11–14", "names": ["Starter Deck 11"]}]
     html = haro.render(rows, obs_date="2026-08-09", market={"priced": 100, "up_7d": 20},
@@ -1347,8 +1390,23 @@ def test_haro_page_carries_the_subscriber_contract():
     assert not any("catalyst" in r for r in payload["rows"]) and "catalyst" not in haro.JS
     assert "marksFor(" in haro.JS and "ANOMALY_PCT" in haro.JS
     # Every tooltip the JS reads is shipped.
-    for k in ("price", "entry", "prem", "c7", "c90", "sales", "score", "buy", "settled"):
+    for k in ("price", "entry", "prem", "c7", "c90", "sales", "score", "buy", "settled", "sells", "hurdle", "age"):
         assert k in payload["tips"]
+    assert "DATA.tips.prem" not in haro.JS   # vs sold is no longer a row column
+
+    # The hold horizon picks the ranking; every row carries its rank per horizon.
+    assert payload["horizons"]["order"] == ["short", "mid", "long"] and payload["horizons"]["default"] == "mid"
+    assert set(top["h"]) == {"short", "mid", "long"} and top["h"]["mid"]["rank"] == 1
+    assert all(r["h"]["mid"]["rank"] == r["h"]["long"]["rank"] for r in payload["rows"])
+    assert 'data-horizon="short"' in html and "How long will you hold?" in html
+    assert "localStorage.setItem(HZ_KEY" in haro.JS          # remembered in the browser, nowhere else
+    # Costs ship with the page, and the claim that "vs sold" is a 30-day edge is gone.
+    assert payload["costs"] == {"sell_fee_pct": 0.1325, "sell_fee_fixed": 0.30}
+    assert "+10.3%" not in json.dumps(payload["tips"]) and "4.0%" not in json.dumps(payload["tips"])
+    assert top["hurdle_pct"] is not None and top["break_even"] is not None
+    # A card whose cheapest copy costs far over what it sells for is screened out, with the reason.
+    assert "Gundam (Premium Card Collection)" not in [r["name"] for r in payload["rows"]]
+    assert "the quoted price is not one you can buy at" in html
 
     # Nothing the reader types leaves the browser: no form posts, and the one
     # fetch target is the page's own origin, /positions, used only when the
@@ -1783,6 +1841,316 @@ def test_set_depth_measures_what_is_under_a_box():
     assert f["set_name"] == "Deep" and "release_date" not in f and f["over_100"] == 11
     assert depth.for_set(table, "3") is None
     assert [x["set_name"] for x in depth.facts_for_lead(table, 1)] == ["Deep"]
+
+
+# ============================================================================
+# October 2026: costs, hold horizons, the sales refresh, the walk-forward
+# ============================================================================
+def test_costs_are_the_round_trip_a_buyer_lives():
+    """Break-even is entry plus the marketplace's cut; the hurdle is measured
+    from what the card sells for; without a live entry it says so."""
+    from radar import costs
+
+    c = {"sell_fee_pct": 0.1325, "sell_fee_fixed": 0.30}
+    assert costs.proceeds(100, c) == 86.45                  # 100 x 0.8675 - 0.30
+    assert costs.break_even(100, c) == 115.62               # (100 + 0.30) / 0.8675
+    assert costs.hurdle_pct(100, 100, c) == 15.6            # a card bought at what it sells for needs +15.6%
+    assert costs.hurdle_pct(80, 100, c) == -7.4             # bought well under: already past break-even
+    assert costs.net_return_pct(100, 115.62, c) == 0.0
+    assert costs.net_return_pct(None, 100, c) is None and costs.break_even(0, c) is None
+    # Nonsense settings fall back rather than dividing by zero.
+    assert costs.settings({"sell_fee_pct": 1.5, "sell_fee_fixed": -1}) == costs.DEFAULTS
+
+    live = costs.annotate({"floor_low": 90.0, "settled_price": 100.0, "market_price": 120.0}, c)
+    assert live["sells_for"] == 100.0 and live["sells_for_basis"] == "sold"
+    assert live["break_even_basis"] == "entry" and live["entry_vs_sold_pct"] == -10.0
+    bare = costs.annotate({"market_price": 50.0}, c)
+    assert bare["sells_for_basis"] == "market" and bare["break_even_basis"] == "market"
+    assert bare["entry_vs_sold_pct"] is None and bare["hurdle_pct"] == 16.0
+
+
+def _hz_row(cid, rarity, set_id, sales, price=50.0, **kw):
+    base = dict(card_id=cid, printing="Holofoil", name=f"Card {cid}", set_name=f"Set {set_id}",
+                set_id=set_id, number=f"GD01-{cid}", rarity=rarity, market_price=price,
+                history_points=80, avg_daily_sales=sales, volatility_pct=2.0, change_90d=-20)
+    base.update(kw)
+    return base
+
+
+def test_hold_horizon_ranks_on_rarity_set_age_and_sales_with_the_gates_first():
+    from radar import horizon
+
+    releases = {"old": "2025-07-25", "new": "2026-09-01"}
+    rows = [
+        _hz_row("a", "LR+", "old", 2.0),                    # rare, old set, liquid: top
+        _hz_row("b", "LR+", "new", 2.0),                    # rare but its set is new
+        _hz_row("c", "Common", "old", 2.0),                 # old and liquid, not rare
+        _hz_row("d", "LR+", "old", 0.2),                    # rare and old, thin
+        _hz_row("e", "LR++", "old", 3.0, floor_low=140.0),  # cheapest copy +180% over the market
+        _hz_row("f", "LR+", "old", None),                   # no sales figures at all
+        _hz_row("g", "R+", "old", 1.0, history_points=20),  # too new to judge
+    ]
+    out = horizon.rank(rows, releases=releases, as_of="2026-10-08")
+    by = {r["card_id"]: r for r in out}
+    # A 90-day fall is no longer a gate: momentum hurt the hold ranking.
+    assert by["a"]["gate"] is None and by["a"]["horizons"]["mid"]["rank"] == 1
+    assert by["a"]["horizons"]["long"]["rank"] == 1          # same order until the archive can split them
+    assert "can't be judged" in by["f"]["gate"] and "Too new" in by["g"]["gate"]
+    assert "not one you can buy at" in by["e"]["gate"] and by["e"]["disqualified"] == by["e"]["gate"]
+    ranked = [r["card_id"] for r in out if r["horizons"]["mid"]["rank"]]
+    assert ranked[0] == "a" and set(ranked) == {"a", "b", "c", "d"}
+    assert by["a"]["hold_score"] > by["b"]["hold_score"] and by["a"]["hold_score"] > by["c"]["hold_score"]
+    assert set(by["a"]["hold_parts"]) == {"tier", "age", "sales"}
+    assert by["b"]["set_age_days"] == 37 and by["a"]["set_age_days"] == 440
+    # The batch's cheapest listing (any condition) gates too when no live price was pulled.
+    lws = horizon.rank([_hz_row("h", "LR+", "old", 1.0, lowest_with_shipping=80.0)], releases=releases, as_of="2026-10-08")
+    assert "60% more" in lws[0]["gate"]
+
+    # Under 30 days: a sale a day, a live entry, real sales to measure against;
+    # ordered by the hurdle, lowest first.
+    s_rows = [
+        _hz_row("s1", "R+", "old", 2.0, floor_low=45.0, settled_price=50.0),   # entry under what it sells for
+        _hz_row("s2", "R+", "old", 2.0, floor_low=50.0, settled_price=50.0),
+        _hz_row("s3", "R+", "old", 2.0, floor_low=40.0),                         # no sales to measure against
+        _hz_row("s4", "R+", "old", 0.5, floor_low=40.0, settled_price=50.0),     # too slow to exit
+        _hz_row("s5", "R+", "old", 2.0),                                         # never priced live
+    ]
+    sh = {r["card_id"]: r for r in horizon.rank(s_rows, releases=releases, as_of="2026-10-08")}
+    assert sh["s1"]["horizons"]["short"]["rank"] == 1 and sh["s2"]["horizons"]["short"]["rank"] == 2
+    assert "recent sales" in sh["s3"]["horizons"]["short"]["why"]
+    assert "too slow" in sh["s4"]["horizons"]["short"]["why"]
+    assert "No live Near Mint" in sh["s5"]["horizons"]["short"]["why"]
+    assert all(sh[k]["horizons"]["mid"]["rank"] for k in sh)  # every one still ranks for the long view
+
+    # Promotional pools trickle out all year: aged from first priced, not the set's date.
+    promo = _hz_row("p", "Promo", "promo", 1.0, set_name="Gundam Promotional Cards", tracked_since="2026-09-08")
+    assert horizon.set_age_days(promo, {"promo": "2025-03-01"}, "2026-10-08") == 30
+    assert horizon.percentiles([3, 1, 2, None, 2]) == [100.0, 0.0, 50.0, None, 50.0]
+
+    # Words: facts about the card and its round trip, and what would break it.
+    t = horizon.thesis(sh["s1"])
+    assert "$50.00 R+" in t and "Set old" in t and "45.00 shipped" in t and "needs" in t
+    w = horizon.watch(_hz_row("n", "LR+", "new", 0.4, drawdown_pct=30) | {"set_age_days": 40, "hurdle_pct": 40.0})
+    assert "40 days old" in w and "+40%" in w and "0.4 sales a day" in w and "30% off" in w
+
+
+def test_plan_caps_each_set_and_the_page_twin_agrees():
+    """The budget tool spreads across sets; the page's JavaScript sizes the
+    same rows to the same copies, cost and limit (run in node when present)."""
+    import shutil
+    import subprocess
+
+    from radar import haro, plan
+
+    rows = [
+        {"card_id": "1", "printing": "N", "set_name": "GD01", "floor_low": 100.0, "copies": 9},
+        {"card_id": "2", "printing": "N", "set_name": "GD01", "floor_low": 100.0, "copies": 9},
+        {"card_id": "3", "printing": "N", "set_name": "GD01", "floor_low": 100.0, "copies": 9},
+        {"card_id": "4", "printing": "N", "set_name": "GD02", "floor_low": 30.0, "copies": 2},
+        {"card_id": "5", "printing": "N", "set_name": "GD03", "floor_low": 700.0, "copies": 9},
+        {"card_id": "6", "printing": "N", "set_name": "GD03", "floor_low": None, "copies": 9},
+    ]
+    py = plan.allocate(rows, 1000, max_position_pct=0.25, max_set_pct=0.5)
+    assert [p["qty"] for p in py] == [2, 2, 1, 2, 0, 0]
+    assert py[1]["limited_by"] == "the per-position cap"
+    assert py[2]["limited_by"] == "the per-set cap"              # GD01 hits $500 of $1,000
+    assert "already holds" not in py[2].get("reason", "")
+    assert py[3]["limited_by"] == "the number of copies listed"
+    assert "per-position cap" in py[4]["reason"] and "No live floor" in py[5]["reason"]
+    full = plan.allocate(rows[:3], 1000, max_position_pct=0.25, max_set_pct=0.5)
+    blocked = plan.allocate(rows[:3] + [{"card_id": "7", "printing": "N", "set_name": "GD01", "floor_low": 10.0, "copies": 9}],
+                            1000, max_position_pct=0.25, max_set_pct=0.5)
+    assert sum(p["cost"] for p in full) == 500.0 and "GD01 already holds" in blocked[3]["reason"]
+
+    node = shutil.which("node")
+    if not node:
+        return
+    js = haro.JS
+    src = js[js.index("function allocate(rows, budget){"):js.index("// The plan in one line")]
+    prog = ("const key = r => r.card_id + '|' + r.printing;\n"
+            "const DATA = {plan: {max_position_pct: 0.25, max_set_pct: 0.5}};\n" + src +
+            f"\nconst rows = {json.dumps(rows)};\n"
+            "const out = allocate(rows, 1000);\n"
+            "console.log(JSON.stringify(rows.map(r => { const p = out.get(key(r)); return [p.qty, p.cost, p.limitedBy || null]; })));")
+    res = subprocess.run([node, "-e", prog], capture_output=True, text=True, timeout=30)
+    assert res.returncode == 0, res.stderr
+    twin = json.loads(res.stdout)
+    assert twin == [[p["qty"], p["cost"], p.get("limited_by")] for p in py], (twin, py)
+
+
+def test_refresh_sales_keeps_the_figures_current_without_touching_batch_prices():
+    """The September bug: no sales figure entered the archive after the
+    history backfill. The refresh pulls a month of history for stale cards,
+    one request per card, and a batch day keeps its own market price."""
+    from radar import ingest
+
+    class Stub:
+        def __init__(self):
+            self.calls = []
+            self.budget_left = 9999
+
+        def card_history(self, card_id, range_):
+            self.calls.append((card_id, range_))
+            return [{"date": "2026-10-06", "printing": "Holofoil", "market_price": 99.0,
+                     "sales_volume": 3, "avg_sales_price": 101.0},
+                    {"date": "2026-10-06", "printing": "Normal", "market_price": 9.0,
+                     "sales_volume": 1, "avg_sales_price": 9.5}]
+
+    with tempfile.TemporaryDirectory() as td:
+        db = Database(Path(td) / "r.sqlite3")
+        db.upsert_price_points([
+            {"card_id": "1", "printing": "Holofoil", "obs_date": "2026-10-06", "market_price": 120.0, "source": "snapshot"},
+            {"card_id": "1", "printing": "Normal", "obs_date": "2026-10-06", "market_price": 10.0, "source": "snapshot"},
+            # card 2's sales are fresh: no request for it
+            {"card_id": "2", "printing": "Normal", "obs_date": "2026-10-07", "market_price": 20.0,
+             "sales_volume": 1, "avg_sales_price": 20.0, "source": "history"},
+        ])
+        stub = Stub()
+        st = ingest.refresh_sales(db, stub, [("1", "Holofoil"), ("1", "Normal"), ("2", "Normal")],
+                                  as_of="2026-10-07", stale_days=2)
+        assert stub.calls == [("1", "month")]          # one request covers both printings
+        assert st["stale"] == 2 and st["fetched"] == 1
+        ser = db.all_series_with_volume()[("1", "Holofoil")]
+        assert ser == [("2026-10-06", 120.0, 3.0, 101.0)]   # batch price kept, sales added
+        # Unknown stays unknown: a batch row without sales is None, not zero.
+        db.upsert_price_points([{"card_id": "3", "printing": "Normal", "obs_date": "2026-10-07",
+                                 "market_price": 5.0, "source": "snapshot"}])
+        assert db.all_series_with_volume()[("3", "Normal")][0][2] is None
+        assert db.sales_last_seen()[("1", "Holofoil")] == "2026-10-06"
+        db.close()
+
+
+def _archive(n_cards=60, start="2025-09-01", days=400):
+    """A synthetic archive where rarity decides the future: rare cards climb,
+    common ones sag, and everything trades every day."""
+    from datetime import date, timedelta
+
+    d0 = date.fromisoformat(start)
+    series, meta = {}, {}
+    rarities = ["LR++", "LR+", "R+", "C+", "U+", "Rare", "Uncommon", "Common"]
+    for i in range(n_cards):
+        rar = rarities[i % len(rarities)]
+        drift = {"LR++": 0.004, "LR+": 0.003, "R+": 0.002, "C+": 0.0005}.get(rar, -0.001)
+        k = (str(i), "Holofoil")
+        price = 30.0 + i
+        pts = []
+        for d in range(days):
+            price *= 1 + drift
+            pts.append(((d0 + timedelta(days=d)).isoformat(), round(price, 2), 2.0, round(price, 2)))
+        series[k] = pts
+        meta[str(i)] = {"name": f"Card {i}", "set_name": "Newtype Rising", "set_id": "s1",
+                        "number": f"GD01-{i:03d}", "rarity": rar, "product_type": "Cards"}
+    return series, meta
+
+
+def test_horizon_walk_forward_finds_the_ordering_and_keeps_the_retired_score_on_file():
+    from radar import validate
+
+    series, meta = _archive()
+    sets = [{"id": "s1", "name": "Newtype Rising", "release_date": "2025-07-25"}]
+    out = validate.run_horizons(series, meta, sets, {"min_price": 10.0, "min_history_days": 45},
+                                cost_cfg={"sell_fee_pct": 0.1325, "sell_fee_fixed": 0.30}, today="2026-10-08")
+    assert out["kind"] == "horizons" and set(out["horizons"]) == {"short", "mid", "long"}
+    w90 = out["horizons"]["mid"]["windows"]["90"]
+    assert w90["splits"] >= 5 and w90["rho_mean"] > 0.5 and w90["top_beat_pool"] == w90["splits"]
+    assert w90["top_median"] > w90["pool_median"]
+    # After costs is the top 20's move less the marketplace's cut, never more.
+    assert w90["top_net_median"] < w90["top_median"]
+    assert out["horizons"]["mid"]["verdict"].startswith("HOLDING UP")
+    assert out["horizons"]["long"]["windows"]["365"]["splits"] >= 0
+    # No entry prices recorded -> the short test says so instead of inventing one.
+    assert out["horizons"]["short"]["verdict"].startswith("NOT MEASURABLE")
+    assert "windows" in out["legacy"] and out["legacy"]["retired"] == "2026-10-08"
+
+    # The page reads the newest horizons record, wherever it sits in the file.
+    from radar import horizon
+    ev = horizon.evidence([{"ran_at": "2026-09-01", "verdict": "old"}, out, {"ran_at": "x", "score_vs_forward": {}}])
+    assert ev["ran_at"] == "2026-10-08" and ev["horizons"]["mid"]["windows"]["90"]["splits"] == w90["splits"]
+    assert horizon.evidence([]) is None
+
+
+def test_track_record_resolves_calls_and_plans_after_costs():
+    """A call is also resolved as a buyer lives it -- bought at the issue's live
+    entry, sold at the market less costs -- and the issue's budget plan is
+    valued the same way."""
+    from datetime import date, timedelta
+
+    from radar import track
+
+    d0 = date(2026, 8, 1)
+    def ser(p0, end):
+        return [((d0 + timedelta(days=i)).isoformat(), p0 + (end - p0) * i / 59, 1, None) for i in range(60)]
+    series = {("1", "Normal"): ser(100, 110), ("2", "Normal"): ser(50, 40), ("3", "Normal"): ser(20, 20)}
+    rows = [
+        {"card_id": "1", "printing": "Normal", "rank": 1, "floor_low": 100.0, "copies": 5, "set_name": "A"},
+        {"card_id": "2", "printing": "Normal", "rank": 2, "floor_low": 52.0, "copies": 5, "set_name": "B"},
+        {"card_id": "3", "printing": "Normal", "rank": 3, "set_name": "C"},
+    ]
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d); (root / "rankings").mkdir()
+        (root / "rankings" / "2026-08-01.json").write_text(json.dumps({"obs_date": "2026-08-01", "rows": rows}))
+        recs = track.issues(root / "rankings", series, "2026-09-29")
+        r = recs[0]
+        assert r["method"] == "retired score"
+        nets = r["calls_30_net"]
+        assert len(nets) == 2              # the third call had no live entry: not guessed
+        assert all(n < 0 for n in nets)    # +5% on the market is still a loss after costs
+        p500 = next(p for p in r["plans_30"] if p["budget"] == 500)
+        assert p500["positions"] == 2 and p500["net_pct"] < p500["market_pct"]
+        sm = track.summary(recs)
+        assert sm["net_calls"] == 2 and sm["net_profitable"] == 0 and sm["plans_30"]["date"] == "2026-08-01"
+        assert "made money" in track.headline(sm) and "0 of 2" in track.headline(sm)
+        html, _ = track.build(root, series, "2026-09-29")
+        assert "If you had followed the budget plan" in html and "retired score" in html
+
+
+def test_issue_snapshot_records_its_method_and_the_short_rank():
+    from radar import digest, horizon
+
+    ranked = horizon.rank([_hz_row("a", "LR+", "old", 2.0, floor_low=45.0, settled_price=50.0),
+                           _hz_row("b", "Common", "old", 2.0)],
+                          releases={"old": "2025-07-25"}, as_of="2026-10-08")
+    snap = digest.snapshot(ranked, obs_date="2026-10-08", market={"priced": 10, "up_7d": 3})
+    assert snap["method"] == digest.METHOD
+    a = next(r for r in snap["rows"] if r["card_id"] == "a")
+    assert a["rank"] == 1 and a["rank_short"] == 1 and a["hold_score"] is not None and a["hurdle_pct"] is not None
+    # An issue from before the change carries no method: the record can tell them apart.
+    old = digest.snapshot([{"card_id": "z", "printing": "Normal", "invest_score": 50}], obs_date="2026-09-01", market=None)
+    assert "method" not in old
+    with tempfile.TemporaryDirectory() as d:
+        digest.save(snap, d)
+        assert digest.latest_floors(d)[("a", "Holofoil")]["floor_low"] == 45.0
+
+
+def test_the_page_asks_how_long_you_will_hold_and_shows_that_rankings_record():
+    import re
+
+    from radar import haro, horizon, preview, validate
+
+    series, meta = _archive(n_cards=40)
+    ev = horizon.evidence([validate.run_horizons(series, meta, [{"id": "s1", "release_date": "2025-07-25"}],
+                                                 {"min_price": 10.0}, today="2026-10-08")])
+    rows = horizon.rank([_hz_row(str(i), "LR+" if i % 2 else "Common", "old", 1.5 + i / 10,
+                                 floor_low=48.0, settled_price=50.0) for i in range(12)],
+                        releases={"old": "2025-07-25"}, as_of="2026-10-08")
+    html = haro.render(rows, obs_date="2026-10-07", today="2026-10-08", evidence=ev,
+                       plan_cfg={"max_position_pct": 0.25, "max_set_pct": 0.5})
+    payload = json.loads(re.search(r'id="haro-data">(.*?)</script>', html, re.S).group(1)
+                         .replace("\\u003c", "<").replace("\\u003e", ">").replace("\\u0026", "&"))
+    assert payload["evidence"]["horizons"]["mid"]["windows"]["90"]["splits"] >= 5
+    assert payload["plan"]["max_set_pct"] == 0.5
+    assert [p[0] for p in payload["hold_parts"]] == ["tier", "age", "sales"]
+    for frag in ('id="horizon"', 'id="evs"', 'id="retired"', 'data-preset="1000"', "How long will you hold?"):
+        assert frag in html, frag
+    for fn in ("function renderHorizon(", "function planTotals(", "function allocate(", "const proceeds =", "const breakEven ="):
+        assert fn in haro.JS, fn
+    # The short view says why it is empty instead of blaming the filters.
+    assert "No card ranks for a hold under 30 days today" in haro.JS
+
+    door = preview.render(rows, obs_date="2026-10-07", today="2026-10-08", evidence=ev)
+    assert "ranked for a 3–6 month hold" in door and "hold score" in door and "Hold ranking, tested" in door
+    assert "Break-even" in door and "vs sold" not in door
+
 
 if __name__ == "__main__":
     passed = 0

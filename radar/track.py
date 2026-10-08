@@ -20,6 +20,19 @@ question is only whether the top 20 fell less.
 
 Nothing is dropped. An issue whose top 20 underperformed the pool stays on
 the page with its numbers in red.
+
+AFTER COSTS, AND WHICH RANKING (October 2026)
+
+A market-price move is not money in a reader's pocket. Every call that
+carried a live Near Mint entry price is also resolved the way a buyer would
+live it: bought at that entry, sold at the market price 30 days later less
+selling costs (radar/costs.py). And the budget plan the page would have
+drawn for $500 and $2,500 on each issue is valued the same way -- the
+model portfolio, from the stored issue alone, never re-run.
+
+Issues before 8 October 2026 were ranked by the retired score; later ones
+by the hold score (radar/horizon.py). Each row says which, so the record of
+the old method stays on the page beside the new one instead of vanishing.
 """
 
 from __future__ import annotations
@@ -36,6 +49,8 @@ from .playbook import _price_at
 
 TOP = 20
 HORIZONS = (30, 60, 90)
+PLAN_BUDGETS = (500, 2500)
+METHOD_NAMES = {None: "retired score", "horizons-2026-10": "hold score"}
 
 
 def _changes(keys: Sequence[tuple[str, str]], series: dict, start: str, end: str) -> list[float]:
@@ -53,7 +68,56 @@ def _median_change(keys: Sequence[tuple[str, str]], series: dict, start: str, en
     return (round(median(ch), 1) if len(ch) >= 5 else None), len(ch)
 
 
-def issues(rankings_dir: Path, series: dict, as_of: str) -> list[dict[str, Any]]:
+def _net_calls(rows: Sequence[dict], series: dict, end: str, cost_cfg: dict | None) -> list[float]:
+    """Each call bought at its live entry and sold at the market on `end`, less costs."""
+    from . import costs
+
+    out = []
+    for r in rows:
+        k = (str(r["card_id"]), r.get("printing") or "Normal")
+        p1 = _price_at(series.get(k, []), end, before=False)
+        n = costs.net_return_pct(r.get("floor_low"), p1, cost_cfg)
+        if n is not None:
+            out.append(n)
+    return out
+
+
+def plan_outcome(rows: Sequence[dict], series: dict, budget: float, end: str,
+                 cost_cfg: dict | None = None, plan_cfg: dict | None = None) -> dict | None:
+    """The page's budget plan on a stored issue, valued on `end`.
+
+    Sized exactly as the page sizes it (radar/plan.py) on the issue's own
+    entries and copies; valued at the market on `end`, and at what selling
+    every copy there would have returned."""
+    from . import costs
+    from .plan import allocate
+
+    ranked = sorted((r for r in rows if r.get("rank")), key=lambda r: r["rank"])
+    pc = plan_cfg or {}
+    plans = allocate(ranked, budget, max_position_pct=float(pc.get("max_position_pct", 0.25)),
+                     max_set_pct=float(pc.get("max_set_pct", 0.5)))
+    cost = value = back = 0.0
+    n = 0
+    for r, p in zip(ranked, plans):
+        if not p["qty"]:
+            continue
+        k = (str(r["card_id"]), r.get("printing") or "Normal")
+        p1 = _price_at(series.get(k, []), end, before=False)
+        if not p1:
+            return None   # a position we cannot value: say nothing rather than half
+        n += 1
+        cost += p["cost"]
+        value += p["qty"] * p1
+        back += p["qty"] * (costs.proceeds(p1, cost_cfg) or 0)
+    if not n or not cost:
+        return None
+    return {"budget": budget, "positions": n, "cost": round(cost, 2), "value": round(value, 2),
+            "proceeds": round(back, 2), "market_pct": round((value / cost - 1) * 100, 1),
+            "net_pct": round((back / cost - 1) * 100, 1)}
+
+
+def issues(rankings_dir: Path, series: dict, as_of: str, *, cost_cfg: dict | None = None,
+           plan_cfg: dict | None = None) -> list[dict[str, Any]]:
     out = []
     today = _date.fromisoformat(as_of)
     for path in sorted(rankings_dir.glob("*.json")):
@@ -66,9 +130,11 @@ def issues(rankings_dir: Path, series: dict, as_of: str) -> list[dict[str, Any]]
         if not rows or d >= as_of:
             continue
         key = lambda r: (str(r["card_id"]), r.get("printing") or "Normal")  # noqa: E731
-        top = [key(r) for r in rows if r["rank"] <= TOP]
+        top_rows = [r for r in rows if r["rank"] <= TOP]
+        top = [key(r) for r in top_rows]
         pool = [key(r) for r in rows]
-        rec: dict[str, Any] = {"date": d, "top_n": len(top), "pool_n": len(pool), "windows": {}}
+        rec: dict[str, Any] = {"date": d, "top_n": len(top), "pool_n": len(pool), "windows": {},
+                               "method": METHOD_NAMES.get(snap.get("method"), snap.get("method"))}
         start = _date.fromisoformat(d)
         for h in HORIZONS:
             end = start + timedelta(days=h)
@@ -81,11 +147,18 @@ def issues(rankings_dir: Path, series: dict, as_of: str) -> list[dict[str, Any]]
                     # Every top-20 call resolved on its own: the number a reader
                     # can hold the product to, one row per call, never edited.
                     rec["calls_30"] = [round(c, 1) for c in _changes(top, series, d, end.isoformat())]
+                    # ...and the way a buyer lives it: bought at the live entry,
+                    # sold at the market less costs.
+                    rec["calls_30_net"] = _net_calls(top_rows, series, end.isoformat(), cost_cfg)
+                    rec["plans_30"] = [p for p in (plan_outcome(rows, series, b, end.isoformat(), cost_cfg, plan_cfg)
+                                                   for b in PLAN_BUDGETS) if p]
         elapsed = (today - start).days
         t, tn = _median_change(top, series, d, as_of)
         p, pn = _median_change(pool, series, d, as_of)
         rec["to_date"] = {"days": elapsed, "top": t, "top_n": tn, "pool": p, "pool_n": pn,
                           "spread": round(t - p, 1) if t is not None and p is not None else None}
+        rec["plans_to_date"] = [p for p in (plan_outcome(rows, series, b, as_of, cost_cfg, plan_cfg)
+                                            for b in PLAN_BUDGETS) if p]
         out.append(rec)
     return out
 
@@ -110,6 +183,16 @@ def summary(recs: Sequence[dict]) -> dict[str, Any]:
     if calls:
         out.update({"calls_beat_pct": round(100 * beat / calls), "calls_up_pct": round(100 * up / calls),
                     "calls_median": round(median(all_calls), 1)})
+    nets = [n for r in recs for n in (r.get("calls_30_net") or [])]
+    if nets:
+        out.update({"net_calls": len(nets), "net_profitable": sum(1 for n in nets if n > 0),
+                    "net_median": round(median(nets), 1)})
+    # The model portfolio: the newest issue whose 30 days have closed, per budget.
+    closed = [r for r in recs if r.get("plans_30")]
+    if closed:
+        last = closed[-1]
+        out["plans_30"] = {"date": last["date"], "method": last.get("method"), "plans": last["plans_30"]}
+    out["methods"] = sorted({r.get("method") or "" for r in recs} - {""})
     return out
 
 
@@ -117,9 +200,13 @@ def headline(sm: dict) -> str:
     """One plain sentence for the top of the page and the sales copy. Empty until a window closes."""
     if not sm.get("calls_30"):
         return ""
-    return (f"Of {sm['calls_30']} top-20 calls resolved at 30 days, {sm['calls_beat_pct']}% beat their pool "
-            f"and {sm['calls_up_pct']}% were up; the median call moved {sm['calls_median']:+.1f}%"
-            + (f" against a median spread of {sm['median_spread']:+.1f}% over the pool." if sm.get("closed_30") else "."))
+    s = (f"Of {sm['calls_30']} top-20 calls resolved at 30 days, {sm['calls_beat_pct']}% beat their pool "
+         f"and {sm['calls_up_pct']}% were up; the median call moved {sm['calls_median']:+.1f}%"
+         + (f" against a median spread of {sm['median_spread']:+.1f}% over the pool." if sm.get("closed_30") else "."))
+    if sm.get("net_calls"):
+        s += (f" Bought at the cheapest Near Mint copy and sold at the market less selling costs, "
+              f"{sm['net_profitable']} of {sm['net_calls']} made money (median {sm['net_median']:+.1f}%).")
+    return s
 
 
 # ---------------------------------------------------------------- the page
@@ -148,6 +235,10 @@ footer{margin-top:36px;padding-top:14px;border-top:1px solid #2a2418;color:#9a91
 """
 
 
+def _rho(v) -> str:
+    return "—" if v is None else f"{v:+.2f}"
+
+
 def _cell(v, n=None) -> str:
     if v is None:
         return '<td class="num muted">—</td>'
@@ -171,10 +262,20 @@ def render(recs: Sequence[dict], validations: Sequence[dict], *, as_of: str, bra
         td = r["to_date"]
         cells += (_cell(td["top"], td["top_n"]) + _cell(td["pool"], td["pool_n"]) + _cell(td["spread"])
                   + f'<td class="num muted">{td["days"]}d</td>')
-        rows.append(f'<tr><td><b>{_esc(r["date"])}</b><span class="n">top {r["top_n"]} of {r["pool_n"]}</span></td>{cells}</tr>')
+        rows.append(f'<tr><td><b>{_esc(r["date"])}</b><span class="n">top {r["top_n"]} of {r["pool_n"]} · {_esc(r.get("method") or "")}</span></td>{cells}</tr>')
+    prow = []
+    for r in reversed(list(recs)):
+        for when, key in (("+30 days", "plans_30"), (f"to date ({r['to_date']['days']}d)", "plans_to_date")):
+            for pl in r.get(key) or []:
+                prow.append(f'<tr><td><b>{_esc(r["date"])}</b><span class="n">{_esc(r.get("method") or "")}</span></td>'
+                            f'<td class="num">${pl["budget"]:,.0f}</td><td>{_esc(when)}</td>'
+                            f'<td class="num">{pl["positions"]}</td><td class="num">${pl["cost"]:,.2f}</td>'
+                            f'{_cell(pl["market_pct"])}{_cell(pl["net_pct"])}</tr>')
 
     vrows = []
     for v in validations:
+        if v.get("kind") == "horizons":
+            continue   # the horizon rankings have their own table
         tq, al = v.get("top_quintile") or {}, v.get("all_eligible") or {}
         rho = (v.get("score_vs_forward") or {}).get("spearman")
         rho_cell = f'<td class="num">{rho:+.2f}</td>' if rho is not None else '<td class="num muted">—</td>'
@@ -195,10 +296,41 @@ def render(recs: Sequence[dict], validations: Sequence[dict], *, as_of: str, bra
     if sm["closed_30"]:
         head += (f'<div class="tile"><div class="l">Median spread, +30d</div><div class="big {"up" if sm["median_spread"] > 0 else "down"}">{sm["median_spread"]:+.1f}%</div>'
                  f'<div class="muted">top 20 minus the whole pool</div></div>')
-    base = next((v for v in validations if v.get("score_vs_forward")), None)
+    # The newest run of each test, never the first: the August calibration
+    # said +0.24 and the October run said -0.32, and only one of those is news.
+    base = next((v for v in reversed(list(validations)) if (v.get("score_vs_forward") or {}).get("spearman") is not None), None)
+    hz = next((v for v in reversed(list(validations)) if v.get("kind") == "horizons"), None)
+    w90 = (((hz or {}).get("horizons") or {}).get("mid") or {}).get("windows", {}).get("90") or {}
+    if w90.get("splits"):
+        head += (f'<div class="tile"><div class="l">Hold ranking, 90 days</div><div class="big {"up" if w90["top_median"] > w90["pool_median"] else "down"}">{w90["top_median"]:+.0f}%</div>'
+                 f'<div class="muted">top 20 vs {w90["pool_median"]:+.0f}% for the field · ahead in {w90["top_beat_pool"]} of {w90["splits"]} monthly tests</div></div>')
     if base:
-        head += (f'<div class="tile"><div class="l">Score vs forward return</div><div class="big">ρ = {base["score_vs_forward"]["spearman"]:+.2f}</div>'
-                 f'<div class="muted">walk-forward, n={base.get("eligible")}</div></div>')
+        head += (f'<div class="tile"><div class="l">Retired score vs forward return</div><div class="big {"down" if base["score_vs_forward"]["spearman"] < 0 else ""}">ρ = {base["score_vs_forward"]["spearman"]:+.2f}</div>'
+                 f'<div class="muted">walk-forward, {_esc(base.get("ran_at"))}, n={base.get("eligible")}</div></div>')
+    hrows = []
+    if hz:
+        from .horizon import LABELS
+
+        for name in ("mid", "long"):
+            for h, w in sorted(((hz["horizons"].get(name) or {}).get("windows") or {}).items(), key=lambda kv: int(kv[0])):
+                if not w.get("splits"):
+                    hrows.append(f'<tr><td><b>{_esc(LABELS[name])}</b><span class="n">{h} days</span></td><td colspan="6" class="muted">no {h}-day window has closed yet</td></tr>')
+                    continue
+                hrows.append(f'<tr><td><b>{_esc(LABELS[name])}</b><span class="n">{h} days · {w["splits"]} tests, {_esc(w["first"])} to {_esc(w["last"])}</span></td>'
+                             f'<td class="num">{w["rho_mean"]:+.2f}<span class="n">{w["rho_positive"]} positive</span></td>'
+                             f'{_cell(w["top_median"])}{_cell(w["pool_median"])}<td class="num">{w["top_beat_pool"]} of {w["splits"]}</td>'
+                             f'{_cell(w.get("top_net_median"))}<td class="num">{_rho((w.get("sold") or {}).get("rho_mean"))}</td></tr>')
+        sh = hz["horizons"].get("short") or {}
+        if sh.get("starts"):
+            hrows.append(f'<tr><td><b>{_esc(LABELS["short"])}</b><span class="n">30 days · {len(sh["starts"])} start dates</span></td>'
+                         f'<td colspan="6">{_esc(sh.get("verdict") or "")}</td></tr>')
+        lg = hz.get("legacy") or {}
+        for h, w in sorted((lg.get("windows") or {}).items(), key=lambda kv: int(kv[0])):
+            if w.get("splits"):
+                hrows.append(f'<tr><td><b>Retired score</b><span class="n">{h} days · {w["splits"]} weekly tests</span></td>'
+                             f'<td class="num">{w["rho_mean"]:+.2f}<span class="n">{w["rho_positive"]} positive</span></td>'
+                             f'{_cell(w["top_median"])}{_cell(w["pool_median"])}<td class="num">{w["top_beat_pool"]} of {w["splits"]}</td>'
+                             f'<td class="num muted">—</td><td class="num muted">—</td></tr>')
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_esc(brand)} — track record</title>
@@ -217,6 +349,18 @@ def render(recs: Sequence[dict], validations: Sequence[dict], *, as_of: str, bra
 <tr><th></th>{"<th class='num'>Top 20</th><th class='num'>Pool</th><th class='num'>Spread</th>" * 4}<th class="num">Days</th></tr></thead>
 <tbody>{"".join(rows) or '<tr><td colspan="14" class="muted">No issue is old enough to score yet.</td></tr>'}</tbody></table></div>
 
+<h2>If you had followed the budget plan</h2>
+<p>The plan the page would have drawn on each issue, sized on that issue&rsquo;s own live entry prices and copies (a quarter of the budget at most per card, half per set), then valued at the market and at what selling every copy there would have returned after the marketplace&rsquo;s cut. Never re-run, never resized.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Issue</th><th class="num">Budget</th><th>Valued</th><th class="num">Positions</th><th class="num">Cost</th><th class="num">At market</th><th class="num">After costs</th></tr></thead>
+<tbody>{"".join(prow) or '<tr><td colspan="7" class="muted">No issue carried live entry prices yet.</td></tr>'}</tbody></table></div>
+
+<h2>The rankings on the page, walked forward</h2>
+<p>Since 8 October 2026 the report ranks by hold horizon. Each ranking is tested monthly on our own archive: every card scored with only what was known on the day, then measured at the horizon it is for. <b>Top 20</b> and <b>field</b> are medians across the tests; <b>after costs</b> is the top 20 bought at the market and sold at the market less selling costs; <b>sold ρ</b> is the same ordering measured on what copies actually sold for.{f" Last run {_esc(hz.get('ran_at'))}." if hz else ""}</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Ranking</th><th class="num">ρ</th><th class="num">Top 20</th><th class="num">Field</th><th class="num">Ahead</th><th class="num">After costs</th><th class="num">Sold ρ</th></tr></thead>
+<tbody>{"".join(hrows) or '<tr><td colspan="7" class="muted">No walk-forward of the horizon rankings yet: run radar validate.</td></tr>'}</tbody></table></div>
+
 <h2>Does the score separate winners from losers?</h2>
 <p>Once a month the score is re-fitted on the first half of the stored history and measured on the second — a walk-forward test, the only honest kind. ρ is the rank correlation between score and what happened next. Above +0.20 with the top quintile beating the pool is working; near zero it has stopped separating; below zero it is inverted and the ranking should not be acted on.</p>
 <div class="tablewrap"><table>
@@ -231,8 +375,9 @@ def render(recs: Sequence[dict], validations: Sequence[dict], *, as_of: str, bra
 </div></body></html>"""
 
 
-def build(root: Path, series: dict, as_of: str, **kw) -> tuple[str, list[dict]]:
-    recs = issues(root / "rankings", series, as_of)
+def build(root: Path, series: dict, as_of: str, *, cost_cfg: dict | None = None,
+          plan_cfg: dict | None = None, **kw) -> tuple[str, list[dict]]:
+    recs = issues(root / "rankings", series, as_of, cost_cfg=cost_cfg, plan_cfg=plan_cfg)
     vpath = root / "validation_history.json"
     validations = json.loads(vpath.read_text(encoding="utf-8")) if vpath.exists() else []
     return render(recs, validations, as_of=as_of, **kw), recs

@@ -146,34 +146,31 @@ def cmd_invest(cfg, args) -> int:
             return 1
 
         min_price = float(icfg.get("min_price", 10.0))
+        cost_cfg = cfg.raw.get("costs") or {}
         rows = [dict(r) for r in db.latest_prices(obs)]
-        # The API's change_30d is the cheap pre-filter. When it is missing --
-        # an older archive, or a product the batch has not repriced -- fall
-        # back to the stored series rather than silently dropping the card.
-        series_30 = db.change_over_days(30)
-        def _up_30d(r: dict) -> bool:
-            c = r.get("change_30d")
-            if c is None:
-                c = series_30.get((r["card_id"], r.get("printing") or "Normal"))
-            return (c or 0) > 0
+        # The pool is every single at $10+. It used to be only the cards up
+        # over 30 days; that momentum filter hurt the hold ranking (the
+        # 90-day result of its top 20 fell from +24% to +10% with it on --
+        # radar/horizon.py), so the gates decide, not the last month.
         candidates = [
             r for r in rows
             if r.get("product_type") != "Sealed Products"
             and (r.get("market_price") or 0) >= min_price
-            and _up_30d(r)
         ]
-        print(f"{len(candidates)} cards at ${min_price:,.0f}+ and up over 30d.")
+        print(f"{len(candidates)} singles at ${min_price:,.0f}+.")
+        keys = [(r["card_id"], r.get("printing") or "Normal") for r in candidates]
+        # Boxes and decks sell too, and the sealed screen reads the same figures.
+        sealed_keys = [(r["card_id"], r.get("printing") or "Normal") for r in rows
+                       if r.get("product_type") == "Sealed Products" and r.get("market_price")]
 
         # 1. Make sure each candidate has daily history with sales volume.
         series = db.all_series_with_volume()
-        need = [
-            r for r in candidates
-            if len(series.get((r["card_id"], r.get("printing") or "Normal"), [])) < 45
-        ]
+        need = [r for r, k in zip(candidates, keys) if len(series.get(k, [])) < 45]
+        cap = int(icfg.get("history_lookups", 400))
         if need and not args.no_fetch:
-            print(f"Fetching 90-day history for {len(need)} of them...")
+            print(f"Fetching 90-day history for {min(len(need), cap)} of {len(need)} without it...")
             points = []
-            for i, r in enumerate(need, 1):
+            for i, r in enumerate(need[:cap], 1):
                 if client.budget_left <= 0:
                     print(f"  stopped at {i}/{len(need)} -- request budget")
                     break
@@ -197,7 +194,16 @@ def cmd_invest(cfg, args) -> int:
             points = [p for p in points if p["market_price"]]
             if points:
                 db.upsert_price_points(points)
-            series = db.all_series_with_volume()
+
+        # 1b. Keep the sales figures current. The daily batch carries none;
+        # without this they stop at whatever the last history pull saw
+        # (ingest.refresh_sales -- this is what went wrong in September).
+        if not args.no_fetch:
+            st = ingest.refresh_sales(db, client, keys + sealed_keys, as_of=obs,
+                                      stale_days=int(icfg.get("sales_stale_days", 2)),
+                                      limit=int(icfg.get("sales_lookups", 600)))
+            print(f"Sales figures: {st['stale']} stale, refreshed {st['fetched']} cards ({st['points']} points).")
+        series = db.all_series_with_volume()
 
         # 2. Measure.
         shelves = db.listings_series()
@@ -213,39 +219,40 @@ def cmd_invest(cfg, args) -> int:
                    "series_long": invest_mod.weekly_points(hist, 400)}
             measured.append(rec)
 
-        # 3. Live entry price for the strongest ones only.
-        preliminary = invest_mod.evaluate(measured, icfg)
-        alive = [r for r in preliminary if not r.get("disqualified")]
+        # 3. Rank once on the batch, to choose whose live shelf to pull: the
+        # top of the hold ranking, and the liquid cards listed furthest under
+        # what they sell for (the short view's candidates). One request each.
+        from . import horizon as horizon_mod
+
+        release_by_set = {str(s["id"]): s.get("release_date") for s in db.sets()}
+        preliminary = horizon_mod.rank(measured, releases=release_by_set, as_of=obs, cfg=icfg, cost_cfg=cost_cfg)
         n_entry = args.entries or int(icfg.get("entry_lookups", 40))
-        targets = [(r["card_id"], r.get("printing") or "Normal") for r in alive[:n_entry]]
+        targets = horizon_mod.lookup_targets(preliminary, hold_n=n_entry,
+                                             short_n=int(icfg.get("short_lookups", 30)))
         if targets and not args.no_fetch:
-            print(f"Pulling live entry prices for the top {len(targets)}...")
+            print(f"Pulling live entry prices for {len(targets)} cards...")
             floors = snipe_mod.fetch_floors(
-                client, targets, limit=n_entry, language=icfg.get("language", "English")
+                client, targets, limit=len(targets), language=icfg.get("language", "English")
             )
             if floors:
                 db.save_floors(floors.values())
-            for r in preliminary:
-                f = floors.get((r["card_id"], r.get("printing") or "Normal"))
-                if f:
-                    r["floor_low"] = f.get("floor_low")
-                    r["shelf_med"] = f.get("shelf_med")
-                    r["copies"] = f.get("copies")
-                    r["floor_language"] = f.get("language")
         else:
-            # Offline: the most recent stored shelf per card. Same fields as the
-            # live path so the detail panel renders identically.
-            stored = db.latest_floors()
-            for r in preliminary:
-                f = stored.get((r["card_id"], r.get("printing") or "Normal"))
-                if f:
-                    r["floor_low"] = f.get("floor_low")
-                    r["shelf_med"] = f.get("shelf_med")
-                    r["copies"] = f.get("copies")
-                    r["floor_language"] = f.get("language")
+            # Offline: the most recent stored shelf per card, or the shelf the
+            # newest published issue carried (the database is rebuilt from
+            # the archive each run and floors are not in it).
+            from . import digest as _digest
 
-        # 4. Score for real (scarcity uses copies) and render.
-        ranked = invest_mod.evaluate(preliminary, icfg)
+            floors = db.latest_floors() or _digest.latest_floors(cfg.path("data"))
+        for r in measured:
+            f = floors.get((r["card_id"], r.get("printing") or "Normal"))
+            if f:
+                r["floor_low"] = f.get("floor_low")
+                r["shelf_med"] = f.get("shelf_med")
+                r["copies"] = f.get("copies")
+                r["floor_language"] = f.get("language")
+
+        # 4. Rank for real, with the live shelf: costs, gates, per-horizon ranks.
+        ranked = horizon_mod.rank(measured, releases=release_by_set, as_of=obs, cfg=icfg, cost_cfg=cost_cfg)
         from . import digest as digest_mod
         from . import heat as heat_mod
 
@@ -263,10 +270,12 @@ def cmd_invest(cfg, args) -> int:
         from . import haro
 
         prev = digest_mod.previous(cfg.path("data"), obs)
+        # Rank movement only means something against the same ranking: the
+        # first issue on the hold score has nothing to compare with.
         prev_ranks = (
             {f"{r['card_id']}|{r.get('printing') or 'Normal'}": r["rank"]
              for r in prev["rows"] if r.get("rank")}
-            if prev else None
+            if prev and prev.get("method") == snap.get("method") else None
         )
         # The release calendar, drawn on every chart. Read from the sets table
         # the sync (or the archive) filled; nothing is hand-maintained.
@@ -298,7 +307,15 @@ def cmd_invest(cfg, args) -> int:
         pub_cfg = cfg.raw.get("publish") or {}
         site_url = (pub_cfg.get("site_url") or "").rstrip("/")
         report_url = (site_url + "/") if site_url else None
-        track_html, track_recs = track_mod.build(cfg.path("data"), series, obs, report_url=report_url or "")
+        track_html, track_recs = track_mod.build(cfg.path("data"), series, obs, report_url=report_url or "",
+                                                 cost_cfg=cost_cfg, plan_cfg=cfg.raw.get("plan") or {})
+        # The walk-forward record of every horizon's ranking: the newest
+        # `radar validate` run on file (monthly, in the workflow).
+        vpath = cfg.path("data/validation_history.json")
+        try:
+            evidence = horizon_mod.evidence(json.loads(vpath.read_text(encoding="utf-8")) if vpath.exists() else [])
+        except (ValueError, OSError):
+            evidence = None
         track_sm = track_mod.summary(track_recs)
         track_sm["headline"] = track_mod.headline(track_sm)
         if track_sm["headline"]:
@@ -319,6 +336,8 @@ def cmd_invest(cfg, args) -> int:
             record=track_sm,
             art_cache=cfg.path("data/images"),
             fetch_art=not getattr(args, "no_art_fetch", False),
+            evidence=evidence,
+            cost_cfg=cost_cfg,
         )
         out = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
         haro.write(html, out)
@@ -331,7 +350,7 @@ def cmd_invest(cfg, args) -> int:
         (out.parent / "preview.html").write_text(preview_mod.render(
             ranked, obs_date=obs, market=market, releases=calendar, today=today,
             record=track_sm, art_cache=cfg.path("data/images"),
-            fetch_art=not getattr(args, "no_art_fetch", False)), encoding="utf-8")
+            fetch_art=not getattr(args, "no_art_fetch", False), evidence=evidence), encoding="utf-8")
         print(f"Preview   -> {out.parent / 'preview.html'}")
         print(f"\nDashboard -> {out}")
 
@@ -341,32 +360,41 @@ def cmd_invest(cfg, args) -> int:
         drop = [r for r in ranked if r.get("disqualified")]
         if cfg.report.get("write_csv", True):
             cp = out.with_suffix(".csv")
-            cols = ["invest_score", "name", "set_name", "number", "rarity", "printing",
-                    "market_price", "settled_price", "ask_premium_pct",
-                    "change_30d", "change_90d", "consistency_pct",
+            cols = ["rank_mid", "rank_short", "hold_score", "name", "set_name", "number", "rarity", "printing",
+                    "floor_low", "sells_for", "break_even", "hurdle_pct", "set_age_days",
+                    "market_price", "settled_price", "change_30d", "change_90d",
                     "volatility_pct", "drawdown_pct", "avg_daily_sales", "days_traded_pct",
-                    "floor_low", "shelf_med", "copies", "tcgplayer_url"]
+                    "shelf_med", "copies", "tcgplayer_url"]
             with cp.open("w", newline="", encoding="utf-8") as fh:
                 w = csv.writer(fh)
                 w.writerow(cols)
                 for r in keep:
-                    w.writerow([r.get(c) for c in cols])
+                    hz = r.get("horizons") or {}
+                    extra = {"rank_mid": (hz.get("mid") or {}).get("rank"),
+                             "rank_short": (hz.get("short") or {}).get("rank")}
+                    w.writerow([extra.get(c, r.get(c)) for c in cols])
             print(f"CSV       -> {cp}")
 
-        print(f"\n{len(keep)} candidates, {len(drop)} screened out.")
-        print(f"{'':2}{'SCORE':>5}  {'CARD':<40} {'RARITY':<12} {'PRICE':>9} "
-              f"{'90D':>6} {'WKUP':>5} {'SALES':>6}  ENTRY")
+        n_short = sum(1 for r in keep if (r.get("horizons") or {}).get("short", {}).get("rank"))
+        print(f"\n{len(keep)} ranked for 3-6 months / 1 year+, {n_short} for under 30 days, {len(drop)} screened out.")
+        print(f"{'':2}{'HOLD':>5}  {'CARD':<40} {'RARITY':<12} {'ENTRY':>9} "
+              f"{'SELLS':>9} {'B/EVEN':>7} {'SALES':>6}  SET AGE")
         for r in keep[: args.top]:
             print(
-                f"  {r['invest_score']:5.1f}  {str(r.get('name'))[:40]:<40} "
-                f"{str(r.get('rarity') or '-')[:12]:<12} ${(r.get('market_price') or 0):8.2f} "
-                f"{(r.get('change_90d') or 0):+5.0f}% {(r.get('consistency_pct') or 0):4.0f}% "
+                f"  {(r.get('hold_score') or 0):5.1f}  {str(r.get('name'))[:40]:<40} "
+                f"{str(r.get('rarity') or '-')[:12]:<12} "
+                f"{('$%.2f' % r['floor_low']) if r.get('floor_low') else '-':>9} "
+                f"${(r.get('sells_for') or 0):8.2f} "
+                f"{(r.get('hurdle_pct') if r.get('hurdle_pct') is not None else 0):+6.0f}% "
                 f"{(r.get('avg_daily_sales') or 0):5.1f}  "
-                f"{('$%.2f' % r['floor_low']) if r.get('floor_low') else '-'}"
+                f"{r.get('set_age_days') if r.get('set_age_days') is not None else '-'}d"
             )
         if drop:
+            import re
             from collections import Counter
-            for reason, n in Counter(r["disqualified"] for r in drop).most_common():
+            # One line per kind of reason, not per percentage.
+            kinds = Counter(re.sub(r"\d+%", "N%", r["disqualified"]) for r in drop)
+            for reason, n in kinds.most_common():
                 print(f"  screened out: {n:>3}  {reason}")
         print(f"\n  {client.requests_made} API requests used.")
     finally:
@@ -545,12 +573,46 @@ def cmd_restore(cfg, args) -> int:
 
 
 def cmd_validate(cfg, args) -> int:
-    """Re-run the walk-forward test and record the result.
+    """Re-run the walk-forward tests and record the result.
 
-    Worth running monthly. The number to watch is not this run's rho, it is the
-    difference between this run's rho and the last one's.
+    Worth running monthly (the workflow does, on the 1st). By default this
+    walks every horizon's ranking forward across the whole archive
+    (validate.run_horizons) and appends the record the page reads its
+    "how this ranking has done" numbers from. `--legacy` runs the original
+    single-split test of the retired score instead.
     """
     from . import validate as validate_mod
+
+    if not getattr(args, "legacy", False):
+        db = Database(cfg.db_path)
+        try:
+            result = validate_mod.run_horizons(
+                db.all_series_with_volume(), db.card_meta(), db.sets(), cfg.raw.get("invest") or {},
+                entries=db.entry_series(), cost_cfg=cfg.raw.get("costs") or {},
+                today=getattr(args, "today", None))
+        finally:
+            db.close()
+        if not result.get("horizons"):
+            print(result.get("verdict") or "Nothing to measure.")
+            return 1
+        a = result.get("archive") or {}
+        print(f"Walk-forward of every horizon, archive {a.get('first')} to {a.get('last')}, run {result['ran_at']}")
+        for name in ("short", "mid", "long"):
+            h = result["horizons"].get(name) or {}
+            print(f"\n  {name.upper():6} {h.get('verdict')}")
+            for w, st in sorted((h.get("windows") or {}).items(), key=lambda kv: int(kv[0])):
+                if not st.get("splits"):
+                    print(f"         {w:>3}d  no window has closed yet")
+                    continue
+                print(f"         {w:>3}d  {st['splits']:>2} tests  rho {st['rho_mean']:+.2f} ({st['rho_positive']} positive)  "
+                      f"top 20 {st['top_median']:+6.1f}%  pool {st['pool_median']:+6.1f}%  "
+                      f"after costs {st.get('top_net_median', 0):+6.1f}%")
+        lg = result.get("legacy") or {}
+        print(f"\n  RETIRED SCORE  {lg.get('verdict')}")
+        out = cfg.path(args.out or "data/validation_history.json")
+        hist = validate_mod.append_history(out, result)
+        print(f"\nRecorded -> {out}  ({len(hist)} runs on file)")
+        return 0
 
     db = Database(cfg.db_path)
     try:
@@ -757,7 +819,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="re-run the walk-forward test -- does the score still separate winners?",
     )
     v.add_argument("--horizon", type=int, default=45,
-                   help="rows of history to measure forward (default 45)")
+                   help="with --legacy: rows of history to measure forward (default 45)")
+    v.add_argument("--legacy", action="store_true",
+                   help="run the original single-split test of the retired score instead")
+    v.add_argument("--today", help="date to stamp the run with (default: today)")
     v.add_argument("--out", help="where to append the run record")
 
     hh = sub.add_parser("heat", help="attention outside the price data: search, YouTube, rank")
