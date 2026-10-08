@@ -3,6 +3,25 @@
 Newest first. Dates are the day the work landed; issue dates are the price date the
 report carries.
 
+## 2026-10-08 — TCGplayer affiliate links
+
+- Impact's tag for TCGplayer's affiliate program goes in the `<head>` of the report and
+  the front door, verbatim as the account issued it, from `affiliate.impact_utt` in
+  config (`radar/affiliate.py`; a value that is not Impact's script address is refused).
+  It rewrites links to TCGplayer into tracked links; the report asks it to rescan after
+  every redraw and every opened row, because its rows are drawn after load. Checked in a
+  browser with a stand-in for Impact's script: 400 of 400 row links and the opened row's
+  button tracked, the English filter kept; with the tag blocked the links stay plain
+  TCGplayer links and nothing breaks.
+- Disclosure, as TCGplayer's partner guidelines and the FTC ask: a sentence above the
+  list ("…affiliate links… It never affects the ranking."), "affiliate link" beside every
+  Open on TCGplayer button, and a footer line on both pages saying the tag is there.
+- The first live issue on the hold rankings (2026-10-08) came out as expected: sales
+  figures back on 313 of 401 ranked cards (none the day before), 63 live entries, 56
+  cards ranked for under 30 days.
+- Tests: 65 (one new: the tag byte for byte, its place in both heads, the disclosures,
+  and a bad config value refused). The Worker is not touched.
+
 ## 2026-10-08 — Ranked by how long you hold; costs on every row; sales figures flow again
 
 - **The score is retired.** Walked forward on every week the archive can score (June to

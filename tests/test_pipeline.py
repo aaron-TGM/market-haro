@@ -2152,6 +2152,51 @@ def test_the_page_asks_how_long_you_will_hold_and_shows_that_rankings_record():
     assert "Break-even" in door and "vs sold" not in door
 
 
+def test_affiliate_tag_is_impacts_snippet_in_the_head_with_the_disclosures():
+    """Impact's tag, byte for byte as the account issued it, in the <head> of
+    both pages; the report says it is there before the first link and beside
+    every button, asks the tag to rescan what it draws later; and a value in
+    config that is not Impact's script never reaches the page."""
+    import re
+
+    from radar import affiliate, haro, horizon, preview
+
+    url = "https://utt.impactcdn.com/P-A7932176-99e6-4bba-b853-cab91180e88d1.js"
+    issued = ("<script type=\"text/javascript\">(function(i,m,p,a,c,t){c.ire_o=p;c[p]=c[p]||function(){(c[p].a=c[p].a||[]).push(arguments)};"
+              "t=a.createElement(m);var z=a.getElementsByTagName(m)[0];t.async=1;t.src=i;z.parentNode.insertBefore(t,z)})"
+              "('https://utt.impactcdn.com/P-A7932176-99e6-4bba-b853-cab91180e88d1.js','script','impactStat',document,window);"
+              "impactStat('transformLinks');impactStat('trackImpression');</script>")
+    cfg = {"impact_utt": url}
+    assert affiliate.head_tag(cfg) == issued
+    for bad in ("", None, "https://evil.example/x.js", "javascript:alert(1)",
+                "https://utt.impactcdn.com/a.js');alert(1);//", "http://utt.impactcdn.com/a.js"):
+        assert affiliate.head_tag({"impact_utt": bad}) == ""
+
+    rows = horizon.rank([_hz_row(str(i), "LR+", "old", 2.0, floor_low=48.0, settled_price=50.0,
+                                 tcgplayer_url=f"https://www.tcgplayer.com/product/{i}?Language=English") for i in range(12)],
+                        releases={"old": "2025-07-25"}, as_of="2026-10-08")
+    html = haro.render(rows, obs_date="2026-10-07", today="2026-10-08", affiliate_cfg=cfg)
+    head = html[: html.index("</head>")]
+    assert html.count(issued) == 1 and issued in head
+    assert "<script src" not in html                    # the tag builds its own element; nothing else loads
+    assert html.index('id="aff"') < html.index('id="rows"')
+    assert affiliate.DISCLOSURE in html and affiliate.FOOTER in html
+    payload = json.loads(re.search(r'id="haro-data">(.*?)</script>', html, re.S).group(1)
+                         .replace("\\u003c", "<").replace("\\u003e", ">").replace("\\u0026", "&"))
+    assert payload["affiliate"] == "affiliate link"
+    assert haro.JS.count("retrack();") >= 2 and "window.impactStat('transformLinks')" in haro.JS
+
+    plain = haro.render(rows, obs_date="2026-10-07", today="2026-10-08")
+    assert "impactcdn" not in plain and 'id="aff"' not in plain and '"affiliate":""' in plain
+
+    door = preview.render(rows, obs_date="2026-10-07", today="2026-10-08", affiliate_cfg=cfg)
+    assert door.count("<script") == 1 and door.index(issued) < door.index("<!--haro:head-->") < door.index("</head>")
+    for m in ("<!--haro:head-->", "<!--haro:auth-->", "<!--haro:script-->"):
+        assert door.count(m) == 1
+    assert "affiliate program through Impact" in door and "clerk" not in door.lower()
+    assert "<script" not in preview.render(rows, obs_date="2026-10-07", today="2026-10-08")
+
+
 if __name__ == "__main__":
     passed = 0
     for name, fn in sorted(globals().items()):

@@ -36,6 +36,12 @@ October 2026's change).
 - **Billing**: Stripe, on gundeck.ai, built by **Manus** (the AI developer of the
   gundeck.ai codebase, `aaron-TGM/gundeckai`). Its webhook writes `marketHaro` onto the
   Clerk user. Market Haro never calls Stripe or Clerk at request time.
+- **Affiliate**: TCGplayer's affiliate program through Impact (Aaron's Impact account).
+  Impact's tag sits in the `<head>` of the report and the front door, built by the
+  pipeline from `affiliate.impact_utt` in `config.yaml` (`radar/affiliate.py`); it turns
+  every link to TCGplayer into a tracked one. Earnings and payouts are in the Impact
+  dashboard. The disclosure on the page is required by TCGplayer's partner guidelines and
+  the FTC — keep it whenever the tag is on.
 
 ## Rules
 
@@ -62,10 +68,10 @@ October 2026's change).
 
 | | |
 |---|---|
-| Pipeline | `radar/` — `cli.py` (commands), `horizon.py` (the rankings per hold horizon), `costs.py` (the round trip), `invest.py` (measurements; the retired score), `validate.py` (the walk-forward the page shows), `haro.py` (report), `preview.py` (the front door), `track.py` (record), `ingest.py` (sync, sales refresh), `depth.py`, `sealed.py`, `db.py`, `art.py` |
+| Pipeline | `radar/` — `cli.py` (commands), `horizon.py` (the rankings per hold horizon), `costs.py` (the round trip), `affiliate.py` (Impact's tag and the disclosure), `invest.py` (measurements; the retired score), `validate.py` (the walk-forward the page shows), `haro.py` (report), `preview.py` (the front door), `track.py` (record), `ingest.py` (sync, sales refresh), `depth.py`, `sealed.py`, `db.py`, `art.py` |
 | Data | `data/history/*.ndjson` (the archive, in git), `data/rankings/YYYY-MM-DD.json` (every issue), `data/cards.ndjson`, `data/sets.ndjson` (set calendar — Stardust Trails GD06 is 2026-10-30) |
 | Worker | `worker/src/index.js`, `worker/test/gate.test.js` (`npm test`), `worker/wrangler.toml` (mirror) |
-| Tests | `python tests/test_pipeline.py` (64; one runs the page's JS sizing in node) and the Worker's 3 |
+| Tests | `python tests/test_pipeline.py` (65; one runs the page's JS sizing in node) and the Worker's 3 |
 | Docs | `docs/PLAN.md` (the launch plan, all blocks done), `docs/LAUNCH.md`, `docs/HANDOFF-gundeck.md`, `docs/REPLY-implementation-plan.md`, `DEPLOY.md`, `docs/ARCHITECTURE.md`, `docs/METHOD.md` |
 | Pages | `/` report (gated) or the front door (today's top ten from the pipeline, sign-in/plans from the Worker) · `/preview` and `/track-record` → `/` · `/me` · `/positions` · `/health` |
 
@@ -96,7 +102,9 @@ you can still build from the archive with `--no-fetch`-style paths; see `DEPLOY.
 ## Standing list after launch
 
 - Daily: is the Action green? (email on failure is set up in GitHub).
-- Weekly: Stripe trials → paid → churn; skim the report as a subscriber.
+- Weekly: Stripe trials → paid → churn; skim the report as a subscriber; Impact's
+  dashboard for clicks and commissions. Hover any "Open on TCGplayer" link: it should
+  show an Impact tracking address, not tcgplayer.com directly.
 - **Oct 16**: the Lifetime-increase announcement. **Oct 30**: GD06 releases; tick the
   workflow's *backfill* box on the next manual run so the new cards get their history.
 - Monthly (1st): the workflow's `radar validate` appends the horizon walk-forward to

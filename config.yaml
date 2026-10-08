@@ -163,6 +163,14 @@ watchlist:
     - 684008   # Giant Killing -- Starter Deck 09: Destiny Ignition
     - 707579   # Amuro Ray R+ -- Freedom Ascension
 
+# TCGplayer's affiliate program, through Impact (radar/affiliate.py). This is
+# the account's Universal Tracking Tag: it goes in the <head> of the report and
+# the front door, records page views, and rewrites links to TCGplayer into
+# tracked links. Public -- every visitor's browser loads it -- so not a secret.
+# Empty = no tag, plain links, no affiliate disclosure on the page.
+affiliate:
+  impact_utt: "https://utt.impactcdn.com/P-A7932176-99e6-4bba-b853-cab91180e88d1.js"
+
 # Where the report lives: one Cloudflare Worker (worker/) at the site URL
 # below. `radar publish` PUTs the built report and the track record to it with
 # HARO_ADMIN_SECRET from the environment (a repo secret in CI, .env locally).

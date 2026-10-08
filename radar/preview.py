@@ -10,7 +10,8 @@ release marks, the other nine closed with their sparklines -- then three
 blurred rows standing in for the rest, then the two plans.
 
 The page is self-contained (report CSS, card art embedded, no scripts of its
-own) and knows nothing about identity or billing. The Worker fills four
+own -- except Impact's affiliate tag in the head when `affiliate.impact_utt`
+is configured; radar/affiliate.py) and knows nothing about identity or billing. The Worker fills four
 markers when it serves it:
 
     <!--haro:head-->     Clerk's script tag, in the head
@@ -269,12 +270,16 @@ def render(
     sealed_n: int = 0,
     site_url: str = "",
     evidence: dict[str, Any] | None = None,
+    affiliate_cfg: dict[str, Any] | None = None,
 ) -> str:
     """`total_pass`, `pool_n`, `sealed_n` and `site_url` are accepted for
     compatibility with older callers and derived from `ranked` when absent.
     The rows are the report's default horizon, 3–6 months (radar/horizon.py);
     `evidence` is the newest walk-forward record, for its tile."""
+    from .affiliate import FOOTER as AFF_FOOTER, head_tag
     from .horizon import DEFAULT, rank as hz_rank
+
+    aff_tag = head_tag(affiliate_cfg)
 
     if any("horizons" not in r for r in ranked):
         ranked = hz_rank(ranked, releases={}, as_of=obs_date, regate=False)
@@ -311,6 +316,7 @@ def render(
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap">
 <style>{REPORT_CSS}{CSS}</style>
+{aff_tag}
 <!--haro:head-->
 </head>
 <body class="viz-root">
@@ -346,7 +352,7 @@ def render(
   <p class="fine">Card entered at sign-up, nothing charged for seven days. Sign in with a GUNDECK.AI account — free to create, the same login if you already play with GUNDECK. Signing in takes you to gundeck.ai for a moment and brings you straight back.</p>
 </div>
 
-<footer>Market Haro is published by GUNDECK.AI. Every number describes what a card has already done. Nothing here is a forecast, a recommendation or financial advice; trading cards can lose value. Prices from tcgapi.dev under commercial licence.</footer>
+<footer>Market Haro is published by GUNDECK.AI. Every number describes what a card has already done. Nothing here is a forecast, a recommendation or financial advice; trading cards can lose value.{(" " + _esc(AFF_FOOTER)) if aff_tag else ""} Prices from tcgapi.dev under commercial licence.</footer>
 </div>
 <!--haro:script-->
 </body></html>"""
