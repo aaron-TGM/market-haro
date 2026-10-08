@@ -338,6 +338,7 @@ def cmd_invest(cfg, args) -> int:
             fetch_art=not getattr(args, "no_art_fetch", False),
             evidence=evidence,
             cost_cfg=cost_cfg,
+            affiliate_cfg=cfg.raw.get("affiliate") or {},
         )
         out = cfg.path(args.out or cfg.report.get("output_path", "out/dashboard.html"))
         haro.write(html, out)
@@ -350,7 +351,8 @@ def cmd_invest(cfg, args) -> int:
         (out.parent / "preview.html").write_text(preview_mod.render(
             ranked, obs_date=obs, market=market, releases=calendar, today=today,
             record=track_sm, art_cache=cfg.path("data/images"),
-            fetch_art=not getattr(args, "no_art_fetch", False), evidence=evidence), encoding="utf-8")
+            fetch_art=not getattr(args, "no_art_fetch", False), evidence=evidence,
+            affiliate_cfg=cfg.raw.get("affiliate") or {}), encoding="utf-8")
         print(f"Preview   -> {out.parent / 'preview.html'}")
         print(f"\nDashboard -> {out}")
 

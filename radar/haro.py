@@ -367,6 +367,8 @@ a.kpi{display:block;color:inherit} a.kpi:hover{text-decoration:none;border-color
 .presets button:hover{border-color:var(--accent)}
 .presets button.on{color:var(--bg);background:var(--accent);border-color:var(--accent)}
 .hurdle{font-weight:700} .hurdle.ok{color:var(--up)} .hurdle.mid{color:var(--warn)} .hurdle.hi{color:var(--down)}
+.aff{font-size:12px;color:var(--text);margin:10px 0 0;line-height:1.5}
+.affnote{font-size:11px;color:var(--text-muted);align-self:center;letter-spacing:.04em}
 .score .n.hurdle{font-size:22px}
 
 /* misc --------------------------------------------------------------- */
@@ -468,6 +470,13 @@ const breakEven = entry => (entry > 0) ? (entry + COSTS.sell_fee_fixed)/(1-COSTS
 const hurdleCls = v => v==null ? '' : (v <= 10 ? 'ok' : (v <= 25 ? 'mid' : 'hi'));
 const hurdleHTML = v => v==null ? '<span class="flat">—</span>'
   : `<span class="hurdle ${hurdleCls(v)}">${v>0?'+':''}${v.toFixed(0)}%</span>`;
+// ---- the affiliate tag (radar/affiliate.py) ------------------------------
+// Impact's tag rewrites links to TCGplayer when it scans the page. Rows are
+// drawn here, after load, and a row's button only exists once it opens, so
+// ask it to scan again after every redraw; links it already rewrote are left
+// alone. No tag configured: nothing happens.
+const AFF = !!DATA.affiliate;
+function retrack(){ if (!AFF) return; try { if (typeof window.impactStat === 'function') window.impactStat('transformLinks'); } catch(e){} }
 
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -971,6 +980,7 @@ function toggleRow(row, r){
     state.open.add(k); row.classList.add('open'); row.setAttribute('aria-expanded', 'true');
     row.querySelector('.chart').outerHTML = bigChart(r);
     row.insertAdjacentHTML('beforeend', detailHTML(r, PLANS.get(k)));
+    retrack();
   } else {
     state.open.delete(k); row.classList.remove('open'); row.setAttribute('aria-expanded', 'false');
     // The detail stays where it is, out of the flow, and fades while the
@@ -1112,7 +1122,7 @@ function detailHTML(r, plan){
       <div class="heroes">${heroes}</div>
       <div class="callout"><span class="cl">The case</span>${esc(r.thesis||'')}</div>
       ${watchTxt ? `<div class="callout ${calm?'good':'warn'}"><span class="cl">${calm?'Nothing flashing':'What would break it'}</span>${esc(watchTxt)}</div>` : ''}
-      <div class="dbtns">${url?`<a class="cta" href="${esc(url)}" target="_blank" rel="noopener">Open on TCGplayer</a>`:''}
+      <div class="dbtns">${url?`<a class="cta" href="${esc(url)}" target="_blank" rel="noopener">Open on TCGplayer</a>${AFF?`<span class="affnote">${esc(DATA.affiliate)}</span>`:''}`:''}
         <button class="cta quiet" data-star="${esc(k)}">${isWatched(r)?'Remove from watchlist':'Add to watchlist'}</button></div>
     </div>
     <div class="dg dgrid detail">
@@ -1229,6 +1239,7 @@ function apply(){
   fb.classList.toggle('on', !!n);
   window.__view = rows;
   renderPortfolio();
+  retrack();
 }
 
 function clearFilters(){
@@ -1558,6 +1569,7 @@ def render(
     track_url: str = "",
     evidence: dict[str, Any] | None = None,
     cost_cfg: dict[str, Any] | None = None,
+    affiliate_cfg: dict[str, Any] | None = None,
 ) -> str:
     """`since` and `heat` are accepted for compatibility and unused: the
     issue-to-issue comparison is the email digest's job, and the hand-kept
@@ -1566,11 +1578,13 @@ def render(
     `ranked` is radar/horizon.rank()'s output: every row carries its rank per
     hold horizon. Rows from anywhere else (an older caller, a test fixture)
     are ranked here first, so the page always has the same shape."""
+    from . import affiliate as affiliate_mod
     from . import costs as costs_mod
     from . import horizon as horizon_mod
 
     market = market or {}
     releases = releases or []
+    aff_tag = affiliate_mod.head_tag(affiliate_cfg)
     if any("horizons" not in r for r in ranked):
         ranked = horizon_mod.rank(ranked, releases={}, as_of=obs_date, cost_cfg=cost_cfg, regate=False)
     candidates = [r for r in ranked if not r.get("disqualified")]
@@ -1623,6 +1637,8 @@ def render(
         "costs": costs_mod.settings(cost_cfg),
         "evidence": evidence,
         "cal": horizon_mod.calendar_read(playbook, releases, today or obs_date),
+        # The note beside each TCGplayer button when the affiliate tag is on.
+        "affiliate": affiliate_mod.BUTTON_NOTE if aff_tag else "",
         "prev_ranks": prev_ranks or None,
         "releases": [{"date": m["date"], "label": m["label"], "kind": m.get("kind"),
                       "names": m.get("names") or []} for m in releases],
@@ -1644,6 +1660,7 @@ def render(
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap">
 <style>{CSS}</style>
+{aff_tag}
 </head>
 <body class="viz-root">
 <div class="wrap">
@@ -1712,6 +1729,7 @@ def render(
   </div>
 </div>
 
+{f'<p class="aff" id="aff">{_esc(affiliate_mod.DISCLOSURE)}</p>' if aff_tag else ''}
 <div class="rows" id="rows"></div>
 <div class="more" id="more" style="display:none"><button class="ghost" id="more-all">Show all</button></div>
 
@@ -1735,7 +1753,7 @@ def render(
 <div class="rej" id="screened-out">{_rejected_table(rejected)}</div>
 
 <footer>
-  <p><b>Market Haro</b> is published by GUNDECK.AI for its subscribers. Every number on this page describes what a card has already done. Nothing here is a forecast, a recommendation, or financial advice, and nothing knows <em>why</em> a price is moving — bans, reprints, rotation and tournament results end runs and are invisible in price data. Trading cards can lose value. Your watchlist and positions are saved in this browser, and to your account when you are signed in on the site — nowhere else. Prices from tcgapi.dev under commercial licence · © GUNDECK.AI</p>
+  <p><b>Market Haro</b> is published by GUNDECK.AI for its subscribers. Every number on this page describes what a card has already done. Nothing here is a forecast, a recommendation, or financial advice, and nothing knows <em>why</em> a price is moving — bans, reprints, rotation and tournament results end runs and are invisible in price data. Trading cards can lose value. Your watchlist and positions are saved in this browser, and to your account when you are signed in on the site — nowhere else.{(" " + _esc(affiliate_mod.FOOTER)) if aff_tag else ""} Prices from tcgapi.dev under commercial licence · © GUNDECK.AI</p>
 </footer>
 </div>
 <div id="tip" role="tooltip"></div>

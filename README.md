@@ -59,6 +59,11 @@ you pay), what copies actually sold for over 14 days, and the move the card need
 selling it gives back what it cost — 10.75% + 2.5% + $0.30 of TCGplayer's cut by default
 (`costs:` in config.yaml).
 
+**Affiliate links.** Links to TCGplayer go through TCGplayer's affiliate program
+(Impact's tag in the page `<head>`, `affiliate:` in config.yaml): a reader who buys
+through one earns Market Haro a commission at no cost to them. The page says so above the
+list and beside every TCGplayer button, and the ranking never sees it.
+
 **The budget tool.** Enter a number or pick $250 / $500 / $1,000 / $2,500 / $5,000 and
 every row gets a size — copies, cost, what limited it — walked down the chosen ranking with
 a cap per card and per set; the plan shows its own break-even and how many days the exit
@@ -122,7 +127,7 @@ python -m radar doctor          # verifies the key and every endpoint used
 python -m radar restore         # rebuild the database from data/history
 python -m radar run             # sync, measure, score, render
 open out/dashboard.html         # the report; out/preview.html is the front door
-python tests/test_pipeline.py   # 64 tests
+python tests/test_pipeline.py   # 65 tests
 ```
 
 A full daily run is ~300–700 API requests of the Pro plan's 10,000: about one per card whose
