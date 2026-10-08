@@ -214,8 +214,27 @@ def settled(pts: Sequence[tuple[str, float, float, float | None]], window: int =
 
     That is worth showing. It is still not a forecast, and it is not labelled
     as one -- it is the price copies have been trading at.
+
+    CORRECTION, OCTOBER 2026
+
+    Those numbers measured the gap against the next 30 days of MARKET price.
+    TCGplayer's market price is itself built from recent sales and lags them,
+    so a market price below the sales average rises toward it more or less by
+    construction. Re-measured against what copies actually SOLD for 30 days
+    later, the gap has no edge (rho -0.17 at 30 days, 0 of 8 test dates
+    positive; docs/METHOD.md). It stays on the page as a description of where
+    copies trade, and the page no longer quotes it as a return.
+
+    The window is the last `window` days by date, not the last `window`
+    points: the archive holds a price row on every batch day and a sales
+    figure only where the history endpoint filled one, so counting points
+    would let a run of sales-less rows push real sales out of the window.
     """
-    recent = [p for p in pts[-window:] if len(p) > 3 and p[3] and p[2] > 0]
+    try:
+        cut = (_date.fromisoformat(str(pts[-1][0])[:10]) - _timedelta(days=window)).isoformat()
+    except (IndexError, ValueError, TypeError):
+        cut = ""
+    recent = [p for p in pts if str(p[0])[:10] > cut and len(p) > 3 and p[3] and (p[2] or 0) > 0]
     volume = sum(p[2] for p in recent)
     if len(recent) < 3 or volume <= 0:
         # Under three days of real sales the average is one or two transactions
@@ -229,6 +248,75 @@ def settled(pts: Sequence[tuple[str, float, float, float | None]], window: int =
         "settled_days": len(recent),
         "settled_volume": round(volume),
     }
+
+
+MIN_SALES_DAYS = 14
+
+
+def sales_rate(pts: Sequence[Sequence[Any]], *, window: int = WINDOW_DAYS,
+               as_of: str | None = None) -> dict[str, Any]:
+    """Copies sold a day, measured only over the days the archive has sales figures for.
+
+    `pts` is [(date, price, volume or None, ...)] oldest first. Each point's
+    volume covers the days since the point before it, capped at seven: the
+    history endpoint's year/all ranges are weekly points carrying a week's
+    sales (measured: ~160 a point against ~15 a day for the same cards), and
+    daily points cover one day. So a weekly stretch and a daily stretch
+    measure the same thing, and a validation run that scores a card on
+    weekly history in January and on daily history in July compares like
+    with like.
+
+    A point with no volume figure is not a zero. The daily price batch
+    carries no sales, and until October 2026 every batch row was read as a
+    day with no sales -- Silver Bullet went from 7.8 sales a day to 3.9 in a
+    month without a single real change, and by December every card would
+    have failed the "no sales in 90 days" gate. Unknown days are skipped,
+    along with the days they would have covered.
+
+    Returns per_day (None under MIN_SALES_DAYS covered days), the days
+    covered, and the share of known single days with any sale.
+    """
+    out: dict[str, Any] = {"per_day": None, "covered_days": 0, "traded_pct": None}
+    if not pts:
+        return out
+    try:
+        end = _date.fromisoformat(str(as_of or pts[-1][0])[:10])
+    except (ValueError, TypeError):
+        return out
+    start = end - _timedelta(days=window)
+    dated = []
+    for row in pts:
+        try:
+            dated.append((_date.fromisoformat(str(row[0])[:10]), row))
+        except (ValueError, TypeError):
+            continue
+    volume, covered, single_days, traded = 0.0, 0, 0, 0
+    for i, (d, row) in enumerate(dated):
+        if d > end:
+            break
+        # The first point has nothing before it; it covers what its
+        # neighbour does (a day in a daily run, a week in a weekly one).
+        if i:
+            gap = (d - dated[i - 1][0]).days
+        else:
+            gap = (dated[1][0] - d).days if len(dated) > 1 else 1
+        if d <= start:
+            continue
+        v = _f(row[2]) if len(row) > 2 else None
+        if v is None or v < 0:
+            continue
+        cover = max(1, min(gap, 7))
+        volume += v
+        covered += cover
+        if cover == 1:
+            single_days += 1
+            traded += v > 0
+    out["covered_days"] = covered
+    if covered >= MIN_SALES_DAYS:
+        out["per_day"] = round(volume / covered, 2)
+    if single_days >= MIN_SALES_DAYS:
+        out["traded_pct"] = round(traded / single_days * 100)
+    return out
 
 
 def weekly_points(pts: Sequence[Sequence[Any]], days: int) -> list[tuple[str, float]]:
@@ -264,14 +352,15 @@ def features(series: Sequence[Sequence[Any]]) -> dict[str, Any] | None:
 
     Returns None when there isn't enough history to say anything.
     """
-    full: list[tuple[str, float, float, float | None]] = []
+    full: list[tuple[str, float, float | None, float | None]] = []
     for row in series:
         date = row[0]
         price = _f(row[1]) if len(row) > 1 else None
-        volume = _f(row[2]) if len(row) > 2 else 0.0
+        # None is "no sales figure for this day", not "no sales": see sales_rate.
+        volume = _f(row[2]) if len(row) > 2 else None
         sold = _f(row[3]) if len(row) > 3 else None
         if price and price > 0:
-            full.append((date, price, volume or 0.0, sold if sold and sold > 0 else None))
+            full.append((date, price, volume, sold if sold and sold > 0 else None))
     if not full:
         return None
     # The measurements are 90-day measurements. The stored series can run back
@@ -284,7 +373,6 @@ def features(series: Sequence[Sequence[Any]]) -> dict[str, Any] | None:
         return None
 
     px = [p[1] for p in pts]
-    vol = [p[2] for p in pts]
     last, first, high = px[-1], px[0], max(px)
 
     # Weekly closes, walking back from today so the most recent week is whole.
@@ -297,12 +385,15 @@ def features(series: Sequence[Sequence[Any]]) -> dict[str, Any] | None:
     var = sum((r - mean) ** 2 for r in rets) / len(rets) if rets else 0.0
     volatility = round(math.sqrt(var) * 100, 1)
 
-    days = len(vol)
+    days = len(pts)
+    rate = sales_rate(full)
     # Money through the product: copies sold x what they sold for (the market
     # price when no sale price is recorded), over the last 30 days. Grayson's
     # "dollar absorption": how much of the market this card actually is.
-    last30 = _window(pts, 30)
-    dollars_30d = round(sum(p[2] * (p[3] or p[1]) for p in last30))
+    # Blank, not zero, when the last 30 days carry too few sales figures.
+    last30 = [p for p in _window(pts, 30) if p[2] is not None]
+    dollars_30d = (round(sum(p[2] * (p[3] or p[1]) for p in last30))
+                   if sales_rate(full, window=30)["covered_days"] >= MIN_SALES_DAYS else None)
     # The high since we have tracked it -- the whole stored series, not the
     # window -- and the day it was set. "This was $1,000 once" is context a
     # 90-day high cannot give.
@@ -331,8 +422,9 @@ def features(series: Sequence[Sequence[Any]]) -> dict[str, Any] | None:
         "drawdown_pct": round((1 - last / high) * 100, 1) if high else 0.0,
         "consistency_pct": consistency,
         "volatility_pct": volatility,
-        "avg_daily_sales": round(sum(vol) / days, 1),
-        "days_traded_pct": round(sum(1 for v in vol if v > 0) / days * 100),
+        "avg_daily_sales": rate["per_day"],
+        "days_traded_pct": rate["traded_pct"],
+        "sales_days_known": rate["covered_days"],
         "history_points": days,
     }
 
@@ -355,6 +447,8 @@ def disqualify(row: dict, cfg: dict) -> str | None:
         return "No price history pulled yet — run `radar invest`"
     if int(row.get("history_points") or 0) < int(cfg.get("min_history_days", 45)):
         return "Too new — under 45 days of price history to judge"
+    if row.get("avg_daily_sales") is None:
+        return "No sales figures for this card yet — the exit can't be judged"
     if (_f(row.get("avg_daily_sales")) or 0.0) <= 0:
         return "No recorded sales in 90 days — no way out of the position"
     if (_f(row.get("change_90d")) or 0.0) < 0:
@@ -494,10 +588,11 @@ def watch_for(row: dict) -> str:
     # wait, not no -- so it belongs here rather than in the score or the gates.
     prem = _f(row.get("ask_premium_pct"))
     if prem is not None and prem > 5:
+        # Said as a fact about today, not as a forecast: the "it drifts back"
+        # reading was the market price catching up to sales (settled()).
         parts.append(
             f"the listed price is running {prem:.0f}% above what copies have actually "
-            f"been selling for (${row.get('settled_price'):,.2f}), which historically "
-            f"drifted back rather than held"
+            f"been selling for (${row.get('settled_price'):,.2f})"
         )
     if not parts:
         parts.append("nothing in the numbers is flashing yet")

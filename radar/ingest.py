@@ -299,6 +299,77 @@ def backfill_history(
     return written
 
 
+def refresh_sales(
+    db: Database,
+    client: TCGClient,
+    keys: list[tuple[str, str]],
+    *,
+    as_of: str,
+    stale_days: int = 2,
+    limit: int = 600,
+) -> dict[str, int]:
+    """Keep the sales figures of the cards on the page current.
+
+    THE BUG THIS FIXES (October 2026)
+
+    The daily price batch carries no sales. Sales volume and the price copies
+    sold for come only from `/cards/:id/history`, and the pipeline called
+    that only for cards with under 45 days of history. Once the archive was
+    deep enough -- around 7 September -- no sales figure entered it again:
+    by 7 October not one ranked card had a settled price, and liquidity read
+    lower every day. This asks the history endpoint for the last month of
+    every card whose newest sales figure is more than `stale_days` old, at one
+    request a card, stalest first, capped at `limit` a run (the pool is about
+    500 cards; the plan allows 10,000 requests a day).
+
+    History rows are stored as `history`, so a day the batch already priced
+    keeps the batch's market price and gains the sales figures beside it
+    (db.upsert_price_points).
+    """
+    from datetime import date as _date
+    from datetime import timedelta as _td
+
+    seen = db.sales_last_seen()
+    cutoff = (_date.fromisoformat(as_of) - _td(days=stale_days)).isoformat()
+    todo = sorted((k for k in keys if (seen.get(k) or "") < cutoff), key=lambda k: seen.get(k) or "")
+    stats = {"stale": len(todo), "fetched": 0, "points": 0}
+    done_cards: set[str] = set()
+    for i, (card_id, _printing) in enumerate(todo[:limit], 1):
+        if card_id in done_cards:
+            continue   # one request returns every printing of the card
+        if client.budget_left <= 0:
+            log.warning("Sales refresh stopped at %d/%d -- budget", i, len(todo))
+            break
+        try:
+            hist = client.card_history(card_id, "month")
+        except RateLimitExhausted:
+            log.warning("Sales refresh stopped at %d/%d -- rate limit", i, len(todo))
+            break
+        except Exception as exc:  # one bad card must not stop the issue
+            log.debug("Sales refresh failed for %s: %s", card_id, exc)
+            continue
+        done_cards.add(card_id)
+        stats["fetched"] += 1
+        points = []
+        for h in hist or []:
+            d = h.get("date") or h.get("obs_date")
+            if not d:
+                continue
+            points.append({
+                "card_id": str(card_id),
+                "printing": h.get("printing") or "Normal",
+                "obs_date": str(d)[:10],
+                "market_price": _price(h.get("market_price")),
+                "sales_volume": h.get("sales_volume"),
+                "avg_sales_price": _price(h.get("avg_sales_price")),
+                "source": "history",
+            })
+        points = [p for p in points if p["market_price"] is not None]
+        if points:
+            stats["points"] += db.upsert_price_points(points)
+    return stats
+
+
 def enrich_flagged(
     cfg: Config,
     db: Database,

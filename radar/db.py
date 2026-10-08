@@ -534,8 +534,13 @@ class Database:
         Four columns, not three: `market_price` is derived from listings, while
         `avg_sales_price` is what copies actually changed hands for that day.
         The gap between them is the settled-price measurement in invest.py.
+
+        A missing sales figure stays None. The daily price batch carries no
+        sales at all, so a snapshot row says nothing about how many copies
+        sold that day; reading it as zero made every card look less liquid
+        each day the history went unrefreshed (invest.sales_rate).
         """
-        out: dict[tuple[str, str], list[tuple[str, float, float, float | None]]] = {}
+        out: dict[tuple[str, str], list[tuple[str, float, float | None, float | None]]] = {}
         for row in self.conn.execute(
             """SELECT card_id, printing, obs_date, market_price, sales_volume,
                       avg_sales_price
@@ -543,16 +548,47 @@ class Database:
                WHERE market_price IS NOT NULL
                ORDER BY card_id, printing, obs_date ASC"""
         ):
-            asp = row["avg_sales_price"]
+            asp, vol = row["avg_sales_price"], row["sales_volume"]
             out.setdefault((row["card_id"], row["printing"]), []).append(
                 (
                     row["obs_date"],
                     float(row["market_price"]),
-                    float(row["sales_volume"] or 0),
+                    float(vol) if vol is not None else None,
                     float(asp) if asp else None,
                 )
             )
         return out
+
+    def entry_series(self) -> dict[tuple[str, str], dict[str, float]]:
+        """The batch's cheapest listing with shipping, any condition, per date.
+        Recorded from August 2026; the short-horizon test buys at it."""
+        out: dict[tuple[str, str], dict[str, float]] = {}
+        for r in self.conn.execute(
+            """SELECT card_id, printing, obs_date, lowest_with_shipping FROM price_points
+               WHERE lowest_with_shipping IS NOT NULL AND lowest_with_shipping > 0"""
+        ):
+            out.setdefault((r["card_id"], r["printing"]), {})[r["obs_date"]] = float(r["lowest_with_shipping"])
+        return out
+
+    def card_meta(self) -> dict[str, dict]:
+        """card id -> the fields the rankings need, for every card in the catalogue."""
+        return {
+            str(r["id"]): dict(r)
+            for r in self.conn.execute(
+                """SELECT c.id, c.name, c.number, c.rarity, c.set_id, c.product_type,
+                          COALESCE(c.set_name, s.name) AS set_name
+                   FROM cards c LEFT JOIN sets s ON s.id = c.set_id""")
+        }
+
+    def sales_last_seen(self) -> dict[tuple[str, str], str]:
+        """The newest date each series has a sales figure for. A series the
+        history endpoint has never filled is absent."""
+        return {
+            (r["card_id"], r["printing"]): r["d"]
+            for r in self.conn.execute(
+                """SELECT card_id, printing, MAX(obs_date) AS d FROM price_points
+                   WHERE sales_volume IS NOT NULL GROUP BY card_id, printing""")
+        }
 
     def change_over_days(self, days: int) -> dict[tuple[str, str], float]:
         """% change from the close nearest `days` before the latest close, per series.

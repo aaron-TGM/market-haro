@@ -26,7 +26,11 @@ KEEP = (
     "tcgplayer_url", "market_price", "floor_low", "shelf_med", "copies",
     "settled_price", "ask_premium_pct", "invest_score", "disqualified",
     "change_7d", "change_30d", "change_90d", "avg_daily_sales", "consistency_pct",
+    # From 2026-10-08 (radar/horizon.py): the hold score behind `rank`, what a
+    # round trip costs, and the under-30-days ranking beside it.
+    "hold_score", "set_age_days", "sells_for", "break_even", "hurdle_pct",
 )
+METHOD = "horizons-2026-10"
 
 
 def _key(r: dict) -> tuple[str, str]:
@@ -40,11 +44,18 @@ def snapshot(ranked: Sequence[dict], *, obs_date: str, market: dict | None) -> d
     for r in ranked:
         if not r.get("disqualified"):
             rank += 1
-        rows.append({**{k: r.get(k) for k in KEEP}, "rank": rank if not r.get("disqualified") else None})
+        row = {**{k: r.get(k) for k in KEEP}, "rank": rank if not r.get("disqualified") else None}
+        hz = r.get("horizons")
+        if hz:
+            row["rank_short"] = (hz.get("short") or {}).get("rank")
+        rows.append(row)
     m = market or {}
     priced = m.get("priced") or 0
     return {
         "obs_date": obs_date,
+        # Which ranking `rank` is: absent on issues before 2026-10-08 (the
+        # retired score), "horizons-2026-10" after (the hold score).
+        **({"method": METHOD} if any(r.get("horizons") for r in ranked) else {}),
         "rows": rows,
         "breadth_pct": round(100 * (m.get("up_7d") or 0) / priced) if priced else None,
         "priced": priced,
@@ -57,6 +68,24 @@ def save(snap: dict, root: str | Path) -> Path:
     p = d / f"{snap['obs_date']}.json"
     p.write_text(json.dumps(snap, separators=(",", ":")), encoding="utf-8")
     return p
+
+
+def latest_floors(root: str | Path) -> dict[tuple[str, str], dict]:
+    """The live shelf the newest stored issue carried, for an offline rebuild:
+    the database is rebuilt from the archive on every run and the shelf is
+    not in the archive, so this is the last one anybody saw."""
+    d = Path(root) / "rankings"
+    for p in sorted(d.glob("*.json"), reverse=True) if d.exists() else []:
+        try:
+            snap = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        out = {_key(r): {"floor_low": r.get("floor_low"), "shelf_med": r.get("shelf_med"),
+                         "copies": r.get("copies"), "language": None}
+               for r in snap.get("rows") or [] if r.get("floor_low")}
+        if out:
+            return out
+    return {}
 
 
 def previous(root: str | Path, before: str) -> dict | None:
@@ -121,14 +150,15 @@ def diff(today: dict, prev: dict | None, *, top_n: int = TOP_N, run_date: str | 
             "left the pool — no longer $10+ and up over 30 days" if not now else None)
         out["exited"].append(r)
 
+    score = lambda r: r.get("hold_score") if r.get("hold_score") is not None else r.get("invest_score")  # noqa: E731
     both = [(k, t_rows[k], p_rows[k]) for k in t_rows.keys() & p_rows.keys()
-            if t_rows[k].get("invest_score") is not None and p_rows[k].get("invest_score") is not None
+            if score(t_rows[k]) is not None and score(p_rows[k]) is not None
             and not t_rows[k].get("disqualified") and not p_rows[k].get("disqualified")]
     moves = []
     for k, t, p in both:
-        d = round(t["invest_score"] - p["invest_score"], 1)
+        d = round(score(t) - score(p), 1)
         if d:
-            moves.append({**t, "score_delta": d, "prev_score": p["invest_score"], "prev_rank": p.get("rank")})
+            moves.append({**t, "score_delta": d, "prev_score": score(p), "prev_rank": p.get("rank")})
     moves.sort(key=lambda r: r["score_delta"], reverse=True)
     out["climbers"] = [m for m in moves if m["score_delta"] > 0][:MOVERS]
     out["fallers"] = sorted([m for m in moves if m["score_delta"] < 0], key=lambda r: r["score_delta"])[:MOVERS]

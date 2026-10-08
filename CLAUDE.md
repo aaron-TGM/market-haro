@@ -6,12 +6,14 @@ the rules that keep it safe. The owner is Aaron (aaron@tuffghostmedia.com, GitHu
 
 ## What it is
 
-A daily market dashboard for the Gundam Card Game: every English single scored and
-ranked, every box measured against the cards inside it. One Python pipeline builds one
+A daily market dashboard for the Gundam Card Game: every English single ranked for the
+hold the reader picks (under 30 days, 3–6 months, 1 year+) with what it costs to buy and to
+sell again, every box measured against the cards inside it. One Python pipeline builds one
 self-contained HTML report every morning; one Cloudflare Worker serves it to subscribers.
 Sold as its own subscription — **$8/month or $88/year, 7-day trial** — signed in with a
 GUNDECK.AI account. `README.md` is the product and method; `docs/ARCHITECTURE.md` is the
-code map; `docs/METHOD.md` is the score.
+code map; `docs/METHOD.md` is the rankings and the evidence for them (its first section is
+October 2026's change).
 
 ## How it runs (nothing here needs a person)
 
@@ -60,10 +62,10 @@ code map; `docs/METHOD.md` is the score.
 
 | | |
 |---|---|
-| Pipeline | `radar/` — `cli.py` (commands), `invest.py` (score), `haro.py` (report), `preview.py` (the front door), `track.py` (record), `depth.py`, `sealed.py`, `db.py`, `art.py` |
+| Pipeline | `radar/` — `cli.py` (commands), `horizon.py` (the rankings per hold horizon), `costs.py` (the round trip), `invest.py` (measurements; the retired score), `validate.py` (the walk-forward the page shows), `haro.py` (report), `preview.py` (the front door), `track.py` (record), `ingest.py` (sync, sales refresh), `depth.py`, `sealed.py`, `db.py`, `art.py` |
 | Data | `data/history/*.ndjson` (the archive, in git), `data/rankings/YYYY-MM-DD.json` (every issue), `data/cards.ndjson`, `data/sets.ndjson` (set calendar — Stardust Trails GD06 is 2026-10-30) |
 | Worker | `worker/src/index.js`, `worker/test/gate.test.js` (`npm test`), `worker/wrangler.toml` (mirror) |
-| Tests | `python tests/test_pipeline.py` (55) and the Worker's 3 |
+| Tests | `python tests/test_pipeline.py` (64; one runs the page's JS sizing in node) and the Worker's 3 |
 | Docs | `docs/PLAN.md` (the launch plan, all blocks done), `docs/LAUNCH.md`, `docs/HANDOFF-gundeck.md`, `docs/REPLY-implementation-plan.md`, `DEPLOY.md`, `docs/ARCHITECTURE.md`, `docs/METHOD.md` |
 | Pages | `/` report (gated) or the front door (today's top ten from the pipeline, sign-in/plans from the Worker) · `/preview` and `/track-record` → `/` · `/me` · `/positions` · `/health` |
 
@@ -84,6 +86,12 @@ you can still build from the archive with `--no-fetch`-style paths; see `DEPLOY.
 - The front door's card data comes only from the pipeline (`radar/preview.py`); the
   Worker fills three markers (`<!--haro:head-->`, `<!--haro:auth-->`, `<!--haro:script-->`)
   and the plan buttons' hrefs. Neither side learns the other's business.
+- Since 2026-10-08 the page ranks by hold horizon (`radar/horizon.py`): 3–6 months and
+  1 year+ by the hold score (rarity, set age, sales a day), under 30 days by the
+  break-even. Chosen on the walk-forward evidence in `docs/METHOD.md`, re-run monthly; the
+  page shows each ranking's record and the retired score's. Every row carries costs (entry,
+  sells for, break-even). Don't bring back a ranking input without a walk-forward that
+  says it works on what copies *sold* for, after costs.
 
 ## Standing list after launch
 
@@ -91,7 +99,13 @@ you can still build from the archive with `--no-fetch`-style paths; see `DEPLOY.
 - Weekly: Stripe trials → paid → churn; skim the report as a subscriber.
 - **Oct 16**: the Lifetime-increase announcement. **Oct 30**: GD06 releases; tick the
   workflow's *backfill* box on the next manual run so the new cards get their history.
-- Monthly (1st): the validation line the workflow appends to `data/validation_history.json`.
+- Monthly (1st): the workflow's `radar validate` appends the horizon walk-forward to
+  `data/validation_history.json`, and the page shows it the next morning. If a horizon's
+  verdict turns WEAK or INVERTED, the page says so; find out why before trusting the order.
+  The first 365-day window closes in October 2026 — that run is the first that can say
+  whether "1 year+" should rank differently from "3–6 months".
+- Daily, quietly: the build refreshes sales figures (~500 API requests). If "sells for"
+  shows a `*` on most rows, or the under-30-days view is empty, the refresh is failing.
 - Quarterly: rotate `ADMIN_SECRET`/`HARO_ADMIN_SECRET` together; export KV watchlists.
 - If a subscriber can't see the report: does their token carry `public_metadata`, did
   the webhook write `marketHaro.status`, is it `active`/`trialing`. `/me` shows what the

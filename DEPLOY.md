@@ -212,7 +212,7 @@ what stops the repo filling with no-op commits.
 | GitHub storage | ~85 MB/year of text |
 | Cloudflare Worker + KV | free tier: 100k requests/day, 1 GB KV; the report is ~4.5 MB, one key |
 | Clerk, Stripe | gundeck.ai's existing accounts; Stripe's usual fee per charge |
-| tcgapi.dev Pro | your existing plan; a daily run costs ~60 requests of 10,000 |
+| tcgapi.dev Pro | your existing plan; a daily run costs ~300–700 requests of 10,000 (sales refresh ~1 per stale card, ~70 live shelves); the first run after October 2026's change up to ~1,100 |
 
 So: **free**, with a wide margin on every limit.
 

@@ -148,6 +148,7 @@ details.panel>summary+*{margin-top:10px}
 
 /* budget -- the hero -------------------------------------------------- */
 .budget{display:grid;grid-template-columns:auto auto 1fr;gap:14px 22px;align-items:center}
+.budget .presets{grid-column:2 / -1}
 .budget label{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);
   display:flex;align-items:center;gap:8px}
 .money-in{position:relative;display:inline-block}
@@ -341,6 +342,33 @@ a.kpi{display:block;color:inherit} a.kpi:hover{text-decoration:none;border-color
 .checklist{margin:0;padding-left:18px;font-size:11.5px;line-height:1.55;color:var(--text-muted)}
 .checklist li{margin:4px 0} .checklist li::marker{color:var(--accent)}
 
+/* hold horizon: the question that picks the ranking -------------------- */
+.horizon{padding:12px 16px}
+.hzrow{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.hzq{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.hz{display:inline-flex;border:1px solid var(--border-2);border-radius:var(--r);overflow:hidden}
+.hz button{background:transparent;color:var(--text-muted);border:0;padding:8px 14px;font:inherit;font-size:11px;
+  letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+.hz button.on{background:var(--accent);color:var(--bg)}
+.hzhow{font-size:11.5px;color:var(--text-muted);flex:1 1 260px;line-height:1.5}
+.evs{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:12px}
+.ev{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px}
+.ev .l{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted)}
+.ev .v{font-size:20px;font-weight:700;line-height:1.15;margin-top:2px;font-variant-numeric:tabular-nums}
+.ev .f{font-size:10.5px;color:var(--text-muted);margin-top:2px;line-height:1.45}
+.ev.up .v{color:var(--up)} .ev.down .v{color:var(--down)} .ev.cyan .v{color:var(--cyan)}
+.evnote{font-size:10.5px;color:var(--text-muted);margin-top:8px;line-height:1.5}
+.evnote b{color:var(--text)}
+.retired{border-left:2px solid var(--down);padding-left:10px;margin-top:10px;font-size:11.5px;color:var(--text-muted);line-height:1.5}
+.retired b{color:var(--down)}
+.presets{display:flex;flex-wrap:wrap;gap:6px}
+.presets button{background:transparent;border:1px solid var(--border-2);color:var(--text-muted);border-radius:var(--r);
+  padding:6px 10px;font:inherit;font-size:11px;cursor:pointer}
+.presets button:hover{border-color:var(--accent)}
+.presets button.on{color:var(--bg);background:var(--accent);border-color:var(--accent)}
+.hurdle{font-weight:700} .hurdle.ok{color:var(--up)} .hurdle.mid{color:var(--warn)} .hurdle.hi{color:var(--down)}
+.score .n.hurdle{font-size:22px}
+
 /* misc --------------------------------------------------------------- */
 .more{display:flex;justify-content:center;padding:14px 0 0}
 .empty{padding:40px;text-align:center;color:var(--text-muted)}
@@ -389,7 +417,9 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--border);color
   .wrap{padding:14px 10px 48px}
   h1{font-size:20px}
   header{flex-direction:column;align-items:flex-start}
-  .budget{grid-template-columns:1fr;gap:10px}
+  .budget{grid-template-columns:1fr;gap:10px} .budget .presets{grid-column:auto}
+  .evs{grid-template-columns:repeat(2,minmax(0,1fr))} .ev .v{font-size:17px}
+  .hz{width:100%} .hz button{flex:1;padding:8px 6px}
   .toolbar .count{margin-left:0;width:100%}
   .row{grid-template-columns:88px 1fr 32px;gap:0 10px;padding:10px;grid-template-areas:
     "art who star" "art score score" "chart chart chart" "stats stats stats" "size size size"}
@@ -416,8 +446,28 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--border);color
 # --------------------------------------------------------------------------
 JS = r"""
 const DATA = JSON.parse(document.getElementById('haro-data').textContent);
+// ---- the hold horizon -------------------------------------------------------
+// The reader's answer to "how long will you hold?" picks the ranking: under 30
+// days is sorted by the break-even hurdle, 3-6 months and 1 year+ by the hold
+// score (radar/horizon.py). Ranks are computed in Python; the page only picks
+// which one to show. Remembered in this browser, nowhere else.
+const HZ = DATA.horizons || {order:['mid'], labels:{mid:'3–6 months'}, default:'mid'};
+const HZ_KEY = 'haro.horizon.v1';
+function loadHorizon(){ try { const h = localStorage.getItem(HZ_KEY); return HZ.order.includes(h) ? h : HZ.default; } catch(e){ return HZ.default; } }
+function saveHorizon(h){ try { localStorage.setItem(HZ_KEY, h); } catch(e){} }
 const state = {q:'', set:'', rarity:'', minPrice:null, maxPrice:null, minScore:null, minSales:null,
-               sort:'score', dir:-1, limit:30, budget:null, view:'all', open:new Set(), range:'90'};
+               sort:'score', dir:-1, limit:30, budget:null, view:'all', open:new Set(), range:'90',
+               horizon: loadHorizon()};
+const hz = r => (r && r.h && r.h[state.horizon]) || {};
+const rankOf = r => hz(r).rank ?? null;
+const isShort = () => state.horizon === 'short';
+// What selling costs (twin of radar/costs.py): proceeds and break-even.
+const COSTS = DATA.costs || {sell_fee_pct:0.1325, sell_fee_fixed:0.30};
+const proceeds = sale => (sale > 0) ? sale*(1-COSTS.sell_fee_pct) - COSTS.sell_fee_fixed : null;
+const breakEven = entry => (entry > 0) ? (entry + COSTS.sell_fee_fixed)/(1-COSTS.sell_fee_pct) : null;
+const hurdleCls = v => v==null ? '' : (v <= 10 ? 'ok' : (v <= 25 ? 'mid' : 'hi'));
+const hurdleHTML = v => v==null ? '<span class="flat">—</span>'
+  : `<span class="hurdle ${hurdleCls(v)}">${v>0?'+':''}${v.toFixed(0)}%</span>`;
 
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -549,19 +599,27 @@ function pnlHTML(r){
   if (!(q>0) || !(c>0)) return '<p class="sub2">Enter copies and what you paid to see the position.</p>';
   const now = r.market_price, basis = q*c, val = now!=null ? q*now : null;
   if (val==null) return '<p class="sub2">No market price to value it against.</p>';
-  const d = val - basis, p = d/basis*100;
-  return `<div class="pnl ${d>=0?'up':'down'}">${d>=0?'+':'−'}$${Math.abs(d).toFixed(2)} <span style="font-size:12px">(${p>=0?'+':''}${p.toFixed(1)}%)</span></div>
+  // What selling them at the market would put back in your pocket, after the
+  // marketplace's cut: the P&L that is actually yours.
+  const back = q * (proceeds(r.sells_for ?? now) ?? 0);
+  const d = back - basis, p = d/basis*100, dm = val - basis;
+  return `<div class="pnl ${d>=0?'up':'down'}">${d>=0?'+':'−'}$${Math.abs(d).toFixed(2)} <span style="font-size:12px">(${p>=0?'+':''}${p.toFixed(1)}%) if sold, after costs</span></div>
     <div class="kv"><span class="k">${q} × $${c.toFixed(2)}</span><span class="vv">$${basis.toFixed(2)} in</span></div>
-    <div class="kv"><span class="k">${q} × ${money(now)} market</span><span class="vv">$${val.toFixed(2)} now</span></div>
+    <div class="kv"><span class="k">${q} × ${money(now)} market</span><span class="vv">$${val.toFixed(2)} now (${dm>=0?'+':'−'}$${Math.abs(dm).toFixed(2)})</span></div>
+    <div class="kv"><span class="k">Sold at ${money(r.sells_for ?? now)}, less ${(COSTS.sell_fee_pct*100).toFixed(2).replace(/0+$/,'').replace(/\.$/,'')}% + $${COSTS.sell_fee_fixed.toFixed(2)} each</span><span class="vv">$${back.toFixed(2)} back</span></div>
     ${r.floor_low!=null ? `<div class="kv"><span class="k">Cheapest listing today</span><span class="vv">${money(r.floor_low)}</span></div>` : ''}
     ${trendBroke(r) ? '<div class="callout bad" style="margin-top:10px"><span class="cl">Trend broke</span>The weekly climb has stopped, or the last week gave back more than a wobble. This is the exit signal a hold screen can give; it is not a forecast.</div>' : ''}`;
 }
 
 // ---- sizing (twin of radar/plan.py::allocate) ----------------------------
+// Greedy down the chosen horizon's ranking: a per-card cap, a per-set cap, the
+// copies on the shelf and what is left of the budget, whichever binds first.
 function allocate(rows, budget){
   const cfg = DATA.plan || {};
   const maxPct = cfg.max_position_pct ?? 0.25;
+  const setPct = cfg.max_set_pct ?? 1.0;
   let remaining = budget;
+  const setSpent = {};
   const out = new Map();
   for (const r of rows){
     const k = key(r);
@@ -569,46 +627,124 @@ function allocate(rows, budget){
     const copies = (typeof r.copies === 'number') ? r.copies : null;
     const plan = {unit, qty:0, cost:0, affordable:false, clears:false, reason:'', pct:0};
     if (unit == null){ plan.reason = 'No live entry price for this card today.'; out.set(k, plan); continue; }
+    const setKey = String(r.set_name || r.set_id || '');
     const cap = budget * maxPct;
     const byCap = Math.floor(cap / unit);
     const byRem = Math.floor(remaining / unit);
     const bySupply = copies == null ? byCap : copies;
-    const qty = Math.max(0, Math.min(byCap, byRem, bySupply));
+    const bySet = Math.floor((budget * setPct - (setSpent[setKey] || 0)) / unit + 1e-9);
+    const qty = Math.max(0, Math.min(byCap, byRem, bySupply, bySet));
     if (qty < 1){
       plan.reason = byCap < 1
         ? `One copy is ${(unit/budget*100).toFixed(0)}% of the budget, over the ${(maxPct*100).toFixed(0)}% per-position cap.`
-        : `$${remaining.toFixed(2)} left — one copy costs $${unit.toFixed(2)}.`;
+        : (byRem < 1 ? `$${remaining.toFixed(2)} left — one copy costs $${unit.toFixed(2)}.`
+        : (bySet < 1 ? `${setKey || 'Its set'} already holds the ${(setPct*100).toFixed(0)}% of the budget one set may take.`
+        : 'No copies listed.'));
       out.set(k, plan); continue;
     }
     const cost = qty * unit;
     remaining -= cost;
+    setSpent[setKey] = (setSpent[setKey] || 0) + cost;
     Object.assign(plan, {qty, cost, affordable:true, clears: copies!=null && qty>=copies,
       pct: cost/budget*100, remaining,
-      limitedBy: (bySupply<=byCap && bySupply<=byRem) ? 'the number of copies listed'
-               : (byRem<byCap ? "what's left of the budget" : 'the per-position cap')});
+      limitedBy: (bySupply<=byCap && bySupply<=byRem && bySupply<=bySet) ? 'the number of copies listed'
+               : ((bySet<byCap && bySet<=byRem) ? 'the per-set cap'
+               : (byRem<byCap ? "what's left of the budget" : 'the per-position cap'))});
     out.set(k, plan);
   }
   return out;
 }
 
-function renderPlanSummary(plans, rows){
-  const el = document.getElementById('plan-sum');
-  if (!state.budget){
-    el.innerHTML = `<span class="hero">${DATA.rows.length}</span> cards pass the screen today. <span class="muted">Enter a budget and each row gets a size: copies, cost, and what limited it.</span>`;
-    return;
-  }
-  let n=0, spend=0; const bySet = {};
+// The plan in one line: what it costs, what it would take to break even on
+// all of it, how long the exit takes, and where it is concentrated.
+function planTotals(plans, rows){
+  let n=0, spend=0, be=0, ref=0, days=0; const bySet = {};
   for (const r of rows){
     const p = plans.get(key(r)); if (!p || !p.affordable) continue;
     n++; spend += p.cost; const s = r.set_name || '—'; bySet[s] = (bySet[s]||0) + p.cost;
+    be += p.qty * (breakEven(p.unit) || 0); ref += p.qty * (r.sells_for || r.market_price || 0);
+    if (r.avg_daily_sales) days = Math.max(days, Math.ceil(p.qty / r.avg_daily_sales));
   }
-  if (!n){ el.innerHTML = `Nothing fits — one copy of everything costs more than the ${((DATA.plan?.max_position_pct??0.25)*100).toFixed(0)}% per-position cap.`; return; }
-  let html = `<span class="hero">${n}</span> ${n===1?'position':'positions'} · <b>$${spend.toFixed(2)}</b> of $${state.budget.toFixed(2)} placed · $${(state.budget-spend).toFixed(2)} left`;
   const top = Object.entries(bySet).sort((a,b)=>b[1]-a[1])[0];
-  if (top && spend > 0){ const share = top[1]/spend*100;
-    if (share >= 50) html += ` · <span class="conc">${share.toFixed(0)}% of it in ${esc(top[0])}</span>`; }
-  html += ` <span class="muted">— sized down the ranking, ${((DATA.plan?.max_position_pct??0.25)*100).toFixed(0)}% cap per card. Arithmetic, not advice.</span>`;
+  return {n, spend, hurdle: ref ? (be/ref - 1)*100 : null, days, sets: Object.keys(bySet).length,
+          topSet: top ? top[0] : null, topShare: top && spend ? top[1]/spend*100 : 0};
+}
+const HZ_PHRASE = {short:'a hold under 30 days', mid:'a 3–6 month hold', long:'a hold of a year or more'};
+const HZ_RANKING = {short:'under-30-days', mid:'3–6 month', long:'1 year+'};
+function renderPlanSummary(plans, rows){
+  const el = document.getElementById('plan-sum');
+  document.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('on', Number(b.dataset.preset) === state.budget));
+  if (!state.budget){
+    const n = DATA.rows.filter(r => rankOf(r) != null).length;
+    el.innerHTML = `<span class="hero">${n}</span> ${n===1?'card ranks':'cards rank'} for ${HZ_PHRASE[state.horizon]||'this hold'} today. <span class="muted">Enter a budget, or pick one, and each row gets a size: copies, cost, what limited it, and the break-even on the whole plan.</span>`;
+    return;
+  }
+  const t = planTotals(plans, rows);
+  if (!t.n){ el.innerHTML = `Nothing fits — one copy of everything costs more than the ${((DATA.plan?.max_position_pct??0.25)*100).toFixed(0)}% per-position cap.`; return; }
+  let html = `<span class="hero">${t.n}</span> ${t.n===1?'position':'positions'} in ${t.sets} ${t.sets===1?'set':'sets'} · <b>$${t.spend.toFixed(2)}</b> of $${state.budget.toFixed(2)} placed · $${(state.budget-t.spend).toFixed(2)} left`;
+  if (t.hurdle != null) html += ` · needs <b class="hurdle ${hurdleCls(t.hurdle)}">${t.hurdle>0?'+':''}${t.hurdle.toFixed(0)}%</b> to break even`;
+  if (t.days) html += ` · ~${t.days} days to sell it all at today's pace`;
+  if (t.topShare >= 50) html += ` · <span class="conc">${t.topShare.toFixed(0)}% of it in ${esc(t.topSet)}</span>`;
+  html += ` <span class="muted">— sized down the ${HZ_RANKING[state.horizon]||''} ranking, ${((DATA.plan?.max_position_pct??0.25)*100).toFixed(0)}% cap per card, ${((DATA.plan?.max_set_pct??1)*100).toFixed(0)}% per set. Arithmetic, not advice.</span>`;
   el.innerHTML = html;
+}
+
+// ---- the horizon panel: the question, and what the archive says about the answer
+const HZ_HOW = {
+  short: 'Sorted by the move a card needs before selling it gives your money back. Only cards that sell daily and were priced live today.',
+  mid: 'Sorted by the hold score: rarity, set age and sales a day, as percentiles of today’s pool.',
+  long: 'The same order as 3–6 months: the archive cannot tell the two apart yet. Its record is measured at 270 days.',
+};
+const sgn = (v, d=1) => v==null ? '—' : `${v>0?'+':''}${v.toFixed(d)}%`;
+function evTile(l, v, f, cls){ return `<div class="ev ${cls||''}"><div class="l">${l}</div><div class="v">${v}</div><div class="f">${f}</div></div>`; }
+function topTile(w, h, withNet){
+  if (!w || !w.splits) return evTile(`Top 20 · ${h} days later`, 'not yet', `no ${h}-day window has closed in the archive`, '');
+  let f = `field ${sgn(w.pool_median)} · ahead in ${w.top_beat_pool} of ${w.splits} monthly tests`;
+  if (withNet && w.top_net_median != null) f += ` · after costs ${sgn(w.top_net_median)}`;
+  return evTile(`Top 20 · ${h} days later`, sgn(w.top_median), f, w.top_median >= 0 ? 'up' : 'down');
+}
+function netTile(w, h){
+  if (!w || !w.splits || w.top_net_median == null) return '';
+  return evTile(`After selling costs · ${h} days`, sgn(w.top_net_median),
+    `bought at market, sold at market less costs · positive in ${w.top_net_positive ?? 0} of ${w.splits} tests`,
+    w.top_net_median >= 0 ? 'up' : 'down');
+}
+function calTile(){
+  const c = DATA.cal || {}, nx = c.next;
+  if (!nx) return '';
+  const inWin = state.horizon === 'short' && nx.days != null && nx.days <= 30;
+  const n60 = c.new_d60, p30 = c.prior_d30;
+  const f = [n60 ? `new sets’ top 20: ${sgn(n60.median, 0)} in their first 60 days (${n60.n} releases)` : '',
+             p30 ? `the set before: ${sgn(p30.median, 0)} in the 30 days after (${p30.n})` : ''].filter(Boolean).join(' · ');
+  return evTile(inWin ? 'Next booster · inside your window' : 'Next booster', `${esc(nx.label)} · ${nx.days!=null ? nx.days+' days' : esc(nx.date)}`, f || esc(nx.date), 'cyan');
+}
+function renderHorizon(){
+  const el = document.getElementById('horizon'); if (!el) return;
+  document.querySelectorAll('[data-horizon]').forEach(b => b.classList.toggle('on', b.dataset.horizon === state.horizon));
+  const how = document.getElementById('hzhow'); if (how) how.textContent = HZ_HOW[state.horizon] || '';
+  const ev = DATA.evidence, box = document.getElementById('evs'), note = document.getElementById('evnote');
+  if (!ev || !ev.horizons){ box.innerHTML = ''; note.textContent = 'No walk-forward record yet: run radar validate.'; return; }
+  const hz = ev.horizons[state.horizon] || {};
+  let tiles = '';
+  if (state.horizon === 'short'){
+    tiles = evTile('Made money in 30 days', hz.pool_profitable_pct!=null ? hz.pool_profitable_pct + '%' : '—', 'of every card ranked, bought at the cheapest listing and sold at the market less costs', 'down')
+      + evTile('Lowest hurdle first', hz.ranked_n ? `${hz.ranked_profitable} of ${hz.ranked_n}` : '—', 'top-20 picks that made money, ordered as this list is', '')
+      + evTile('Chasing the move', hz.momentum_n ? `${hz.momentum_profitable} of ${hz.momentum_n}` : '—', 'the 20 strongest 7-day risers that made money', 'down');
+  } else {
+    const w = hz.windows || {};
+    if (state.horizon === 'mid') tiles = topTile(w['90'], 90) + netTile(w['90'], 90) + topTile(w['180'], 180, true);
+    else {
+      tiles = topTile(w['270'], 270) + netTile(w['270'], 270);
+      const y = w['365'];
+      tiles += y && y.splits ? evTile('Top 20 · one year later', sgn(y.top_median), `field ${sgn(y.pool_median)} · ${y.splits} tests`, y.top_median >= 0 ? 'up' : 'down')
+                             : evTile('One year later', 'not yet', 'the first full year in the archive closes in October 2026', '');
+    }
+  }
+  box.innerHTML = tiles + calTile();
+  const splits = state.horizon === 'short' ? (hz.starts||[]).length : Math.max(0, ...Object.values(hz.windows||{}).map(w => w.splits||0));
+  note.innerHTML = `${esc(hz.verdict || '')} <span>Walked forward on our own archive, each card scored with only what was known that day: ${splits} ${state.horizon==='short'?'start dates':'monthly tests'}, last run ${esc(ev.ran_at||'')}. Medians. What has held up, not a forecast.</span>`;
+  const lg = ev.legacy, ret = document.getElementById('retired');
+  if (ret) ret.innerHTML = lg && lg.verdict ? `<b>Retired ${esc(lg.retired||'')}:</b> the score this page ranked by until then (${esc(lg.name||'')}). ${esc(lg.verdict)} Its issues stay in the record.` : '';
 }
 
 // ---- the chart -------------------------------------------------------------
@@ -722,19 +858,20 @@ function chartLeave(e){
 // ---- your holdings, at the top --------------------------------------------------
 function renderPortfolio(){
   const el = document.getElementById('portfolio'); if (!el) return;
-  let n=0, basis=0, value=0, broke=[], watching=0;
+  let n=0, basis=0, value=0, back=0, broke=[], watching=0;
   for (const [k, w] of Object.entries(watch)){
     const r = findRow(k); if (!r) continue;
     const q = Number(w.qty), c = Number(w.cost);
-    if (q>0 && c>0 && r.market_price!=null){ n++; basis += q*c; value += q*r.market_price; if (trendBroke(r)) broke.push(r.name); }
+    if (q>0 && c>0 && r.market_price!=null){ n++; basis += q*c; value += q*r.market_price;
+      back += q*(proceeds(r.sells_for ?? r.market_price) ?? 0); if (trendBroke(r)) broke.push(r.name); }
     else watching++;
   }
   if (!n && !watching){ el.hidden = true; return; }
-  const d = value - basis, p = basis ? d/basis*100 : 0;
+  const d = back - basis, p = basis ? d/basis*100 : 0;
   el.innerHTML = n
     ? `<div class="pf"><span class="pfl">Your holdings</span><span class="pfv">${n} ${n===1?'position':'positions'}</span>
-        <span class="pfv">$${basis.toFixed(2)} in</span><span class="pfv">$${value.toFixed(2)} now</span>
-        <span class="pfv pnl ${d>=0?'up':'down'}">${d>=0?'+':'−'}$${Math.abs(d).toFixed(2)} (${p>=0?'+':''}${p.toFixed(1)}%)</span>
+        <span class="pfv">$${basis.toFixed(2)} in</span><span class="pfv">$${value.toFixed(2)} at market</span>
+        <span class="pfv pnl ${d>=0?'up':'down'}" data-tip="What selling every position at what it sells for would put back in your pocket after the marketplace&#39;s cut, against what you paid.">${d>=0?'+':'−'}$${Math.abs(d).toFixed(2)} (${p>=0?'+':''}${p.toFixed(1)}%) after costs</span>
         ${broke.length?`<span class="pfv down"><b>${broke.length}</b> trend broke: ${esc(broke.slice(0,3).join(', '))}${broke.length>3?'…':''}</span>`:''}
         ${watching?`<span class="pfv muted">${watching} watching</span>`:''}
         <button class="ghost" data-view-jump="watch">Open watchlist</button></div>`
@@ -743,19 +880,17 @@ function renderPortfolio(){
 }
 
 // ---- rows ------------------------------------------------------------------
-const COMPONENTS = [
-  ['value','Value','Log-scaled price. $10 scores 0, $200 scores 100.'],
-  ['liquidity','Liquidity','Average daily sales and the share of days that saw any sale.'],
-  ['trend','Trend','Share of weeks closing above the previous week, plus the 90-day change.'],
-  ['stability','Stability','Daily volatility and how far it sits below its 90-day high.'],
-  ['scarcity','Scarcity','Rarity tier and how many copies are listed.'],
-];
+// The hold score's three parts, each a percentile of today's pool
+// (radar/horizon.py HOLD_PARTS ships their names and tips).
+const COMPONENTS = DATA.hold_parts || [];
 function componentBars(c){
   if (!c) return '';
-  return COMPONENTS.map(([k,label,tip])=>{ const v = c[k] ?? 0; const cls = v>=75?'hi':(v<40?'lo':'');
+  return COMPONENTS.map(([k,label,tip])=>{ const v = c[k]; if (v == null) return '';
+    const cls = v>=75?'hi':(v<25?'lo':'');
     return `<div class="crow ${cls}" data-tip="${esc(tip)}"><span class="cl">${label}</span><span class="ct"><i style="width:${Math.max(2,v)}%"></i></span><span class="cv">${v.toFixed(0)}</span></div>`;
   }).join('');
 }
+const ageText = d => d==null ? '—' : (d < 60 ? `${d}d` : (d < 730 ? `${Math.round(d/30.4)} mo` : `${(d/365).toFixed(1)} yr`));
 const realRarity = r => r.rarity && r.rarity !== '—' && r.rarity !== 'None';
 function tagsHTML(r){
   const t = [];
@@ -769,10 +904,11 @@ function tagsHTML(r){
   return t.join('');
 }
 function rankDelta(r){
-  if (isSealed(r)) return '';
+  // The previous issue's rank is the hold ranking's; under 30 days has none.
+  if (isSealed(r) || isShort()) return '';
   const prev = DATA.prev_ranks ? DATA.prev_ranks[key(r)] : undefined;
   if (prev == null) return DATA.prev_ranks ? '<span class="d" data-tip="Not in the previous issue’s ranking.">new</span>' : '';
-  const d = prev - r.rank;
+  const d = prev - rankOf(r);
   if (d === 0) return '<span class="d">—</span>';
   return `<span class="d ${d>0?'up':'down'}" data-tip="Was #${prev} in the previous issue.">${d>0?'+':'−'}${Math.abs(d)}</span>`;
 }
@@ -782,28 +918,30 @@ function rowHTML(r, plan){
   const url = cardURL(r);
   const nm = url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(r.name)}</a>` : esc(r.name);
   const meta = [r.set_name, r.number].filter(Boolean).map(esc).join(' · ');
-  const prem = r.ask_premium_pct;
-  const premHTML = prem==null ? '<span class="flat">—</span>'
-    : `<span class="${prem>5?'down':(prem<-2?'up':'flat')}">${prem>0?'+':''}${prem.toFixed(0)}%</span>`;
+  const rk = isSealed(r) ? r.rank : rankOf(r);
   return `<div class="row${openNow?' open':''}${sized?' sized':''}${isWatched(r)?' watched':''}" data-key="${esc(k)}" role="button" aria-expanded="${openNow}">
-    <div class="rank"><span class="n">${r.rank}</span>${rankDelta(r)}</div>
+    <div class="rank"><span class="n">${rk ?? '—'}</span>${rankDelta(r)}</div>
     <div class="art">${artHTML(r, openNow)}</div>
     <div class="who"><div class="nm">${nm}</div><div class="meta">${meta}</div><div class="tags">${tagsHTML(r)}</div></div>
     ${openNow ? bigChart(r) : chart(r.series, k)}
     <div class="stats">
-      <div class="s" data-tip="${esc(DATA.tips.price)}"><div class="l">Price</div><div class="v">${money(r.market_price)}</div></div>
-      ${isSealed(r) ? `<div class="s" data-tip="Change over 30 days, from stored daily closes."><div class="l">30d</div><div class="v">${pct(r.change_30d)}</div></div>`
-                     : `<div class="s" data-tip="${esc(DATA.tips.entry)}"><div class="l">Entry</div><div class="v">${money(r.floor_low)}</div></div>`}
-      <div class="s" data-tip="${esc(DATA.tips.prem)}"><div class="l">vs sold</div><div class="v">${premHTML}</div></div>
-      <div class="s" data-tip="${esc(DATA.tips.c7)}"><div class="l">7d</div><div class="v">${pct(r.change_7d)}</div></div>
+      ${isSealed(r) ? `<div class="s" data-tip="${esc(DATA.tips.price)}"><div class="l">Price</div><div class="v">${money(r.market_price)}</div></div>
+         <div class="s" data-tip="Change over 30 days, from stored daily closes."><div class="l">30d</div><div class="v">${pct(r.change_30d)}</div></div>
+         <div class="s" data-tip="${esc(DATA.tips.c7)}"><div class="l">7d</div><div class="v">${pct(r.change_7d)}</div></div>`
+       : `<div class="s" data-tip="${esc(DATA.tips.entry)}"><div class="l">Entry</div><div class="v">${r.floor_low!=null ? money(r.floor_low) : '<span class="flat">not checked</span>'}</div></div>
+         <div class="s" data-tip="${esc(DATA.tips.sells)}"><div class="l">Sells for</div><div class="v">${money(r.sells_for)}${r.sells_for_basis==='market'?'<span class="flat">*</span>':''}</div></div>
+         <div class="s" data-tip="${esc(DATA.tips.hurdle)}"><div class="l">Break-even</div><div class="v">${hurdleHTML(r.hurdle_pct)}</div></div>`}
       <div class="s" data-tip="${esc(DATA.tips.c90)}"><div class="l">90d</div><div class="v">${pct(r.change_90d)}</div></div>
       <div class="s" data-tip="${esc(DATA.tips.sales)}"><div class="l">Sales/day</div><div class="v ${(r.avg_daily_sales??0)<1?'down':''}">${r.avg_daily_sales==null?'—':r.avg_daily_sales.toFixed(1)}</div></div>
+      ${isSealed(r) ? '' : `<div class="s" data-tip="${esc(DATA.tips.age)}"><div class="l">Set age</div><div class="v">${ageText(r.set_age_days)}</div></div>`}
     </div>
     ${isSealed(r)
       ? `<div class="score" data-tip="Change from the earliest price we hold for it${r.first_date?' ('+shortDate(r.first_date)+')':''}. Days since the set released, from the API's own calendar."><div class="n" style="font-size:20px">${r.change_since_first==null?'—':pct(r.change_since_first)}</div><div class="l">since ${r.first_date?shortDate(r.first_date):'first seen'}</div></div>
          <div class="size"><span class="pill none">${r.days_since_release!=null?r.days_since_release+'d':'—'}</span><div class="l">since release</div></div>`
-      : `<div class="score${r.invest_score>=TOP_SCORE?' top':''}" data-tip="${esc(DATA.tips.score)}"><div class="n">${r.invest_score.toFixed(0)}</div><div class="bar"><i style="width:${Math.max(3,r.invest_score)}%"></i></div><div class="l">score</div></div>
-         <div class="size" data-tip="${esc(DATA.tips.buy)}">${sized?`<span class="pill">${plan.qty} · $${plan.cost.toFixed(0)}</span>`:'<span class="pill none">—</span>'}<div class="l">size</div></div>`}
+      : (isShort()
+         ? `<div class="score" data-tip="${esc(DATA.tips.hurdle)}"><div class="n hurdle ${hurdleCls(r.hurdle_pct)}">${r.hurdle_pct==null?'—':(r.hurdle_pct>0?'+':'')+r.hurdle_pct.toFixed(0)+'%'}</div><div class="l">to break even</div></div>`
+         : `<div class="score${(r.hold_score??0)>=TOP_SCORE?' top':''}" data-tip="${esc(DATA.tips.score)}"><div class="n">${r.hold_score==null?'—':r.hold_score.toFixed(0)}</div><div class="bar"><i style="width:${Math.max(3,r.hold_score??0)}%"></i></div><div class="l">hold score</div></div>`)
+        + `<div class="size" data-tip="${esc(DATA.tips.buy)}">${sized?`<span class="pill">${plan.qty} · $${plan.cost.toFixed(0)}</span>`:'<span class="pill none">—</span>'}<div class="l">size</div></div>`}
     <button class="star" data-star="${esc(k)}" aria-label="${isWatched(r)?'Remove from':'Add to'} watchlist" title="Watchlist"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.8.8-5 4.6 1.3 6.7L12 17.5l-6 3.3 1.3-6.7-5-4.6 6.8-.8z" fill="${isWatched(r)?'currentColor':'none'}" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
     ${openNow ? detailHTML(r, plan) : ''}
   </div>`;
@@ -889,15 +1027,20 @@ function toggleRow(row, r){
 // words. Colour appears only where a verdict is made.
 function verdicts(r){
   const v = [];
-  const p = r.ask_premium_pct;
-  if (p == null) v.push({c:'', t:'No read on price', s:'too few recent sales'});
-  else if (p > 5) v.push({c:'bad', t:`Asking ${p.toFixed(0)}% above sales`, s:'listed ahead of itself'});
-  else if (p < -2) v.push({c:'good', t:`Asking ${Math.abs(p).toFixed(0)}% below sales`, s:'copies selling above the list'});
-  else v.push({c:'good', t:'Asking what it sells for', s:'list and sales agree'});
+  // The buyer's question first: what the cheapest copy costs against what
+  // copies sell for, and what selling it again would take.
+  const ev = r.entry_vs_sold_pct;
+  if (ev == null) v.push({c:'', t: r.floor_low==null ? 'Entry not checked today' : 'No read on price', s: r.floor_low==null ? 'no live Near Mint price' : 'too few recent sales'});
+  else if (ev > 5) v.push({c:'bad', t:`Cheapest copy ${ev.toFixed(0)}% over`, s:'what copies sell for'});
+  else if (ev < -5) v.push({c:'good', t:`Cheapest copy ${Math.abs(ev).toFixed(0)}% under`, s:'what copies sell for'});
+  else v.push({c:'good', t:'Priced where it sells', s:'entry and sales agree'});
+  const hp = r.hurdle_pct;
+  if (hp != null) v.push({c: hp <= 10 ? 'good' : (hp <= 25 ? 'warn' : 'bad'), t:`Needs ${hp>0?'+':''}${hp.toFixed(0)}% to break even`, s:'after selling costs'});
+  // Weeks up is description, not a signal: a steady 90-day climb reversed
+  // more often than not in the walk-forward. Only a broken trend is flagged.
   const cons = r.consistency_pct;
   if (trendBroke(r)) v.push({c:'bad', t:'Trend broke', s: (r.change_7d!=null && r.change_7d<=-10) ? `${r.change_7d.toFixed(0)}% this week` : `up ${cons??'—'}% of weeks`});
-  else if (cons != null && cons >= 70) v.push({c:'good', t:`Up ${cons}% of weeks`, s:'the climb is intact'});
-  else if (cons != null) v.push({c:'warn', t:`Up ${cons}% of weeks`, s:'a choppy climb'});
+  else if (cons != null) v.push({c:'', t:`Up ${cons}% of weeks`, s:'90 days of weekly closes'});
   const s = r.avg_daily_sales;
   if (s == null) v.push({c:'', t:'No sales data', s:''});
   else if (s >= 2) v.push({c:'good', t:`${s.toFixed(1)} sales a day`, s:'easy to exit'});
@@ -925,6 +1068,7 @@ function detailHTML(r, plan){
       <div class="sub2">at $${plan.unit.toFixed(2)} shipped each · ${plan.pct.toFixed(0)}% of your budget</div>
       <div class="kv"><span class="k">Limited by</span><span class="vv">${plan.limitedBy}</span></div>
       <div class="kv"><span class="k">Budget left after</span><span class="vv">$${(plan.remaining??0).toFixed(2)}</span></div>
+      <div class="kv"><span class="k">Sell each at, to break even</span><span class="vv">${money(breakEven(plan.unit))}</span></div>
       ${r.avg_daily_sales ? `<div class="kv"><span class="k">Days to sell that many</span><span class="vv">~${Math.ceil(plan.qty/r.avg_daily_sales)}</span></div>` : ''}`;
   else pos = `<div class="big">No position</div><p class="sub2">${plan ? plan.reason : 'No live entry price.'}</p>`;
 
@@ -952,10 +1096,11 @@ function detailHTML(r, plan){
     <div class="hero-n"><div class="l">Sold for</div><div class="v">${money(r.settled_price)}</div><div class="f">14-day sales average</div></div>
     <div class="hero-n"><div class="l">vs sold</div><div class="v ${premCls}">${r.ask_premium_pct==null?'—':(r.ask_premium_pct>0?'+':'')+r.ask_premium_pct.toFixed(1)+'%'}</div><div class="f">list against sales</div></div>
     <div class="hero-n"><div class="l">Since ${r.first_date?shortDate(r.first_date):'first seen'}</div><div class="v">${r.change_since_first==null?'—':pct(r.change_since_first)}</div><div class="f">from ${money(r.first_price)}</div></div>` : `
-    <div class="hero-n accent"><div class="l">Entry today</div><div class="v">${money(r.floor_low)}</div><div class="f">cheapest NM, shipped</div></div>
-    <div class="hero-n"><div class="l">Sold for</div><div class="v">${money(r.settled_price)}</div><div class="f">14-day sales average</div></div>
-    <div class="hero-n"><div class="l">vs sold</div><div class="v ${premCls}">${r.ask_premium_pct==null?'—':(r.ask_premium_pct>0?'+':'')+r.ask_premium_pct.toFixed(1)+'%'}</div><div class="f">list against sales</div></div>
-    <div class="hero-n"><div class="l">90 days</div><div class="v">${pct(r.change_90d)}</div><div class="f">market ${money(r.market_price)} now</div></div>`;
+    <div class="hero-n accent"><div class="l">Entry today</div><div class="v">${money(r.floor_low)}</div><div class="f">${r.floor_low!=null?'cheapest NM English, shipped':'not checked today'}</div></div>
+    <div class="hero-n"><div class="l">Sells for</div><div class="v">${money(r.sells_for)}</div><div class="f">${r.sells_for_basis==='sold'?'14-day sales average':'market price; too few recent sales'}</div></div>
+    <div class="hero-n"><div class="l">Break-even</div><div class="v">${hurdleHTML(r.hurdle_pct)}</div><div class="f">sell at ${money(r.break_even)}${r.break_even_basis==='market'?' (from market)':''}</div></div>
+    ${isShort() ? `<div class="hero-n"><div class="l">Sales a day</div><div class="v">${r.avg_daily_sales==null?'—':r.avg_daily_sales.toFixed(1)}</div><div class="f">90 days, real sales</div></div>`
+                : `<div class="hero-n"><div class="l">Hold score</div><div class="v">${r.hold_score==null?'—':r.hold_score.toFixed(0)}</div><div class="f">rarity · set age · sales</div></div>`}`;
 
   const watchTxt = cleanWatch(r.watch);
   const calm = /^nothing in the numbers/i.test(watchTxt);
@@ -984,9 +1129,15 @@ function detailHTML(r, plan){
         <div class="kv"><span class="k">Units sold a day</span><span class="vv">${r.avg_daily_sales ?? '—'}</span></div>
         <p class="sub2" style="margin-top:8px">Sealed is not scored. The singles model measures rarity and copies; a box's price is print waves and time, so it gets the questions above instead of a number.</p>
       </div>` : `<div class="dbox">
-        <h5>Score <span class="sub">${r.invest_score>=TOP_SCORE?'top quarter':'of 100'}</span></h5>
-        <div class="score-line${r.invest_score>=TOP_SCORE?' top':''}"><span class="n">${r.invest_score.toFixed(0)}</span><span class="t">value 20 · liquidity 25 · trend 25 · stability 20 · scarcity 10</span></div>
-        ${componentBars(r.components)}
+        ${isShort() ? `<h5>The round trip <span class="sub">what the hurdle is made of</span></h5>
+        <div class="kv"><span class="k">Cheapest NM English, shipped</span><span class="vv">${money(r.floor_low)}</span></div>
+        <div class="kv"><span class="k">Selling costs</span><span class="vv">${(COSTS.sell_fee_pct*100).toFixed(2)}% + $${COSTS.sell_fee_fixed.toFixed(2)}</span></div>
+        <div class="kv"><span class="k">Sell at, to get it back</span><span class="vv">${money(r.break_even)}</span></div>
+        <div class="kv"><span class="k">It sells for</span><span class="vv">${money(r.sells_for)}</span></div>
+        <div class="kv"><span class="k">Move it needs</span><span class="vv">${hurdleHTML(r.hurdle_pct)}</span></div>`
+        : `<h5>Hold score <span class="sub">${(r.hold_score??0)>=TOP_SCORE?'top quarter':'of 100'}</span></h5>
+        <div class="score-line${(r.hold_score??0)>=TOP_SCORE?' top':''}"><span class="n">${r.hold_score==null?'—':r.hold_score.toFixed(0)}</span><span class="t">average of three percentiles of today's pool</span></div>
+        ${componentBars(r.hold_parts)}`}
         <div class="changes">${changes}</div>
         <div class="kv" style="margin-top:8px"><span class="k">Daily volatility</span><span class="vv">${r.volatility_pct ?? '—'}%</span></div>
         <div class="kv"><span class="k">Off its 90-day high</span><span class="vv">${r.drawdown_pct ?? '—'}%</span></div>
@@ -1016,10 +1167,13 @@ function detailHTML(r, plan){
 }
 
 const SORTERS = {
-  score:r=>r.invest_score, price:r=>r.market_price ?? -1, entry:r=>r.floor_low ?? -1,
+  // "Ranking" is the chosen horizon's order; the rest are plain columns.
+  score:r=>-(rankOf(r) ?? (isSealed(r) ? r.rank : 1e9)), price:r=>r.market_price ?? -1, entry:r=>r.floor_low ?? -1,
+  hurdle:r=>r.hurdle_pct==null ? -1e9 : -r.hurdle_pct, sells:r=>r.sells_for ?? -1, hold:r=>r.hold_score ?? -1,
+  setage:r=>r.set_age_days ?? -1,
   prem:r=>r.ask_premium_pct ?? 1e9, c7:r=>r.change_7d ?? -1e9, c90:r=>r.change_90d ?? -1e9,
   sales:r=>r.avg_daily_sales ?? -1, cons:r=>r.consistency_pct ?? -1, name:r=>(r.name||'').toLowerCase(),
-  moved:r=>{ const p = DATA.prev_ranks ? DATA.prev_ranks[key(r)] : null; return p==null ? 1e6 : p - r.rank; },
+  moved:r=>{ const p = DATA.prev_ranks ? DATA.prev_ranks[key(r)] : null; const n = rankOf(r); return p==null || n==null ? 1e6 : p - n; },
   c30:r=>r.change_30d ?? -1e9, since:r=>r.change_since_first ?? -1e9, age:r=>r.days_since_release ?? 1e9,
 };
 
@@ -1028,12 +1182,15 @@ function filtered(){
   const src = state.view==='sealed' ? SEALED : (state.view==='watch' ? ALL : DATA.rows);
   return src.filter(r=>{
     if (state.view==='watch' && !isWatched(r)) return false;
+    // A card ranks for a horizon or it does not (under 30 days needs a sale a
+    // day and a live entry); the watchlist shows everything starred.
+    if ((state.view==='all' || state.view==='sized') && rankOf(r) == null) return false;
     if (q && !((r.name||'').toLowerCase().includes(q) || (r.set_name||'').toLowerCase().includes(q) || (r.number||'').toLowerCase().includes(q))) return false;
     if (state.set && r.set_name !== state.set) return false;
     if (state.rarity && r.rarity !== state.rarity) return false;
     if (state.minPrice!=null && (r.market_price??0) < state.minPrice) return false;
     if (state.maxPrice!=null && (r.market_price??Infinity) > state.maxPrice) return false;
-    if (state.minScore!=null && r.invest_score < state.minScore) return false;
+    if (state.minScore!=null && (r.hold_score ?? -1) < state.minScore) return false;
     if (state.minSales!=null && (r.avg_daily_sales??0) < state.minSales) return false;
     return true;
   });
@@ -1044,16 +1201,19 @@ function apply(){
   let rows = filtered();
   const k = SORTERS[state.sort] || SORTERS.score;
   rows.sort((a,b)=>{ const av=k(a), bv=k(b); return av===bv?0:(av>bv?1:-1)*state.dir; });
-  // Sizing walks the full ranking by score regardless of the view's sort, so
-  // the same budget gives the same plan whatever you are looking at.
-  const byScore = DATA.rows.slice().sort((a,b)=>b.invest_score-a.invest_score);
-  const plans = state.budget ? allocate(byScore, state.budget) : new Map();
+  // Sizing walks the chosen horizon's full ranking regardless of the view's
+  // sort, so the same budget gives the same plan whatever you are looking at.
+  const byRank = DATA.rows.filter(r => rankOf(r) != null).sort((a,b)=>rankOf(a)-rankOf(b));
+  const plans = state.budget ? allocate(byRank, state.budget) : new Map();
   PLANS = plans;
   if (state.view==='sized') rows = state.budget ? rows.filter(r => (plans.get(key(r))||{}).affordable) : [];
-  renderPlanSummary(plans, byScore);
+  renderPlanSummary(plans, byRank);
+  renderHorizon();
   const shown = rows.slice(0, state.limit);
+  const ranked = DATA.rows.filter(r => rankOf(r) != null).length;
   const emptyMsg = state.view==='watch' ? 'Nothing on your watchlist yet — tap the star on any card.'
     : (state.view==='sized' && !state.budget) ? 'Enter a budget at the top and this view shows only the cards it can take a position in.'
+    : (!ranked && isShort()) ? 'No card ranks for a hold under 30 days today. It takes a sale a day, a live Near Mint price, and enough recent sales to measure the hurdle against — and the record above is why the bar is that high.'
     : 'Nothing matches those filters.';
   document.getElementById('rows').innerHTML = shown.length ? shown.map(r=>rowHTML(r, plans.get(key(r)))).join('')
     : `<div class="empty">${emptyMsg}</div>`;
@@ -1085,8 +1245,8 @@ function reset(){
 }
 
 function exportCSV(){
-  const rows = window.__view || DATA.rows;
-  const cols = ['rank','name','set_name','number','rarity','printing','market_price','floor_low','shelf_med','copies','settled_price','ask_premium_pct','change_3d','change_7d','change_30d','change_90d','consistency_pct','volatility_pct','drawdown_pct','avg_daily_sales','days_traded_pct','invest_score','tcgplayer_url'];
+  const rows = (window.__view || DATA.rows).map(r => Object.assign({}, r, {rank: rankOf(r), horizon: state.horizon}));
+  const cols = ['horizon','rank','name','set_name','number','rarity','printing','floor_low','sells_for','break_even','hurdle_pct','hold_score','set_age_days','market_price','shelf_med','copies','settled_price','change_3d','change_7d','change_30d','change_90d','volatility_pct','drawdown_pct','avg_daily_sales','days_traded_pct','tcgplayer_url'];
   const csv = [cols.join(',')].concat(rows.map(r=>cols.map(c=>{ const v=r[c]; if (v==null) return ''; const s=String(v); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }).join(','))).join('\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download = `market-haro-${DATA.obs_date}.csv`; a.click(); URL.revokeObjectURL(a.href);
@@ -1121,6 +1281,10 @@ window.addEventListener('scroll', ()=>{ if (tipAnchor) showTip(tipAnchor); }, {p
 document.addEventListener('click', e=>{
   const star = e.target.closest('[data-star]');
   if (star){ e.stopPropagation(); const r = findRow(star.dataset.star); if (r) toggleWatch(r); return; }
+  const hzb = e.target.closest('[data-horizon]');
+  if (hzb){ state.horizon = hzb.dataset.horizon; saveHorizon(state.horizon); state.limit = 30; state.open.clear(); apply(); return; }
+  const pre = e.target.closest('[data-preset]');
+  if (pre){ const v = Number(pre.dataset.preset); state.budget = v; document.getElementById('budget').value = v; state.limit = 30; apply(); return; }
   const jump = e.target.closest('[data-view-jump]');
   if (jump){ state.view = jump.dataset.viewJump; state.limit = 30; apply(); document.getElementById('rows').scrollIntoView({behavior:'smooth'}); return; }
   const rng = e.target.closest('[data-range]');
@@ -1172,21 +1336,26 @@ syncInit();
 """
 
 TIPS = {
-    "price": "Market price from the daily batch — up to two days behind. A reference, not what you pay.",
-    "entry": "Cheapest Near Mint English listing right now, shipping included. This is the number you would pay; it matches TCGplayer’s “As low as”.",
-    "prem": "Listed price against what copies actually SOLD for over the last 14 days. Red: sellers are asking more than buyers have paid — historically those gave back a median 4% over 30 days. Green: the reverse, +10%. A timing read, not a quality read.",
-    "c7": "Change over 7 days, from stored daily closes. Context; carries no weight in the score.",
-    "c90": "Change over 90 days. One of the two inputs to the Trend component.",
-    "sales": "Average copies sold per day over 90 days. Under 1.0 shows red — at that rate a stack takes weeks to exit.",
-    "score": "Weighted 0–100: value 20%, liquidity 25%, trend 25%, stability 20%, scarcity 10%. Anchored to this market’s own quartiles, so 75+ means top quarter — not a prediction.",
-    "buy": "How many copies fit at the budget you entered, and what they cost — sized down the ranking with a per-card cap. Arithmetic on your number and today’s entry price. Not a recommendation.",
-    "settled": "Volume-weighted average of what copies actually sold for over 14 days, next to the listed price. Across 1,201 observations the fifth of cards listed ~7% below recent sales returned +10.3% over 30 days; the fifth listed ~9% above returned −4.0% (ρ = −0.31). Describes where it trades, not where it goes.",
+    "price": "Market price from the daily batch — up to two days behind, and for thin cards often far from any copy you can buy. A reference, not what you pay.",
+    "entry": "Cheapest Near Mint English listing right now, shipping included. This is the number you would pay; it matches TCGplayer’s “As low as”. Pulled live for the top of each ranking.",
+    "sells": "What copies have actually sold for: the volume-weighted average of the last 14 days. A * means too few recent sales, so the market price stands in.",
+    "hurdle": "How far the price has to move from what it sells for now before selling gives back what you paid: entry plus the marketplace’s cut (10.75% + 2.5% + $0.30 by default). Green under 10%, amber under 25%, red above.",
+    "age": "Days since the card’s set released (promos: since we first priced it). In the archive, cards from older sets held up better: new supply weighs on a new set for months.",
+    "prem": "Market price against what copies actually sold for over 14 days. A description of where it trades, not a return: the market price is built from recent sales and lags them, so the gap closes by construction.",
+    "c7": "Change over 7 days, from stored daily closes. Context; carries no weight in any ranking.",
+    "c90": "Change over 90 days, from stored daily closes. Context; a steady 90-day climb did not predict the next one in the walk-forward.",
+    "sales": "Copies actually sold a day over 90 days, measured only over days with sales figures. Under 1.0 shows red — at that rate a stack takes weeks to exit.",
+    "score": "The hold score, 0–100: rarity, set age and sales a day, each as a percentile of today’s pool, averaged. The three things that ordered the next 90–270 days in the walk-forward. Not a prediction.",
+    "buy": "How many copies fit at the budget you entered, and what they cost — sized down the ranking you picked, capped per card and per set. Arithmetic on your number and today’s entry price. Not a recommendation.",
+    "settled": "Volume-weighted average of what copies actually sold for over 14 days, next to the listed price. It says where copies trade. It used to be quoted as a 30-day edge; measured against later sale prices instead of the lagging market price, that edge was not there.",
 }
 
 _SORT_ICON = ('<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">'
               '<path d="M8 3v10M4 9l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" '
               'stroke-linecap="round" stroke-linejoin="round"/></svg>')
 
+
+EMBED_TOP = 150   # rows of the hold ranking whose art ships inside the page
 
 RARITY_ORDER = ["Common", "C+", "C++", "Uncommon", "U+", "U++", "Rare", "R+", "R++",
                 "Legend Rare", "LR+", "LR++", "Promo"]
@@ -1306,12 +1475,15 @@ def kpi_tiles(
     obs_date: str,
     screened_href: str | None = "#screened-out",
     track_url: str = "",
+    evidence: dict[str, Any] | None = None,
 ) -> str:
     """The strip of tiles under the header. One function, so the front door
     (radar/preview.py) shows exactly the tiles a subscriber sees: breadth,
     pass the screen, liquid, screened out, the next release, the record.
     `screened_href=None` renders the screened-out tile without a link (the
-    public page has no list to jump to)."""
+    public page has no list to jump to). `evidence` (the front door passes
+    it; the report has the horizon panel instead) adds the hold ranking's
+    walk-forward tile."""
     market = market or {}
     liquid = sum(1 for r in candidates if (r.get("avg_daily_sales") or 0) >= 1.0)
     total = len(candidates) + len(rejected)
@@ -1339,8 +1511,17 @@ def kpi_tiles(
     record_tile = ""
     if record and record.get("calls_30"):
         tag, href = ("a", f' href="{_esc(track_url or "#")}"') if track_url else ("div", "")
-        record_tile = (f'<{tag} class="kpi"{href} data-tip="Every top-20 pick, scored 30 days after the issue it appeared in against that issue&#39;s whole pool. Public, committed to git the day it is published, never edited."><div class="l">The record<span class="info">?</span></div>'
-                       f'<div class="v">{record["calls_beat_pct"]}%</div><div class="f">of {record["calls_30"]} calls beat their pool at +30d · median {record["calls_median"]:+.1f}%</div></{tag}>')
+        which = record.get("methods") or []
+        whose = " · the retired score" if which == ["retired score"] else ""
+        net = (f' · {record["net_profitable"]} of {record["net_calls"]} made money after costs'
+               if record.get("net_calls") else "")
+        record_tile = (f'<{tag} class="kpi"{href} data-tip="Every top-20 pick, scored 30 days after the issue it appeared in against that issue&#39;s whole pool, and again as a buyer lives it: bought at the cheapest Near Mint copy, sold at the market less selling costs. Committed to git the day it is published, never edited."><div class="l">The record<span class="info">?</span></div>'
+                       f'<div class="v">{record["calls_beat_pct"]}%</div><div class="f">of {record["calls_30"]} calls beat their pool at +30d · median {record["calls_median"]:+.1f}%{net}{whose}</div></{tag}>')
+    ev_tile = ""
+    w = (((evidence or {}).get("horizons") or {}).get("mid") or {}).get("windows", {}).get("90") or {}
+    if w.get("splits"):
+        ev_tile = (f'<div class="kpi up"><div class="l" data-tip="The hold ranking, walked forward on our own archive: each month since October 2025, cards scored with only what was known that day, then measured 90 days later. Medians. Not a forecast.">Hold ranking, tested<span class="info">?</span></div>'
+                   f'<div class="v">{w["top_median"]:+.0f}%</div><div class="f">top 20 at 90 days vs {w["pool_median"]:+.0f}% for the field · ahead in {w["top_beat_pool"]} of {w["splits"]} months</div></div>')
 
     if screened_href:
         screened = (f'<a class="kpi" href="{_esc(screened_href)}"><div class="l" data-tip="Cards in the pool that failed a gate today. Click to jump to the list at the bottom of the page: every one is named with the gate it failed, so nothing is dropped silently.">Screened out<span class="info">?</span></div><div class="v">{len(rejected)}</div><div class="f">every one listed with its reason · see the list ↓</div></a>')
@@ -1348,10 +1529,10 @@ def kpi_tiles(
         screened = (f'<div class="kpi"><div class="l" data-tip="Cards in the pool that failed a gate today. The full report names every one with the gate it failed.">Screened out<span class="info">?</span></div><div class="v">{len(rejected)}</div><div class="f">every one named in the report, with its reason</div></div>')
     return (
         f'  <div class="kpi{breadth_cls}"><div class="l" data-tip="Share of every priced product in the game that is up over 7 days. Whether your candidates are rising with the market or against it.">Market breadth<span class="info">?</span></div><div class="v">{f"{breadth}%" if breadth is not None else "—"}</div><div class="f">{breadth_word} · {market.get("up_7d", 0):,} of {market.get("priced", 0):,} up over 7d</div></div>\n'
-        f'  <div class="kpi"><div class="l" data-tip="The pool is every English single priced $10+ and up over 30 days. Five gates then take a card out: down over 90 days, no recorded sale in 90 days, under 45 days of history, daily swings over 8%, or no history yet. What is left is scored and ranked; the score never removes a card, it only orders them.">Pass the screen<span class="info">?</span></div><div class="v">{len(candidates)}</div><div class="f">of {total:,} screened</div></div>\n'
+        f'  <div class="kpi"><div class="l" data-tip="The pool is every English single priced $10+. Gates take a card out: under 45 days of history, no sales or no sales figures, daily swings over 8%, or a cheapest copy more than 30% over what it sells for. What is left is ranked for each hold horizon; a ranking never removes a card, it only orders them.">Pass the screen<span class="info">?</span></div><div class="v">{len(candidates)}</div><div class="f">of {total:,} screened</div></div>\n'
         f'  <div class="kpi up"><div class="l" data-tip="Candidates selling at least one copy a day. Below that, exiting a stack takes weeks.">Liquid enough<span class="info">?</span></div><div class="v">{liquid}</div><div class="f">1+ sales a day</div></div>\n'
         f'  {screened}\n'
-        f'  {next_tile}{record_tile}')
+        f'  {next_tile}{ev_tile}{record_tile}')
 
 
 def render(
@@ -1375,20 +1556,37 @@ def render(
     sync_on: bool = False,
     record: dict[str, Any] | None = None,
     track_url: str = "",
+    evidence: dict[str, Any] | None = None,
+    cost_cfg: dict[str, Any] | None = None,
 ) -> str:
     """`since` and `heat` are accepted for compatibility and unused: the
     issue-to-issue comparison is the email digest's job, and the hand-kept
-    catalyst list was replaced by the release calendar (`releases`)."""
+    catalyst list was replaced by the release calendar (`releases`).
+
+    `ranked` is radar/horizon.rank()'s output: every row carries its rank per
+    hold horizon. Rows from anywhere else (an older caller, a test fixture)
+    are ranked here first, so the page always has the same shape."""
+    from . import costs as costs_mod
+    from . import horizon as horizon_mod
+
     market = market or {}
+    releases = releases or []
+    if any("horizons" not in r for r in ranked):
+        ranked = horizon_mod.rank(ranked, releases={}, as_of=obs_date, cost_cfg=cost_cfg, regate=False)
     candidates = [r for r in ranked if not r.get("disqualified")]
     rejected = [r for r in ranked if r.get("disqualified")]
-    releases = releases or []
 
     rows = []
     for i, r in enumerate(candidates[:top_n], 1):
         p = _row_payload(r)
-        p["rank"] = i
+        p["rank"] = r["horizons"][horizon_mod.DEFAULT]["rank"] or i
         p["printing"] = r.get("printing") or "Normal"
+        p["h"] = {h: {"rank": v.get("rank")} for h, v in r["horizons"].items()}
+        for k in ("hold_score", "hold_parts", "set_age_days", "set_id", "sells_for", "sells_for_basis",
+                  "break_even", "break_even_basis", "hurdle_pct", "entry_vs_sold_pct"):
+            p[k] = r.get(k)
+        p["thesis"] = horizon_mod.thesis(r)
+        p["watch"] = horizon_mod.watch(r)
         rows.append(p)
     sealed_rows = []
     for r in sealed or []:
@@ -1401,7 +1599,14 @@ def render(
     if art_cache is not None:
         from . import art
 
-        art.embed(rows, art_cache, fetch=fetch_art)
+        # The pool is every single at $10+ now (~400 rows). Embedding art for
+        # all of them would triple the page; the top of each ranking is what
+        # gets looked at, and the rest load the CDN's copy lazily (artHTML).
+        head = [p for p in rows if (p["h"]["mid"]["rank"] or 10 ** 9) <= EMBED_TOP or p["h"]["short"]["rank"]]
+        art.embed(head, art_cache, fetch=fetch_art)
+        for p in rows:
+            if "image_large" not in p and art.product_id(p) is not None:
+                p["image_large"] = art.large_url(art.product_id(p))
         art.embed(sealed_rows, art_cache, fetch=fetch_art)
     sets = sorted({r["set_name"] for r in rows if r.get("set_name")})
     rarities = sorted({r["rarity"] for r in rows if r.get("rarity") and r["rarity"] not in ("—", "None")},
@@ -1411,7 +1616,13 @@ def render(
 
     payload = json.dumps({
         "rows": rows, "obs_date": obs_date, "checklist": CHECKLIST,
-        "plan": plan_cfg or {"max_position_pct": 0.25}, "tips": TIPS,
+        "plan": {"max_position_pct": 0.25, "max_set_pct": 1.0, **(plan_cfg or {})}, "tips": TIPS,
+        "horizons": {"order": list(horizon_mod.HORIZONS), "labels": horizon_mod.LABELS,
+                     "default": horizon_mod.DEFAULT},
+        "hold_parts": [list(x) for x in horizon_mod.HOLD_PARTS],
+        "costs": costs_mod.settings(cost_cfg),
+        "evidence": evidence,
+        "cal": horizon_mod.calendar_read(playbook, releases, today or obs_date),
         "prev_ranks": prev_ranks or None,
         "releases": [{"date": m["date"], "label": m["label"], "kind": m.get("kind"),
                       "names": m.get("names") or []} for m in releases],
@@ -1448,13 +1659,25 @@ def render(
 </header>
 {_freshness(obs_date, today)}
 
+<div class="panel horizon" id="horizon">
+  <div class="hzrow">
+    <span class="hzq">How long will you hold?</span>
+    <span class="hz" role="group" aria-label="Hold horizon">{"".join(f'<button data-horizon="{h}">{_esc(horizon_mod.LABELS[h])}</button>' for h in horizon_mod.HORIZONS)}</span>
+    <span class="hzhow" id="hzhow"></span>
+  </div>
+  <div class="evs" id="evs"></div>
+  <div class="evnote" id="evnote"></div>
+  <div class="retired" id="retired"></div>
+</div>
+
 <div class="panel portfolio" id="portfolio" hidden></div>
 <div class="sync" id="sync-status" hidden></div>
 
 <div class="panel budget">
-  <label for="budget" data-tip="Total you are willing to put to work. Positions are sized down the ranking, capped per card.">Budget<span class="info">?</span></label>
+  <label for="budget" data-tip="Total you are willing to put to work. Positions are sized down the ranking you picked, capped per card and per set.">Budget<span class="info">?</span></label>
   <span class="money-in"><input type="number" id="budget" placeholder="amount" min="0" step="50" aria-label="Budget in dollars"></span>
   <div class="plan-sum" id="plan-sum"></div>
+  <div class="presets" role="group" aria-label="Budget presets">{"".join(f'<button data-preset="{b}">${b:,}</button>' for b in (250, 500, 1000, 2500, 5000))}</div>
 </div>
 
 <div class="kpis">
@@ -1466,9 +1689,11 @@ def render(
   <span class="views"><button data-view="all" class="on">All</button><button data-view="sized" data-tip="Only cards that get a size at your budget.">Sized</button><button data-view="watch">Watchlist <span id="watch-count"></span></button><button data-view="sealed" data-tip="Booster boxes, starter decks and deck build boxes: price against release, days on the market, what is moving. Not scored.">Sealed</button></span>
   <span class="sortbox"><span class="lbl">Sort</span>
   <select id="sort" aria-label="Sort by">
-    <option value="score">Score</option><option value="moved">Rank movement</option><option value="c7">7-day change</option>
-    <option value="c90">90-day change</option><option value="prem">vs sold</option><option value="price">Price</option>
-    <option value="c30">30-day change</option><option value="entry">Entry price</option><option value="sales">Sales/day</option><option value="cons">Weeks up</option><option value="since">Since first seen</option><option value="age">Days since release</option><option value="name">Name</option>
+    <option value="score">Ranking</option><option value="hurdle">Lowest break-even</option><option value="hold">Hold score</option>
+    <option value="entry">Entry price</option><option value="sells">Sells for</option><option value="setage">Set age</option>
+    <option value="sales">Sales/day</option><option value="moved">Rank movement</option><option value="c7">7-day change</option>
+    <option value="c30">30-day change</option><option value="c90">90-day change</option><option value="price">Market price</option>
+    <option value="cons">Weeks up</option><option value="since">Since first seen</option><option value="age">Days since release</option><option value="name">Name</option>
   </select>
   <button class="dirbtn" id="dir" aria-label="Flip sort direction" title="Flip sort direction">{_SORT_ICON}</button></span>
   <button class="ghost" id="fbtn" aria-expanded="false" aria-controls="filters">Filters <span class="badge" hidden>0</span></button>
@@ -1481,7 +1706,7 @@ def render(
   <div class="frow">
     <div class="fgroup"><span class="lbl">Rarity</span><div class="chips">{rarchips}</div></div>
     <div class="fgroup"><span class="lbl">Market price</span><div class="range"><input type="number" id="minprice" placeholder="min" min="0" aria-label="Minimum price"><span>to</span><input type="number" id="maxprice" placeholder="max" min="0" aria-label="Maximum price"></div></div>
-    <div class="fgroup"><span class="lbl">Score at least</span><input type="number" id="minscore" placeholder="e.g. 70" min="0" max="100" aria-label="Minimum score"></div>
+    <div class="fgroup"><span class="lbl">Hold score at least</span><input type="number" id="minscore" placeholder="e.g. 70" min="0" max="100" aria-label="Minimum hold score"></div>
     <div class="fgroup"><span class="lbl">Sales/day at least</span><input type="number" id="minsales" placeholder="e.g. 1" min="0" step="0.1" aria-label="Minimum sales per day"></div>
     <div class="factions"><button class="ghost" id="clear">Clear filters</button> <button class="ghost" id="reset">Reset everything</button></div>
   </div>
@@ -1496,13 +1721,14 @@ def render(
 <details class="panel howto">
   <summary>How to read this<span class="sc">two minutes, once</span></summary>
   <ol>
-    <li><b>Score</b> is 0–100 across value, liquidity, trend, stability and scarcity, anchored to this market’s own quartiles. 75+ means top quarter of what is actually trading. It is not a prediction.</li>
-    <li><b>Entry, not Price.</b> Price is a daily batch a day or two behind. Entry is the cheapest Near Mint English copy on the shelf now, shipped — what you would pay.</li>
-    <li><b>vs sold</b> is timing. Red: sellers asking more than buyers have paid. Green: the reverse. A great card can be listed ahead of itself.</li>
-    <li><b>Budget</b> turns the ranking into positions — copies, cost, what limited it — with a per-card cap so one card cannot eat the whole thing. It is arithmetic on your number.</li>
-    <li><b>Marks on the chart.</b> A dashed line is a set release (GD05, a wave of starter decks) so you can see how price answered new supply; a ring is a day that moved 15% or more. Hover either for the detail.</li>
-    <li><b>Tap a row</b> for the verdicts, the case, what would break it, the live shelf, and your position if you hold it. <b>Star</b> a card to keep it on your watchlist; enter copies and cost and the row flags the day the trend breaks.</li>
-    <li><b>Screened out</b> at the bottom lists every card that failed a gate and why. Nothing is dropped silently.</li>
+    <li><b>Pick how long you will hold.</b> It picks the ranking. 3–6 months and 1 year+ are ordered by the <b>hold score</b>: rarity, set age and sales a day as percentiles of today’s pool — the three things that ordered the next 90–270 days in our archive. Under 30 days is ordered by the break-even, because nothing we measured made short holds pay after costs.</li>
+    <li><b>Entry, not price.</b> Entry is the cheapest Near Mint English copy on the shelf now, shipped — what you would pay. <b>Sells for</b> is what copies actually sold for over 14 days.</li>
+    <li><b>Break-even</b> is the move a card needs from what it sells for before selling it gives back what it cost, after the marketplace’s cut. It is the number every hold has to clear first.</li>
+    <li><b>The record</b> under the question is the walk-forward test of the ranking you picked, run monthly on our own archive with each card scored on only what was known that day. Medians, with the count of tests. It describes what held up; it is not a forecast.</li>
+    <li><b>Budget</b> turns the ranking into positions — copies, cost, what limited it — capped per card and per set, with the break-even of the whole plan. It is arithmetic on your number.</li>
+    <li><b>Marks on the chart.</b> A dashed line is a set release so you can see how price answered new supply; a ring is a day that moved 15% or more.</li>
+    <li><b>Tap a row</b> for the verdicts, the case, what would break it, the live shelf, and your position after costs if you hold it. <b>Star</b> a card to keep it on your watchlist.</li>
+    <li><b>Screened out</b> at the bottom lists every card that failed a gate and why — including cards whose cheapest copy costs far more than they sell for. Nothing is dropped silently.</li>
   </ol>
 </details>
 

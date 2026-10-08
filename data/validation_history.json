@@ -91,5 +91,214 @@
       "best_pct": 340.6
     },
     "verdict": "INVERTED. rho = -0.32: higher-scoring cards did WORSE over this window. Stop acting on the ranking until you understand why."
+  },
+  {
+    "ran_at": "2026-10-08",
+    "kind": "horizons",
+    "archive": {
+      "first": "2025-09-08",
+      "last": "2026-10-07",
+      "series": 2988
+    },
+    "costs": {
+      "sell_fee_pct": 0.1325,
+      "sell_fee_fixed": 0.3
+    },
+    "horizons": {
+      "mid": {
+        "windows": {
+          "90": {
+            "splits": 9,
+            "first": "2025-10-23",
+            "last": "2026-06-20",
+            "pool_n": 214,
+            "rho_mean": 0.23,
+            "rho_positive": 7,
+            "top_median": 37.6,
+            "pool_median": 6.9,
+            "top_beat_pool": 9,
+            "q5_minus_q1": 36.6,
+            "q5_minus_q1_positive": 8,
+            "top_net_median": 18.4,
+            "top_net_positive": 5,
+            "sold": {
+              "splits": 9,
+              "first": "2025-10-23",
+              "last": "2026-06-20",
+              "pool_n": 181,
+              "rho_mean": 0.22,
+              "rho_positive": 8,
+              "top_median": 30.5,
+              "pool_median": 6.0,
+              "top_beat_pool": 9,
+              "q5_minus_q1": 30.1,
+              "q5_minus_q1_positive": 8,
+              "top_net_median": 12.4,
+              "top_net_positive": 5
+            }
+          },
+          "180": {
+            "splits": 6,
+            "first": "2025-10-23",
+            "last": "2026-03-22",
+            "pool_n": 169,
+            "rho_mean": 0.29,
+            "rho_positive": 5,
+            "top_median": 60.1,
+            "pool_median": 25.2,
+            "top_beat_pool": 6,
+            "q5_minus_q1": 60.5,
+            "q5_minus_q1_positive": 5,
+            "top_net_median": 37.8,
+            "top_net_positive": 6,
+            "sold": {
+              "splits": 6,
+              "first": "2025-10-23",
+              "last": "2026-03-22",
+              "pool_n": 138,
+              "rho_mean": 0.26,
+              "rho_positive": 6,
+              "top_median": 61.5,
+              "pool_median": 24.6,
+              "top_beat_pool": 6,
+              "q5_minus_q1": 48.6,
+              "q5_minus_q1_positive": 6,
+              "top_net_median": 39.1,
+              "top_net_positive": 6
+            }
+          }
+        },
+        "verdict": "HOLDING UP. At 180 days, rho +0.29 across 6 monthly tests (5 positive); the top 20 beat the pool in 6 (median +60.1% against +25.2%)."
+      },
+      "long": {
+        "windows": {
+          "270": {
+            "splits": 3,
+            "first": "2025-10-23",
+            "last": "2025-12-22",
+            "pool_n": 131,
+            "rho_mean": 0.34,
+            "rho_positive": 3,
+            "top_median": 110.2,
+            "pool_median": 52.6,
+            "top_beat_pool": 3,
+            "q5_minus_q1": 105.3,
+            "q5_minus_q1_positive": 3,
+            "top_net_median": 81.2,
+            "top_net_positive": 3,
+            "sold": {
+              "splits": 3,
+              "first": "2025-10-23",
+              "last": "2025-12-22",
+              "pool_n": 97,
+              "rho_mean": 0.24,
+              "rho_positive": 3,
+              "top_median": 101.6,
+              "pool_median": 62.9,
+              "top_beat_pool": 3,
+              "q5_minus_q1": 55.9,
+              "q5_minus_q1_positive": 3,
+              "top_net_median": 73.8,
+              "top_net_positive": 3
+            }
+          },
+          "365": {
+            "splits": 0,
+            "sold": {
+              "splits": 0
+            }
+          }
+        },
+        "verdict": "HOLDING UP. At 270 days, rho +0.34 across 3 monthly tests (3 positive); the top 20 beat the pool in 3 (median +110.2% against +52.6%). Few tests yet; read it as early."
+      },
+      "short": {
+        "window": 30,
+        "starts": [
+          {
+            "date": "2026-08-10",
+            "pool_n": 219,
+            "pool_net_median": -16.2,
+            "pool_profitable_pct": 16,
+            "ranked_net_median": 0.4,
+            "ranked_profitable": 10,
+            "ranked_n": 20,
+            "momentum_net_median": -28.2,
+            "momentum_profitable": 1,
+            "momentum_n": 20
+          },
+          {
+            "date": "2026-09-03",
+            "pool_n": 418,
+            "pool_net_median": -20.2,
+            "pool_profitable_pct": 6,
+            "ranked_net_median": -12.3,
+            "ranked_profitable": 7,
+            "ranked_n": 20,
+            "momentum_net_median": -33.8,
+            "momentum_profitable": 2,
+            "momentum_n": 20
+          }
+        ],
+        "pool_profitable_pct": 11,
+        "ranked_profitable": 17,
+        "ranked_n": 40,
+        "momentum_profitable": 3,
+        "momentum_n": 40,
+        "verdict": "SHORT HOLDS HAVE NOT PAID. Bought at the cheapest listing and sold 30 days later at the market less costs, 11% of the pool made money; the 20 lowest hurdles made money 17 times in 40, the 20 strongest risers 3 in 40 (2 start dates)."
+      }
+    },
+    "legacy": {
+      "name": "value 20 \u00b7 liquidity 25 \u00b7 trend 25 \u00b7 stability 20 \u00b7 scarcity 10, pool up over 30 days",
+      "retired": "2026-10-08",
+      "windows": {
+        "30": {
+          "splits": 12,
+          "first": "2026-06-22",
+          "last": "2026-09-07",
+          "pool_n": 132,
+          "rho_mean": -0.13,
+          "rho_positive": 3,
+          "top_median": 3.0,
+          "pool_median": 6.7,
+          "top_beat_pool": 3,
+          "q5_minus_q1": -4.0,
+          "q5_minus_q1_positive": 3,
+          "top_net_median": -11.0,
+          "top_net_positive": 3
+        },
+        "60": {
+          "splits": 7,
+          "first": "2026-06-22",
+          "last": "2026-08-03",
+          "pool_n": 114,
+          "rho_mean": -0.19,
+          "rho_positive": 1,
+          "top_median": 1.6,
+          "pool_median": 13.1,
+          "top_beat_pool": 0,
+          "q5_minus_q1": -14.9,
+          "q5_minus_q1_positive": 2,
+          "top_net_median": -12.4,
+          "top_net_positive": 1
+        },
+        "90": {
+          "splits": 3,
+          "first": "2026-06-22",
+          "last": "2026-07-06",
+          "pool_n": 93,
+          "rho_mean": -0.11,
+          "rho_positive": 1,
+          "top_median": 11.1,
+          "pool_median": 18.9,
+          "top_beat_pool": 0,
+          "q5_minus_q1": -3.4,
+          "q5_minus_q1_positive": 1,
+          "top_net_median": -4.2,
+          "top_net_positive": 1
+        }
+      },
+      "verdict": "INVERTED. At 30 days, rho -0.13 across 12 weekly tests; its top 20 beat its pool in 3."
+    },
+    "note": "Walk-forward on the archive: each split scores cards with only what was known that day. Hold windows use monthly splits; the short and legacy tests use the dates the data allows. Medians of per-card change; 'net' is bought at the market price and sold at the market less selling costs."
   }
 ]
