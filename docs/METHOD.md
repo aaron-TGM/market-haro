@@ -1,12 +1,162 @@
 # Method
 
-How Market Haro measures, scores, gates and validates. This is the long version; the
+How Market Haro measures, ranks, gates and validates. This is the long version; the
 README says what the product is, DEPLOY.md says how to run it, ARCHITECTURE.md says where
-the code lives. Everything here was measured on tcgapi.dev data for the Gundam Card Game
-between August and September 2026, and every threshold traces back to a distribution, not
-a preference.
+the code lives. Everything here was measured on tcgapi.dev data for the Gundam Card Game,
+and every threshold traces back to a distribution or a walk-forward test, not a preference.
 
-## The screen
+The first section is October 2026's change and the evidence for it. Everything after it
+describes the screen as it was built in August and September; the parts that were retired
+say so.
+
+## October 2026: ranked by how long you will hold
+
+### Why the score was retired
+
+The original score (value 20, liquidity 25, trend 25, stability 20, scarcity 10, over a
+pool of cards up over 30 days) was walked forward across every week the archive lets the
+live code score — 22 June to 7 September 2026 — with each card scored on only what was
+known that day:
+
+| Window | Weekly tests | Rank correlation with what came next | Its top 20 beat its own pool |
+|---|---|---|---|
+| 30 days | 12 | −0.13 (3 positive) | 3 of 12 |
+| 60 days | 7 | −0.19 (1 positive) | 0 of 7 |
+| 90 days | 3 | −0.11 (1 positive) | 0 of 3 |
+
+The monthly `radar validate` of 1 October had already said INVERTED (ρ −0.32). Measured
+on what copies actually sold for instead of the market price, the score was −0.20 at 30
+days with 0 of 8 tests positive. Its trend component — a steady 90-day climb — was the
+worst of the five: those climbs reversed. Liquidity looked anti-predictive on the market
+price and neutral on sales, which is mostly a measurement effect: the market price of a
+thin card moves less often.
+
+What a reader actually lived, from the stored issues of September (the track record now
+shows this on every issue): of 60 top-20 calls that carried a live entry price, bought at
+that entry and sold 30 days later at the market less selling costs, **2 made money**;
+the median was −22%. The $500 plan the page would have drawn on 3 September was −7% at
+the market and −20% after costs a month later.
+
+### What does predict, and at which horizon
+
+The same walk-forward, asked a different question: across every card the archive could
+score each month from October 2025, what ordered the next 3, 6 and 9 months? Monthly
+splits, an English single at $10+ with 45 days of history and some sales, scored on what
+was known at the split (`radar validate`, run 2026-10-08):
+
+**3–6 months and 1 year+: the hold score.** Three facts about a card, none of them a
+price trend — rarity tier (the print rate of the treatment), set age (days since its set
+released; promo pools are aged from when we first priced the card), and sales a day — as
+percentiles of the day's pool, averaged.
+
+| Window | Monthly tests | ρ (positive) | Top 20, median | Field, median | Top 20 ahead | Top 20 after costs | ρ on sold prices |
+|---|---|---|---|---|---|---|---|
+| 90 days | 9 | +0.23 (7) | +37.6% | +6.9% | 9 of 9 | +18.4% (5 of 9 positive) | +0.22 (8) |
+| 180 days | 6 | +0.29 (5) | +60.1% | +25.2% | 6 of 6 | +37.8% (6 of 6) | +0.26 (6) |
+| 270 days | 3 | +0.34 (3) | +110.2% | +52.6% | 3 of 3 | +81.2% (3 of 3) | +0.24 (3) |
+| 365 days | 0 | — | — | — | — | — | — |
+
+"After costs" is bought at the market price and sold at the market less 13.25% + $0.30;
+live entries can only make it worse. Two readings matter more than the headline: at 90
+days even the top 20 cleared costs in only 5 of 9 months, and at 180 days it cleared them
+in all 6. A three-month hold is barely long enough; six months has been. The first full
+one-year window closes in October 2026.
+
+Robustness checks, all run during the research (scripts kept out of the repo; the in-repo
+test is `validate.run_horizons`):
+
+- Within the $10–100 band alone: ρ +0.25 at 90 days (9 of 10), +0.36 at 180 (7 of 7) —
+  the ordering is not "expensive cards went up".
+- Rarity alone was the strongest single input in every band under $250 (above it the
+  tests are too few to rank inputs); within the top rarities, set age was (ρ +0.34 at 90
+  days, 10 of 10; +0.42 at 180, 7 of 7).
+- Since June 2026, the stretch where the old score failed: 90-day ρ +0.14, 6 of 6 tests
+  positive, top 20 +31% against +3%.
+- Requiring a card to be up over 30 days — the old pool filter — cut the 90-day result
+  of the top 20 from +24% to +10%; requiring it not to be down over 90 days, to +12%. So
+  the pool is every English single at $10+ the gates pass.
+
+The 3–6 month and 1 year+ views rank the same way, because nothing in the archive tells
+them apart yet. They differ in the record they show and the window it is measured over.
+
+**Under 30 days: nothing paid.** Bought at the cheapest listing (the batch's
+`lowest_with_shipping`, any condition — optimistic for Near Mint) and sold 30 days later
+at the market less costs, the two start dates the recorded entries allow:
+
+| Start | Cards | Made money | 20 lowest hurdles made money | 20 strongest 7-day risers made money |
+|---|---|---|---|---|
+| 2026-08-10 | 219 | 16% (median −16.2%) | 10 of 20 (median +0.4%) | 1 of 20 (median −28.2%) |
+| 2026-09-03 | 418 | 6% (median −20.2%) | 7 of 20 (median −12.3%) | 2 of 20 (median −33.8%) |
+
+Momentum looked strong on the market price (+16 points over the field at 30 days in 15 of
+15 weekly tests) and was a loss on buyable terms: the market price lags the listings, so a
+riser's cheapest copy has already repriced above it. The one thing that helped was paying
+less than the card sells for. So the under-30-days view is ordered by the break-even
+hurdle, needs a sale a day (the exit has to happen inside the window), a live Near Mint
+price, and real recent sales to measure against — against a lagging market price the
+hurdle invents bargains.
+
+### Costs
+
+`radar/costs.py`. A round trip on TCGplayer costs a 10.75% commission plus 2.5% + $0.30
+payment processing (eBay's card fee is within a point). So a card bought at what it sells
+for needs +15.6% before selling gives the money back. Every row carries:
+
+- **Entry** — the cheapest Near Mint English copy, shipped (live, for the top of each
+  ranking).
+- **Sells for** — the 14-day volume-weighted average of real sales; the market price,
+  marked, when there are too few.
+- **Break-even** — (entry + $0.30) / 0.8675, and the move from "sells for" it needs.
+
+A card whose cheapest copy costs more than 30% over what it sells for is screened out: the
+quoted price is not one anyone can buy at. In September the cheapest Near Mint copy of a
+card over $500 sat a median 68% above its market price (n = 267 issue-rows); under $500,
+within a few percent.
+
+### Corrections to what this document said before
+
+- **vs sold is not an edge.** The fifths table further down (+10.3% for asks 7% under
+  recent sales, −4.0% for asks 9% over) measured the next 30 days of *market price*. The
+  market price is built from recent sales and lags them, so a market price under the sales
+  average rises toward it by construction. Against what copies sold for 30 days later the
+  gap ran the wrong way (ρ −0.17, 0 of 8 tests). It stays on the page as a description and
+  is no longer quoted as a return.
+- **The steady climb is not a hold signal.** See the retired score above. Weeks-up is still
+  shown, without colour, and "trend broke" still flags a position you hold.
+
+### The sales figures stopped on 7 September
+
+The daily price batch carries no sales; sales volume and the price copies sold for come
+only from `/cards/:id/history`, which the pipeline called only for cards with under 45
+days of history. Once the archive was deep enough, no sales figure entered it again: on 7
+October not one ranked card had a settled price, and every batch row was being read as a
+day with zero sales, so liquidity decayed by itself (Silver Bullet 7.8 → 3.9 a day in a
+month). By early December every card would have failed "no sales in 90 days". Fixed two
+ways: `ingest.refresh_sales` pulls the last month of history for every card on the page
+whose sales are more than two days old (one request a card, about 500 a day of the plan's
+10,000), and `invest.sales_rate` measures sales a day only over days that have figures —
+unknown is not zero. Weekly history points carry a week's sales and are spread over the
+week, so old and new history measure the same thing.
+
+The "missing" issue dates of September (4, 6, 8, 11, 14, 17, 22, 23, 29) are not a
+pipeline failure: issues are dated by the API's own `last_updated_at`, and the batch
+refreshed every two or three days in September. It has refreshed daily since 1 October.
+
+### What this cannot tell you
+
+One game, thirteen months of history, and a market that rose over most of it (the field's
+median was +25% at 180 days and +53% at 270 across the tests). Monthly tests with 90–270-day windows overlap, so they are not independent;
+read the counts as "how often", not as a significance test. The walk-forward cannot apply
+the volatility and entry-price gates before mid-2026 (no daily prices or live shelves in
+the archive then), and the archive itself was drawn from cards worth $3+ when history was
+backfilled, so a card that collapsed below that is missing. The 270-day row is three tests.
+None of this is a forecast; `radar validate` re-runs it monthly and the page shows the
+newest run.
+
+## The screen (retired 2026-10-08)
+
+The rest of this section describes the original score. It is kept because its record is
+still on the track record page, and `radar validate --legacy` still measures it.
 
 Five components, each 0–100, then weighted:
 
@@ -96,6 +246,11 @@ A 1d column is blank or 0.0% on nearly two-thirds of rows. 3d is the shortest wi
 says something most of the time.
 
 ### vs sold
+
+> **Corrected October 2026.** The table below measured the next 30 days of *market price*,
+> which lags sales and closes this gap by construction. Against what copies actually sold
+> for, the gap had no edge (ρ −0.17, 0 of 8 tests); see "Corrections" at the top. The column
+> is gone from the rows; the gap is still described in the detail.
 
 The **vs sold** column is the gap between the listed price and the volume-weighted average
 of what copies *actually sold for* over the last 14 days. Listings are what sellers hope

@@ -3,6 +3,47 @@
 Newest first. Dates are the day the work landed; issue dates are the price date the
 report carries.
 
+## 2026-10-08 — Ranked by how long you hold; costs on every row; sales figures flow again
+
+- **The score is retired.** Walked forward on every week the archive can score (June to
+  September), the original score did worse than its own pool at every horizon: rank
+  correlation −0.13 at 30 days, −0.19 at 60, −0.11 at 90; its top 20 beat the pool in 3
+  of 12 weekly tests at 30 days and 0 of 7 at 60. Of the 60 September top-20 calls with a
+  live entry, 2 made money after costs. The monthly validation of 1 October had already
+  said INVERTED; the page never showed it. Its issues stay in the record, labelled.
+- **How long will you hold?** The first question on the page, and it picks the ranking
+  (`radar/horizon.py`). 3–6 months and 1 year+: the hold score — rarity, set age and sales
+  a day as percentiles of the day's pool — whose top 20 rose a median +37.6% over 90 days
+  against +6.9% for the field (9 of 9 monthly tests since October 2025) and +60.1% against
+  +25.2% over 180 (6 of 6); it holds on what copies sold for, inside the $10–100 band, and
+  since June. Under 30 days: ordered by the break-even, because nothing measured made short
+  holds pay after costs (about one card in nine did); needs a sale a day, a live entry and
+  real recent sales. Choice remembered in the browser. The pool is every English single at
+  $10+ — the "up over 30 days" filter halved the hold ranking's result and is gone.
+- **Under the question, that ranking's record**: the newest `radar validate` run, the next
+  booster with what past releases did, and the retired score's verdict.
+- **Costs** (`radar/costs.py`, `costs:` in config): entry, what it sells for, and the
+  break-even after TCGplayer's 10.75% + 2.5% + $0.30 on every row; holdings show P&L after
+  costs; cards whose cheapest copy costs more than 30% over what they sell for are screened
+  out (cards over $500 sat a median 68% above their market price in September).
+- **Budget tool**: presets ($250 to $5,000), a 50% cap per set beside the 25% per card,
+  the plan's own break-even and days to exit; sized down the ranking you picked. Python
+  and JavaScript twins checked against each other in a test that runs the page's code.
+- **Track record**: every call also resolved as bought at the live entry and sold at the
+  market less costs; the $500 and $2,500 plans each issue would have drawn, valued the
+  same way; each issue labelled with its ranking; the walk-forward tables, newest run
+  first (the track page had been showing August's +0.24 instead of October's −0.32).
+- **Fixed: sales figures stopped entering the archive on 7 September.** The batch has no
+  sales and history was only pulled for new cards, so liquidity decayed by itself and no
+  card had a settled price by 7 October; by December every card would have failed "no
+  sales in 90 days". `ingest.refresh_sales` refreshes a month of history for any pool card
+  whose sales are over two days old (~500 requests a day of 10,000), and sales a day is
+  measured only over days with figures. `vs sold` is no longer quoted as a 30-day edge:
+  that edge was the market price catching up to sales, not a return.
+- `radar validate` now runs the horizon walk-forward (`--legacy` for the old test); the
+  first record, run 2026-10-08, is committed. Tests: 64 in the pipeline (8 new), the
+  Worker's 3 unchanged. The Worker is not touched.
+
 ## 2026-09-11 — The front door, and rows that open in place
 
 - The splash is the product. `/` for a stranger or an unsubscribed account is now

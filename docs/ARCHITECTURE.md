@@ -11,7 +11,9 @@ tcgapi.dev ──sync──▶ SQLite (cache) ◀──restore── data/histor
                         │                              ▲
                         │ invest                       │ export
                         ▼                              │
-   measure ─▶ score/gate ─▶ live shelf ─▶ sealed · depth · playbook · track ─▶ out/
+   refresh sales ─▶ measure ─▶ gate/rank per horizon ─▶ live shelf ─▶ costs ─▶ sealed · depth · playbook · track ─▶ out/
+                                    ▲
+             data/validation_history.json (radar validate, monthly) ── the record each horizon shows
                                                                             ├ dashboard.html    ─▶ Worker /admin/report ─▶ marketharo.io/  (entitled sessions)
                                                                             ├ preview.html      ─▶ Worker /admin/preview ─▶ marketharo.io/  (everyone else: the front door)
                                                                             └ dashboard.csv
@@ -22,22 +24,24 @@ tcgapi.dev ──sync──▶ SQLite (cache) ◀──restore── data/histor
 | Module | Job | Notes |
 |---|---|---|
 | `client.py` | tcgapi.dev v1 client | unwraps the varying payload keys, tracks the daily budget, backs off on 429/5xx |
-| `ingest.py` | sync + backfill | rows dated by `last_updated_at`, never the fetch (pinned by test) |
-| `db.py` | SQLite | `latest_prices` = newest row per product within 7 days, not one date; `sets()`; `all_series_with_volume()` |
+| `ingest.py` | sync + backfill + sales refresh | rows dated by `last_updated_at`, never the fetch (pinned by test); `refresh_sales` keeps the pool's sales figures current (the batch has none) |
+| `db.py` | SQLite | `latest_prices` = newest row per product within 7 days, not one date; `sets()`; `all_series_with_volume()` (a missing sales figure stays None); `entry_series()`, `card_meta()`, `sales_last_seen()` |
 | `archive.py` | NDJSON export/restore | deterministic bytes per month; `sets.ndjson` too |
-| `invest.py` | measure + score + gates | `features()` measures a 90-day window by date; `change_1y` from the long series; `settled()` = ask vs sold |
-| `plan.py` | budget sizing | twin of the page's `allocate()` |
+| `invest.py` | measure (+ the retired score) | `features()` measures a 90-day window by date; `sales_rate()` = sales a day over days with figures, weekly totals spread over the week; `settled()` = what copies sold for, last 14 days by date; `evaluate()` is the retired score, kept for `validate` |
+| `horizon.py` | the rankings | per hold horizon: gates (incl. a cheapest copy >30% over what it sells for), the hold score (rarity, set age, sales a day as percentiles), the under-30-days order (break-even hurdle); which cards get a live shelf; the page's words |
+| `costs.py` | the round trip | proceeds, break-even, hurdle, net return; TCGplayer's cut by default (`costs:` in config) |
+| `plan.py` | budget sizing | twin of the page's `allocate()` (a test runs both); per-card and per-set caps |
 | `snipe.py` | live NM English shelf | entry price = cheapest NM shipped; English enforced twice |
 | `sealed.py` | the sealed screen | against earliest price held + release date; its own case/watch/checklist; not scored |
 | `depth.py` | what is under each box | per set: singles ≥$50/$100/$500, top-10 value and its 30d move, money through singles and sealed; a panel, and sealed facts |
 | `releases.py` | the set calendar | codes from card numbers (GD05, ST11–14); marks on every chart; next-release tile |
 | `playbook.py` | what releases did | prior set / new set / market at +30/60/90, medians with n |
-| `track.py` | the track record | every issue's top 20 vs its pool; its one-line summary sits on the preview |
+| `track.py` | the track record | every issue's top 20 vs its pool, and after costs; the $500/$2,500 plans each issue would have drawn; which ranking each issue used; the walk-forward tables |
 | `preview.py` | the front door | the report's tiles and its top ten (first row open, big chart), ghosts, the plans; the Worker fills its markers and serves it at `/` to anyone not entitled |
 | `art.py` | card art | cached under `data/images/`, 240px WebP data URIs in the page |
 | `haro.py` | the page | one file: CSS, JS, JSON payload; nothing decided on the page that a test cannot check |
-| `digest.py` | the stored rankings | snapshot per issue in `data/rankings/`; the diff between two issues |
-| `validate.py` | walk-forward test | appends to `data/validation_history.json`; verdict thresholds |
+| `digest.py` | the stored rankings | snapshot per issue in `data/rankings/` (with `method`, the hold score, the short rank, costs); the diff between two issues; the newest shelf for an offline build |
+| `validate.py` | walk-forward tests | `run_horizons`: every ranking at its windows, monthly splits, market and sold basis, plus the short test on buyable terms and the retired score; `run`: the original single split (`--legacy`). Appends to `data/validation_history.json`; the page reads the newest |
 | `heat.py`, `setreport.py`, `signals.py`, `dashboard.py` | the earlier tools | search attention (manual capture), per-set reports, the first dashboard whose helpers the page still reuses |
 | `cli.py` | `python -m radar …` | `cmd_invest` is the issue; read it top to bottom to follow one day |
 
