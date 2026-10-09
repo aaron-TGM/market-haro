@@ -18687,7 +18687,7 @@
 {"card_id":"100020350","change_24h":1.07,"change_30d":6.98,"change_7d":0.72,"low_price":94.0,"lowest_with_shipping":94.42,"market_price":86.27,"obs_date":"2026-09-18","printing":"Holofoil","sales_volume":0,"source":"snapshot","total_listings":11}
 {"avg_sales_price":44.99,"card_id":"100020356","change_24h":0.3,"change_30d":8.25,"change_7d":0.83,"low_price":44.99,"lowest_with_shipping":44.99,"market_price":49.86,"obs_date":"2026-09-18","printing":"Holofoil","sales_volume":1,"source":"snapshot","total_listings":12}
 {"card_id":"100020362","change_24h":0.0,"change_30d":0.0,"change_7d":0.0,"market_price":10000.0,"obs_date":"2026-09-18","printing":"Holofoil","sales_volume":0,"source":"snapshot","total_listings":1}
-{"avg_sales_price":132.46,"card_id":"100020496","change_24h":-12.65,"change_30d":-20.82,"change_7d":-18.21,"low_price":140.0,"lowest_with_shipping":140.0,"market_price":169.7,"obs_date":"2026-09-18","printing":"Holofoil","sales_volume":19,"source":"snapshot","total_listings":35}
+{"avg_sales_price":131.66,"card_id":"100020496","change_24h":-12.65,"change_30d":-20.82,"change_7d":-18.21,"low_price":140.0,"lowest_with_shipping":140.0,"market_price":169.7,"obs_date":"2026-09-18","printing":"Holofoil","sales_volume":18,"source":"snapshot","total_listings":35}
 {"card_id":"100020514","change_24h":-34.03,"change_30d":-52.47,"change_7d":-48.25,"low_price":4.0,"lowest_with_shipping":4.0,"market_price":4.13,"obs_date":"2026-09-18","printing":"Holofoil","source":"snapshot","total_listings":35}
 {"avg_sales_price":61.99,"card_id":"100020541","change_24h":-13.49,"change_30d":-3.55,"change_7d":-8.53,"low_price":59.99,"lowest_with_shipping":60.0,"market_price":87.27,"obs_date":"2026-09-18","printing":"Normal","sales_volume":2,"source":"snapshot","total_listings":20}
 {"avg_sales_price":399.99,"card_id":"100037201","market_price":399.99,"obs_date":"2026-09-18","printing":"Normal","sales_volume":1,"source":"history"}
@@ -23921,7 +23921,7 @@
 {"card_id":"100020350","market_price":87.17,"obs_date":"2026-09-22","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"card_id":"100020356","market_price":49.92,"obs_date":"2026-09-22","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"card_id":"100020362","market_price":10000.0,"obs_date":"2026-09-22","printing":"Holofoil","sales_volume":0,"source":"history"}
-{"avg_sales_price":132.74,"card_id":"100020496","market_price":132.01,"obs_date":"2026-09-22","printing":"Holofoil","sales_volume":8,"source":"history"}
+{"avg_sales_price":132.85,"card_id":"100020496","market_price":132.01,"obs_date":"2026-09-22","printing":"Holofoil","sales_volume":7,"source":"history"}
 {"avg_sales_price":62.2,"card_id":"100020541","market_price":61.95,"obs_date":"2026-09-22","printing":"Normal","sales_volume":29,"source":"history"}
 {"avg_sales_price":450.0,"card_id":"100037201","market_price":433.33,"obs_date":"2026-09-22","printing":"Normal","sales_volume":2,"source":"history"}
 {"card_id":"100037219","obs_date":"2026-09-22","printing":"Normal","source":"snapshot","total_listings":0}
@@ -27067,6 +27067,7 @@
 {"avg_sales_price":20.0,"card_id":"100065639","market_price":20.0,"obs_date":"2026-09-25","printing":"Holofoil","sales_volume":5,"source":"history"}
 {"avg_sales_price":25.8,"card_id":"100065643","market_price":27.38,"obs_date":"2026-09-25","printing":"Holofoil","sales_volume":5,"source":"history"}
 {"avg_sales_price":50.0,"card_id":"100065652","market_price":50.0,"obs_date":"2026-09-25","printing":"Holofoil","sales_volume":1,"source":"history"}
+{"avg_sales_price":9.24,"card_id":"100065653","market_price":9.56,"obs_date":"2026-09-25","printing":"Holofoil","sales_volume":8,"source":"history"}
 {"avg_sales_price":35.0,"card_id":"100065657","market_price":35.0,"obs_date":"2026-09-25","printing":"Holofoil","sales_volume":4,"source":"history"}
 {"avg_sales_price":38.06,"card_id":"1029695","market_price":35.98,"obs_date":"2026-09-25","printing":"Holofoil","sales_volume":7,"source":"history"}
 {"avg_sales_price":167.99,"card_id":"1029703","market_price":166.58,"obs_date":"2026-09-25","printing":"Normal","sales_volume":1,"source":"history"}
@@ -27782,7 +27783,7 @@
 {"card_id":"100065650","low_price":10.0,"lowest_with_shipping":13.0,"obs_date":"2026-09-26","printing":"Holofoil","source":"snapshot","total_listings":16}
 {"card_id":"100065651","low_price":0.25,"lowest_with_shipping":0.25,"median_price":0.3,"obs_date":"2026-09-26","printing":"Normal","source":"snapshot","total_listings":18}
 {"avg_sales_price":46.67,"card_id":"100065652","change_30d":0.0,"change_7d":0.0,"low_price":49.0,"lowest_with_shipping":49.0,"market_price":50.0,"obs_date":"2026-09-26","printing":"Holofoil","sales_volume":3,"source":"snapshot","total_listings":19}
-{"card_id":"100065653","change_30d":0.0,"change_7d":0.0,"low_price":8.5,"lowest_with_shipping":9.56,"market_price":9.56,"obs_date":"2026-09-26","printing":"Holofoil","source":"snapshot","total_listings":12}
+{"avg_sales_price":9.56,"card_id":"100065653","change_30d":0.0,"change_7d":0.0,"low_price":8.5,"lowest_with_shipping":9.56,"market_price":9.56,"obs_date":"2026-09-26","printing":"Holofoil","sales_volume":1,"source":"snapshot","total_listings":12}
 {"card_id":"100065655","low_price":10.0,"lowest_with_shipping":10.0,"obs_date":"2026-09-26","printing":"Holofoil","source":"snapshot","total_listings":15}
 {"avg_sales_price":58.78,"card_id":"100065656","change_30d":0.0,"change_7d":0.0,"low_price":60.0,"lowest_with_shipping":60.0,"market_price":60.89,"obs_date":"2026-09-26","printing":"Holofoil","sales_volume":6,"source":"snapshot","total_listings":13}
 {"avg_sales_price":35.98,"card_id":"100065657","change_30d":0.0,"change_7d":0.0,"low_price":34.0,"lowest_with_shipping":35.0,"market_price":35.49,"obs_date":"2026-09-26","printing":"Holofoil","sales_volume":1,"source":"snapshot","total_listings":12}
@@ -29800,6 +29801,7 @@
 {"avg_sales_price":17.69,"card_id":"100065643","market_price":21.28,"obs_date":"2026-09-27","printing":"Holofoil","sales_volume":2,"source":"history"}
 {"avg_sales_price":5.0,"card_id":"100065644","market_price":5.0,"obs_date":"2026-09-27","printing":"Holofoil","sales_volume":1,"source":"history"}
 {"avg_sales_price":44.4,"card_id":"100065652","market_price":45.26,"obs_date":"2026-09-27","printing":"Holofoil","sales_volume":10,"source":"history"}
+{"card_id":"100065653","market_price":9.56,"obs_date":"2026-09-27","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"avg_sales_price":54.44,"card_id":"100065656","market_price":56.9,"obs_date":"2026-09-27","printing":"Holofoil","sales_volume":9,"source":"history"}
 {"avg_sales_price":26.5,"card_id":"100065657","market_price":32.49,"obs_date":"2026-09-27","printing":"Holofoil","sales_volume":1,"source":"history"}
 {"avg_sales_price":15.17,"card_id":"100065658","market_price":15.14,"obs_date":"2026-09-27","printing":"Holofoil","sales_volume":4,"source":"history"}
@@ -30496,7 +30498,7 @@
 {"card_id":"100065650","change_30d":0.0,"change_7d":0.0,"low_price":5.36,"lowest_with_shipping":5.36,"market_price":4.09,"median_price":14.0,"obs_date":"2026-09-28","printing":"Holofoil","source":"snapshot","total_listings":18}
 {"card_id":"100065651","change_30d":0.0,"change_7d":0.0,"low_price":0.2,"lowest_with_shipping":0.2,"market_price":0.23,"median_price":0.25,"obs_date":"2026-09-28","printing":"Normal","source":"snapshot","total_listings":31}
 {"avg_sales_price":44.98,"card_id":"100065652","change_24h":-9.56,"change_30d":-9.56,"change_7d":-9.56,"low_price":43.99,"lowest_with_shipping":44.99,"market_price":45.22,"median_price":49.17,"obs_date":"2026-09-28","printing":"Holofoil","sales_volume":2,"source":"snapshot","total_listings":19}
-{"card_id":"100065653","change_24h":-2.82,"change_30d":-2.82,"change_7d":-2.82,"low_price":7.94,"lowest_with_shipping":7.94,"market_price":9.29,"median_price":8.57,"obs_date":"2026-09-28","printing":"Holofoil","source":"snapshot","total_listings":20}
+{"avg_sales_price":7.94,"card_id":"100065653","change_24h":-2.82,"change_30d":-2.82,"change_7d":-2.82,"low_price":7.94,"lowest_with_shipping":7.94,"market_price":9.29,"median_price":8.57,"obs_date":"2026-09-28","printing":"Holofoil","sales_volume":2,"source":"snapshot","total_listings":20}
 {"card_id":"100065655","change_30d":-6.0,"change_7d":-6.0,"low_price":8.99,"lowest_with_shipping":9.34,"market_price":9.4,"median_price":9.99,"obs_date":"2026-09-28","printing":"Holofoil","source":"snapshot","total_listings":24}
 {"avg_sales_price":55.09,"card_id":"100065656","change_24h":-7.34,"change_30d":-7.34,"change_7d":-7.34,"low_price":54.99,"lowest_with_shipping":55.0,"market_price":56.42,"median_price":60.0,"obs_date":"2026-09-28","printing":"Holofoil","sales_volume":5,"source":"snapshot","total_listings":18}
 {"avg_sales_price":25.49,"card_id":"100065657","change_24h":-20.12,"change_30d":-20.12,"change_7d":-20.12,"low_price":24.7,"lowest_with_shipping":24.7,"market_price":28.35,"median_price":28.12,"obs_date":"2026-09-28","printing":"Holofoil","sales_volume":5,"source":"snapshot","total_listings":21}
@@ -32562,6 +32564,7 @@
 {"card_id":"100065643","market_price":19.01,"obs_date":"2026-09-29","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"avg_sales_price":5.09,"card_id":"100065644","market_price":4.33,"obs_date":"2026-09-29","printing":"Holofoil","sales_volume":9,"source":"history"}
 {"avg_sales_price":37.5,"card_id":"100065652","market_price":44.26,"obs_date":"2026-09-29","printing":"Holofoil","sales_volume":2,"source":"history"}
+{"avg_sales_price":6.25,"card_id":"100065653","market_price":8.47,"obs_date":"2026-09-29","printing":"Holofoil","sales_volume":2,"source":"history"}
 {"avg_sales_price":53.77,"card_id":"100065656","market_price":55.72,"obs_date":"2026-09-29","printing":"Holofoil","sales_volume":5,"source":"history"}
 {"card_id":"100065657","market_price":28.12,"obs_date":"2026-09-29","printing":"Holofoil","sales_volume":0,"source":"history"}
 {"avg_sales_price":14.02,"card_id":"100065658","market_price":14.71,"obs_date":"2026-09-29","printing":"Holofoil","sales_volume":5,"source":"history"}
@@ -33214,7 +33217,7 @@
 {"card_id":"100065650","change_24h":14.91,"change_30d":0.0,"change_7d":0.0,"low_price":4.99,"lowest_with_shipping":5.0,"market_price":4.7,"median_price":14.0,"obs_date":"2026-09-30","printing":"Holofoil","source":"snapshot","total_listings":18}
 {"card_id":"100065651","change_24h":-4.35,"change_30d":0.0,"change_7d":0.0,"low_price":0.15,"lowest_with_shipping":0.15,"market_price":0.22,"median_price":0.24,"obs_date":"2026-09-30","printing":"Normal","source":"snapshot","total_listings":36}
 {"avg_sales_price":34.93,"card_id":"100065652","change_24h":-4.42,"change_30d":-9.56,"change_7d":-9.56,"low_price":33.98,"lowest_with_shipping":34.98,"market_price":43.22,"median_price":49.17,"obs_date":"2026-09-30","printing":"Holofoil","sales_volume":2,"source":"snapshot","total_listings":23}
-{"card_id":"100065653","change_24h":-9.9,"change_30d":-2.82,"change_7d":-2.82,"low_price":6.0,"lowest_with_shipping":7.48,"market_price":8.37,"median_price":8.57,"obs_date":"2026-09-30","printing":"Holofoil","source":"snapshot","total_listings":25}
+{"avg_sales_price":7.41,"card_id":"100065653","change_24h":-9.9,"change_30d":-2.82,"change_7d":-2.82,"low_price":6.0,"lowest_with_shipping":7.48,"market_price":8.37,"median_price":8.57,"obs_date":"2026-09-30","printing":"Holofoil","sales_volume":7,"source":"snapshot","total_listings":25}
 {"card_id":"100065655","change_24h":-16.6,"change_30d":-6.0,"change_7d":-6.0,"low_price":6.0,"lowest_with_shipping":6.0,"market_price":7.84,"median_price":9.99,"obs_date":"2026-09-30","printing":"Holofoil","source":"snapshot","total_listings":24}
 {"avg_sales_price":54.83,"card_id":"100065656","change_24h":-1.52,"change_30d":-7.34,"change_7d":-7.34,"low_price":53.0,"lowest_with_shipping":53.0,"market_price":55.56,"median_price":60.0,"obs_date":"2026-09-30","printing":"Holofoil","sales_volume":7,"source":"snapshot","total_listings":16}
 {"avg_sales_price":20.55,"card_id":"100065657","change_24h":-3.77,"change_30d":-20.12,"change_7d":-20.12,"low_price":19.99,"lowest_with_shipping":21.55,"market_price":27.28,"median_price":28.12,"obs_date":"2026-09-30","printing":"Holofoil","sales_volume":1,"source":"snapshot","total_listings":28}
