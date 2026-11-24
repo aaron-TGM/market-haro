@@ -1519,15 +1519,39 @@ def kpi_tiles(
         next_tile = (f'<div class="kpi cyan"><div class="l" data-tip="{_esc(names)}">Next release<span class="info">?</span></div>'
                      f'<div class="v">{_esc(nxt["label"])}</div><div class="f">{_esc(nxt["date"])} · {when}</div></div>')
 
+    # The live record of the ranking the page uses today, at the longest window enough of its
+    # issues have closed (radar/track.py, current_record). The retired score's calls are not
+    # in it: they stay on the track record, where every call is listed.
     record_tile = ""
-    if record and record.get("calls_30"):
+    cur = (record or {}).get("current")
+    if cur:
+        from datetime import date as _d
+
         tag, href = ("a", f' href="{_esc(track_url or "#")}"') if track_url else ("div", "")
-        which = record.get("methods") or []
-        whose = " · the retired score" if which == ["retired score"] else ""
-        net = (f' · {record["net_profitable"]} of {record["net_calls"]} made money after costs'
-               if record.get("net_calls") else "")
-        record_tile = (f'<{tag} class="kpi"{href} data-tip="Every top-20 pick, scored 30 days after the issue it appeared in against that issue&#39;s whole pool, and again as a buyer lives it: bought at the cheapest Near Mint copy, sold at the market less selling costs. Committed to git the day it is published, never edited."><div class="l">The record<span class="info">?</span></div>'
-                       f'<div class="v">{record["calls_beat_pct"]}%</div><div class="f">of {record["calls_30"]} calls beat their pool at +30d · median {record["calls_median"]:+.1f}%{net}{whose}</div></{tag}>')
+        h = cur["horizon"]
+        try:
+            since = _d.fromisoformat(cur["since"])
+            since_txt = f"{since:%b} {since.day}"
+        except (ValueError, TypeError):
+            since_txt = cur["since"]
+        net = (f' · {cur["net_profitable"]} of {cur["net_calls"]} calls made money after costs'
+               if cur.get("net_calls") else "")
+        nxt_txt = ""
+        if cur.get("next"):
+            try:
+                on = _d.fromisoformat(cur["next"]["on"])
+                nxt_txt = f' · {cur["next"]["horizon"]}-day results from {on:%b} {on.day}'
+            except (ValueError, TypeError, KeyError):
+                nxt_txt = ""
+        tip = (f"The ranking this page uses ({_esc(cur['method'] or 'the hold score')}, since {_esc(since_txt)}), scored on every "
+               f"issue whose {h}-day window has closed: did its top 20 do better than the whole field from the same day? "
+               f"The field&#39;s own median is shown, so a falling market reads as one. After costs: each pick bought at the "
+               f"cheapest Near Mint copy and sold at the market less selling costs. The window grows to 60 and then 90 days "
+               f"as enough issues close them. Committed to git the day each issue is published, never edited.")
+        record_tile = (f'<{tag} class="kpi"{href} data-tip="{tip}"><div class="l">The record<span class="info">?</span></div>'
+                       f'<div class="v">{cur["beat"]}/{cur["issues"]}</div>'
+                       f'<div class="f">issues where the {_esc(cur["method"] or "ranking")}&#39;s top 20 beat the field at +{h}d'
+                       f' · median {cur["median_spread"]:+.1f} pts, field {cur["pool_median"]:+.1f}%{net}{nxt_txt}</div></{tag}>')
     ev_tile = ""
     w = (((evidence or {}).get("horizons") or {}).get("mid") or {}).get("windows", {}).get("90") or {}
     if w.get("splits"):
