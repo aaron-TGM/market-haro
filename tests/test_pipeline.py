@@ -1492,7 +1492,7 @@ def test_front_door_is_the_report_cut_to_ten_with_the_markers_the_worker_fills()
                 {"date": "2026-09-25", "label": "ST11–14", "names": ["Starter Deck 11"]}]
     html = preview.render(rows, obs_date="2026-08-09", market={"priced": 100, "up_7d": 20},
                           releases=releases, today="2026-08-10",
-                          record={"calls_30": 20, "calls_beat_pct": 55, "calls_median": 3.1})
+                          record={"current": {"method": "hold score", "since": "2026-07-01", "horizon": 30, "issues": 17, "beat": 11, "median_spread": 1.1, "top_median": -5.8, "pool_median": -6.7, "net_calls": 340, "net_profitable": 20, "net_median": -17.8, "next": {"horizon": 60, "on": "2026-09-04"}}})
     n_pass = sum(1 for r in rows if not r.get("disqualified"))
     assert n_pass > 10
 
@@ -1512,10 +1512,11 @@ def test_front_door_is_the_report_cut_to_ten_with_the_markers_the_worker_fills()
 
     # The same tiles as the report, from the same function.
     tiles = haro.kpi_tiles([r for r in rows if not r.get("disqualified")], [r for r in rows if r.get("disqualified")],
-                           market={"priced": 100, "up_7d": 20}, releases=releases, record={"calls_30": 20, "calls_beat_pct": 55, "calls_median": 3.1},
+                           market={"priced": 100, "up_7d": 20}, releases=releases, record={"current": {"method": "hold score", "since": "2026-07-01", "horizon": 30, "issues": 17, "beat": 11, "median_spread": 1.1, "top_median": -5.8, "pool_median": -6.7, "net_calls": 340, "net_profitable": 20, "net_median": -17.8, "next": {"horizon": 60, "on": "2026-09-04"}}},
                            today="2026-08-10", obs_date="2026-08-09", screened_href=None)
     assert tiles in html
-    assert "Market breadth" in html and "Next release" in html and "The record" in html and "55%" in html
+    assert "Market breadth" in html and "Next release" in html and "The record" in html and ">11/17<" in html
+    assert "beat the field at +30d · median +1.1 pts, field -6.7% · 20 of 340 calls made money after costs · 60-day results from Sep 4" in html
     assert 'href="#screened-out"' not in html   # no list to jump to on the public page
 
     # Art: embedded or a frame, never a remote URL the page cannot swap out.
@@ -2196,6 +2197,47 @@ def test_affiliate_tag_is_impacts_snippet_in_the_head_with_the_disclosures():
     assert "affiliate program through Impact" in door and "clerk" not in door.lower()
     assert "<script" not in preview.render(rows, obs_date="2026-10-07", today="2026-10-08")
 
+
+
+def test_the_record_tile_reads_only_todays_ranking_at_the_longest_closed_window():
+    """November 2026: the tile blended the retired score's calls with the hold score's and read
+    them at 30 days, though the hold score is for a 3-6 month hold. It now reads only the
+    ranking the page uses, at the longest window enough of its issues have closed."""
+    from radar import haro, track
+
+    def rec(d, method, windows, nets):
+        return {"date": d, "method": method, "top_n": 20, "pool_n": 100,
+                "windows": {h: {"top": t, "top_n": 20, "pool": p, "pool_n": 100, "spread": round(t - p, 1)}
+                            for h, (t, p) in windows.items()},
+                "calls_net": nets, "calls_30": [1.0] * 20, "calls_30_net": nets.get(30, []),
+                "to_date": {"days": 1, "top": None, "top_n": 0, "pool": None, "pool_n": 0, "spread": None}}
+
+    retired = [rec(f"2026-08-0{i}", "retired score", {30: (-10.0, 0.0), 60: (-20.0, -5.0)}, {30: [-30.0] * 20})
+               for i in range(1, 8)]
+    hold = [rec(f"2026-10-{8 + i:02d}", "hold score", {30: (-5.0 + i, -6.0)}, {30: [5.0, -10.0, -12.0]})
+            for i in range(6)]
+    open_ = [rec("2026-11-20", "hold score", {}, {})]
+    cur = track.current_record(retired + hold + open_)
+    # The retired score is out; six hold-score issues closed at 30 days, none at 60 yet.
+    assert cur["method"] == "hold score" and cur["since"] == "2026-10-08" and cur["horizon"] == 30
+    assert cur["issues"] == 6 and cur["beat"] == 6 and cur["pool_median"] == -6.0
+    assert cur["net_calls"] == 18 and cur["net_profitable"] == 6
+    # The fifth hold-score issue (Oct 12) closes 60 days on Dec 11: the tile says when it moves.
+    assert cur["next"] == {"horizon": 60, "on": "2026-12-11"}
+    # With five issues closed at 60 days, the tile reads 60.
+    for r in hold[:5]:
+        r["windows"][60] = {"top": 10.0, "top_n": 20, "pool": 2.0, "pool_n": 100, "spread": 8.0}
+        r["calls_net"][60] = [3.0]
+    cur = track.current_record(retired + hold + open_)
+    assert cur["horizon"] == 60 and cur["issues"] == 5 and cur["median_spread"] == 8.0
+    assert cur["net_calls"] == 5 and cur["net_profitable"] == 5
+    assert cur["next"] == {"horizon": 90, "on": "2027-01-10"}
+    # Fewer than five closed anywhere: no tile rather than a record of two issues.
+    assert track.current_record(retired[:1] + hold[:2]) is None
+    assert track.summary(retired + hold + open_)["current"]["horizon"] == 60
+    tiles = haro.kpi_tiles([], [], market={"priced": 10, "up_7d": 1}, releases=[], today="2026-11-24",
+                           obs_date="2026-11-23", record={"current": None}, screened_href=None)
+    assert "The record" not in tiles
 
 if __name__ == "__main__":
     passed = 0

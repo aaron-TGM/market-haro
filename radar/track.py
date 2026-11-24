@@ -143,6 +143,9 @@ def issues(rankings_dir: Path, series: dict, as_of: str, *, cost_cfg: dict | Non
                 p, pn = _median_change(pool, series, d, end.isoformat())
                 rec["windows"][h] = {"top": t, "top_n": tn, "pool": p, "pool_n": pn,
                                      "spread": round(t - p, 1) if t is not None and p is not None else None}
+                # Every closed window, bought at the live entry and sold at the market less costs,
+                # so the record can be read at the horizon the ranking is for (current_record).
+                rec.setdefault("calls_net", {})[h] = _net_calls(top_rows, series, end.isoformat(), cost_cfg)
                 if h == 30:
                     # Every top-20 call resolved on its own: the number a reader
                     # can hold the product to, one row per call, never edited.
@@ -193,6 +196,51 @@ def summary(recs: Sequence[dict]) -> dict[str, Any]:
         last = closed[-1]
         out["plans_30"] = {"date": last["date"], "method": last.get("method"), "plans": last["plans_30"]}
     out["methods"] = sorted({r.get("method") or "" for r in recs} - {""})
+    out["current"] = current_record(recs)
+    return out
+
+
+# The tile reads a horizon once this many of the current ranking's issues have closed it.
+CURRENT_MIN_ISSUES = 5
+
+
+def current_record(recs: Sequence[dict]) -> dict[str, Any] | None:
+    """The record the page's tile carries (November 2026).
+
+    Only the ranking the page uses today (the newest issue's method): a retired ranking's
+    calls say nothing about the list a reader is looking at, and they stay on the track
+    record. Read at the longest window (90, then 60, then 30 days) that at least
+    CURRENT_MIN_ISSUES of its issues have closed, because the hold score is for a 3-6 month
+    hold; `next` says when the next longer window takes over. The field's own median sits
+    beside the spread, so a falling market is visible rather than read as the ranking's
+    failing, and calls after costs stay in: bought at the live entry, sold at the market
+    less selling costs. None until a window has closed on enough issues."""
+    if not recs:
+        return None
+    method = recs[-1].get("method")
+    rs = [r for r in recs if r.get("method") == method]
+    for h in sorted(HORIZONS, reverse=True):
+        closed = [r for r in rs if (r["windows"].get(h) or {}).get("spread") is not None]
+        if len(closed) >= CURRENT_MIN_ISSUES:
+            break
+    else:
+        return None
+    ws = [r["windows"][h] for r in closed]
+    spreads = [w["spread"] for w in ws]
+    nets = [n for r in closed for n in ((r.get("calls_net") or {}).get(h) or [])]
+    out: dict[str, Any] = {
+        "method": method, "since": rs[0]["date"], "horizon": h, "issues": len(closed),
+        "beat": sum(1 for x in spreads if x > 0), "median_spread": round(median(spreads), 1),
+        "top_median": round(median(w["top"] for w in ws), 1),
+        "pool_median": round(median(w["pool"] for w in ws), 1),
+        "net_calls": len(nets), "net_profitable": sum(1 for n in nets if n > 0),
+        "net_median": round(median(nets), 1) if nets else None, "next": None,
+    }
+    longer = [x for x in sorted(HORIZONS) if x > h]
+    if longer and len(rs) >= CURRENT_MIN_ISSUES:
+        nh = longer[0]
+        on = _date.fromisoformat(rs[CURRENT_MIN_ISSUES - 1]["date"]) + timedelta(days=nh)
+        out["next"] = {"horizon": nh, "on": on.isoformat()}
     return out
 
 

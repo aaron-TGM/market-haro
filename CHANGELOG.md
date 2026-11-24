@@ -3,6 +3,25 @@
 Newest first. Dates are the day the work landed; issue dates are the price date the
 report carries.
 
+## 2026-11-24 — The record tile reads today's ranking, at the hold it is for
+
+- **What was wrong.** "The record" tile on the front door and the report read
+  "48% of 880 calls beat their pool at +30d · median −3.2% · 42 of 860 made money after
+  costs". It blended two rankings: 540 of those calls were the retired score's (Aug 11 to
+  Oct 7), whose top 20 trailed its pool. And it read every call at 30 days, though the
+  hold score ranks for a 3–6 month hold. It sits beside the plan buttons.
+- **What it reads now** (`track.current_record`): only the ranking the page uses today
+  (the newest issue's method), at the longest window (90, then 60, then 30 days) that at
+  least 5 of its issues have closed, with the field's own median beside the spread and the
+  calls after costs kept in. It says when the next longer window takes over. On the
+  2026-11-23 issue: **11/17** issues where the hold score's top 20 beat the field at +30d
+  · median +1.1 pts, field −6.7% · 20 of 340 calls made money after costs · 60-day
+  results from Dec 11. The 90-day record starts on 2027-01-10.
+- Nothing is dropped: every call of both rankings is still scored on the track record,
+  and `track.summary` keeps its 30-day figures. Each closed window now also resolves the
+  calls after costs (`calls_net`), so the tile can read 60 and 90 days.
+- Tests: 66 (one new). The Worker is not touched; the next daily run publishes it.
+
 ## 2026-10-08 — TCGplayer affiliate links
 
 - Impact's tag for TCGplayer's affiliate program goes in the `<head>` of the report and
